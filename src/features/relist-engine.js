@@ -1,6 +1,6 @@
 // Remove listings and re-sell the returned items at new prices.
 import * as steam from '../core/steam.js';
-import { sleep } from '../core/util.js';
+import { sleep } from '../core/util.js';
 import { L } from '../core/i18n.js';
 
 function resolveAsset(it, before, after, used) {

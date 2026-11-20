@@ -6,7 +6,7 @@ import { toInput, parsePrice, downloadText } from '../core/util.js';
 import * as disk from '../core/cache.js';
 import { parseUser, starterSummary } from '../core/patterns.js';
 import * as patterndb from './patterndb.js';
-import { esc } from '../core/util.js';
+import { esc } from '../core/util.js';
 import { L } from '../core/i18n.js';
 
 // + planned sales, 📌 marks and the amounts typed in for terminals: things you set yourself and Steam can't give back

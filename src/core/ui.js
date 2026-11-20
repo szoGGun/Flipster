@@ -1,7 +1,7 @@
 import { esc, displayName, wearOf } from './util.js';
 import * as store from './store.js';
 import { TIPS } from './tips.js';
-import { MARK, TILE } from './logo.js';
+import { MARK, TILE } from './logo.js';
 import { L } from './i18n.js';
 
 const CSS = `

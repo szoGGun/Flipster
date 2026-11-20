@@ -7,7 +7,7 @@ import { withLock, token, every, isLeader } from '../core/jobs.js';
 import { buyOrderTarget, competitorBuy, flipReal, priceAbove, realPrice } from '../core/analysis.js';
 import * as sig from './sellsignals.js';
 import { parsePrice, toInput, esc, timeAgo, pct } from '../core/util.js';
-import * as research from './research.js';
+import * as research from './research.js';
 import { L } from '../core/i18n.js';
 
 const rules = store.bucket('buyRules'); // hash -> {max, auto}

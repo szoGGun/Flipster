@@ -12,7 +12,7 @@ import * as flip from './features/flip.js';
 import * as cases from './features/cases.js';
 import * as trade from './features/trade.js';
 import * as settingsTab from './features/settings.js';
-import * as sellsignals from './features/sellsignals.js';
+import * as sellsignals from './features/sellsignals.js';
 import { L } from './core/i18n.js';
 
 function main() {
