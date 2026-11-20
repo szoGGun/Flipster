@@ -29,9 +29,14 @@ export async function init() {
   box.innerHTML = '<b style="color:#fff">Analiza wymiany</b><div id="stt-tr-body" style="margin-top:6px">Ładowanie ekwipunków…</div>';
   document.body.appendChild(box);
 
+  // context 2 + 16 (CS2 keeps trade-protected items there; they can be traded too); yours from the last 10 minutes'
+  // copy when there is one (Steam's inventory requests are the most limited)
   const load = async (sid) => {
-    try { (await steam.inventory(sid, 730, 2)).forEach((i) => inv.set(i.assetid, { ...i, owner: sid })); }
-    catch (e) { ui.log(`Ekwipunek ${sid === partner ? 'partnera' : 'Twój'}: ${e.message}`, 'warn'); }
+    const mine = sid === steam.ctx().steamId;
+    for (const c of [2, 16]) {
+      try { (await steam.inventory(sid, 730, c, { maxAgeMin: mine ? 10 : 0 })).forEach((i) => inv.set(i.assetid, { ...i, owner: sid })); }
+      catch (e) { if (c === 2) ui.log(`Ekwipunek ${mine ? 'Twój' : 'partnera'}: ${e.message}`, 'warn'); }
+    }
   };
   await Promise.all([load(steam.ctx().steamId), partner ? load(partner) : null]);
   update();

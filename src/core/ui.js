@@ -1,10 +1,12 @@
-import { esc, displayName } from './util.js';
+import { esc, displayName, wearOf } from './util.js';
 import * as store from './store.js';
 import { TIPS } from './tips.js';
+import { MARK, TILE } from './logo.js';
 
 const CSS = `
 #stt-fab{position:fixed;left:70px;bottom:20px;z-index:99990;display:flex;gap:6px;align-items:center;background:#171d25;border:1px solid #2a475e;border-radius:6px;padding:4px 4px 4px 10px;box-shadow:0 4px 14px #000a;font:13px "Motiva Sans",Arial,sans-serif;color:#c6d4df}
-#stt-fab button{background:#5c7e10;color:#fff;border:0;border-radius:4px;padding:8px 14px;font:600 13px inherit;cursor:pointer}
+#stt-fab button{background:#5c7e10;color:#fff;border:0;border-radius:4px;padding:6px 14px 6px 7px;font:600 13px inherit;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+#stt-fab .logo svg{display:block;width:22px;height:22px;border-radius:4px}
 #stt-fab button:hover{background:#7ea64b}
 #stt-fab .dot{width:8px;height:8px;border-radius:50%;background:#555}
 #stt-fab .dot.on{background:#a4d007;box-shadow:0 0 6px #a4d007}
@@ -14,11 +16,15 @@ const CSS = `
   background:var(--bg);color:var(--tx);width:min(1280px,100%);border-radius:8px;box-shadow:0 10px 50px #000;font:13px "Motiva Sans",Arial,sans-serif;display:flex;flex-direction:column;height:calc(100vh - 56px)}
 #stt *{box-sizing:border-box}
 #stt header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--ln);flex-wrap:wrap}
-#stt header h2{margin:0;font-size:16px;color:#fff;font-weight:500;margin-right:8px}
+#stt header h2{margin:0;font-size:16px;color:#fff;font-weight:500;margin-right:8px;display:flex;align-items:center;gap:7px}
+#stt header h2 .logo svg{display:block;width:30px;height:30px;margin:-4px 0}
+#stt header h2>.sub{align-self:flex-end;margin-bottom:2px}
 #stt nav{display:flex;gap:2px;flex-wrap:wrap;flex:1}
 #stt nav button{background:none;border:0;color:var(--mut);padding:7px 11px;border-radius:4px;cursor:pointer;font:inherit}
 #stt nav button.on{background:var(--ln);color:#fff}
 #stt nav button:hover{color:#fff}
+#stt .gi .qs button:disabled,#stt .gi .qs button:disabled:hover{background:#2a3542;color:#8f98a0;opacity:.7;cursor:not-allowed}
+#stt #i-grid.stale .gi{cursor:default}
 #stt header .b.ico{font-size:17px;line-height:1;margin-right:6px}
 #stt header .b.ico.on{background:var(--ln);color:#fff}
 #stt .body{overflow:auto;flex:1;min-height:200px}
@@ -31,11 +37,15 @@ const CSS = `
 #stt button.b{background:var(--ln);color:var(--tx);border:0;border-radius:3px;padding:6px 11px;cursor:pointer;font:inherit;white-space:nowrap}
 #stt button.b:hover:not(:disabled){background:#3d6c8d;color:#fff}
 #stt button.b.on{background:var(--acc);color:#000}
+/* a button that shows / hides a panel: when open it looks like the active sub-tab (underline), not a bright fill */
+#stt button.b.pane.on{background:var(--ln);color:#fff;box-shadow:inset 0 -2px 0 var(--acc)}
+#stt button.b.pane.on:hover{background:#3d6c8d}
 #stt button.go{background:#5c7e10;color:#fff}#stt button.go:hover:not(:disabled){background:#7ea64b}
 #stt button.red{background:#7a2b2b;color:#fff}#stt button.red:hover:not(:disabled){background:#a33}
 #stt button.s{padding:3px 7px;font-size:12px}
 #stt button:disabled{opacity:.4;cursor:default}
-#stt input:not([type]),#stt input[type=text],#stt input[type=number],#stt input[type=search],#stt select{background:var(--bg3);border:1px solid var(--ln);color:#fff;border-radius:3px;padding:5px 7px;font:inherit}
+#stt input:not([type]),#stt input[type=text],#stt input[type=number],#stt input[type=search],#stt select,#stt textarea{background:var(--bg3);border:1px solid var(--ln);color:#fff;border-radius:3px;padding:5px 7px;font:inherit}
+#stt textarea{resize:vertical;outline:none}#stt textarea:focus{border-color:var(--acc)}#stt textarea::placeholder{color:#5c6b7a}
 #stt input.p{width:76px}
 #stt label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}
 #stt table{width:100%;border-collapse:collapse}
@@ -50,11 +60,13 @@ const CSS = `
 #stt .ok{color:var(--ok)}#stt .err{color:var(--err)}#stt .warn{color:var(--warn)}#stt .acc{color:var(--acc)}#stt .mut{color:var(--mut)}
 #stt .pos{color:var(--ok)}#stt .neg{color:var(--err)}
 #stt .tag{display:inline-block;padding:1px 6px;border-radius:9px;font-size:11px;background:var(--bg3);border:1px solid var(--ln)}
-#stt .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;padding:12px 14px}
+/* auto-fit: the cards share the whole row (auto-fill left empty columns on the right) */
+#stt .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;padding:12px 14px}
 #stt .card{background:var(--bg2);border:1px solid #22303f;border-radius:6px;padding:10px 12px}
 #stt .card .k{font-size:11px;color:var(--mut);text-transform:uppercase;display:flex;align-items:flex-start;gap:2px}
 #stt .card .k .stt-i{flex:none;margin-top:-1px}
 #stt .card .v{font-size:19px;color:#fff;margin-top:3px}
+#stt .card .v.pos{color:var(--ok)}#stt .card .v.neg{color:var(--err)}
 #stt .note{padding:8px 14px;font-size:12px;color:var(--mut);line-height:1.5}
 #stt .empty{padding:30px;text-align:center;color:var(--mut)}
 #stt .htabs{display:flex;gap:2px;padding:0 14px;border-bottom:1px solid rgba(255,255,255,.08);margin-top:6px}
@@ -69,6 +81,21 @@ const CSS = `
 #stt .chipst.mut{color:#8f98a0;border-color:#3a4654}
 #stt .acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 #stt tr.cfg>td{background:rgba(0,0,0,.18)}
+#stt .btng{display:inline-flex}
+#stt .btng .b:first-child{border-radius:3px 0 0 3px}
+#stt .btng .b+.b{border-radius:0 3px 3px 0;border-left:1px solid rgba(0,0,0,.3)}
+#stt .btng .b.on{background:var(--ln);color:var(--tx)}
+#stt .btng .b.on:hover{background:#3d6c8d;color:#fff}
+#stt .adot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#5c6b7a;margin-right:7px;vertical-align:0}
+#stt .b.on .adot{background:#a4d007;box-shadow:0 0 6px #a4d007}
+#stt .cfgbox{display:flex;flex-wrap:wrap;gap:12px;padding:8px 0}
+#stt .cfgbox>div{flex:1 1 280px;display:flex;flex-direction:column;gap:4px;background:var(--bg2);border:1px solid #22303f;border-radius:6px;padding:8px 12px}
+#stt .cfgbox .lb{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
+#stt .cfgbox .line{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:2px 0}
+#stt .cfgbox .inp{display:inline-flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--ln);border-radius:4px;padding-right:9px;color:var(--mut);font-size:12px;transition:border-color .12s}
+#stt .cfgbox .inp:focus-within{border-color:var(--acc)}
+#stt .cfgbox .inp input{border:0;background:transparent;width:78px;text-align:right;outline:none;padding:6px 2px 6px 8px}
+#stt .cfgbox .inp input::placeholder{color:#5c6b7a}
 #stt .chips{display:inline-flex;gap:4px;flex-wrap:wrap;background:var(--bg3,#101822);border:1px solid #22303f;border-radius:6px;padding:3px}
 #stt label.tgl{display:inline-flex;align-items:center;gap:7px;padding:3px 4px;cursor:pointer;user-select:none;font-size:12px;color:var(--mut);white-space:nowrap}
 #stt label.tgl:hover{color:#c6d4df}
@@ -117,6 +144,17 @@ const CSS = `
 #stt .gi.mark{border-color:#e5b84c;box-shadow:0 0 0 1px rgba(229,184,76,.25),0 0 12px rgba(229,184,76,.18)}
 #stt .gi.sel{border-color:var(--acc);background:#1d3346}
 #stt .gi.hl{border-color:#66c0f4;box-shadow:0 0 0 3px rgba(102,192,244,.35)}
+#stt .pchip{display:inline-block;max-width:100%;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;cursor:help}
+#stt .pchip.top{background:rgba(229,184,76,.2);color:#f0c75e}
+#stt .pchip.high{background:rgba(176,124,255,.2);color:#c9a6ff}
+#stt .pchip.mid{background:rgba(102,192,244,.16);color:#7fcdf7}
+#stt .pchip.low{background:rgba(198,212,223,.1);color:#9aa4ad}
+#stt .pchip.user{background:rgba(76,217,123,.16);color:#5fe08c}
+#stt .gi.pat-top{border-color:#e5b84c;box-shadow:0 0 0 2px rgba(229,184,76,.55),0 0 16px rgba(229,184,76,.35)}
+#stt .gi.pat-high{border-color:#b07cff;box-shadow:0 0 0 2px rgba(176,124,255,.5),0 0 14px rgba(176,124,255,.3)}
+#stt .gi.pat-mid{border-color:#66c0f4;box-shadow:0 0 0 1px rgba(102,192,244,.45)}
+#stt .gi.pat-user{border-color:#4cd97b;box-shadow:0 0 0 2px rgba(76,217,123,.45),0 0 14px rgba(76,217,123,.25)}
+#stt .gi.sel.pat{border-color:var(--acc)}
 #stt .gi.hl.main{border-color:#fff;box-shadow:0 0 0 3px #66c0f4,0 0 18px rgba(102,192,244,.7);animation:stt-hl 1s ease-in-out 3}
 @keyframes stt-hl{50%{box-shadow:0 0 0 6px rgba(102,192,244,.25),0 0 26px rgba(102,192,244,.9)}}
 #stt .gi img.m{width:100%;height:84px;object-fit:contain;margin-top:26px}
@@ -155,6 +193,8 @@ const CSS = `
 #stt .gi .sig.profit{color:#a4d007;border-color:#4c6b22;background:rgba(164,208,7,.12)}
 #stt .gi .sig.high{color:#e5b84c;border-color:#7a6224;background:rgba(229,184,76,.12)}
 #stt .gi .sig.fall{color:#ff7b7b;border-color:#7a2b2b;background:rgba(255,107,107,.12)}
+#stt .gi .sig.tdown{color:#e0a3a3;border-color:#5c3a3a;background:rgba(224,163,163,.08);font-weight:500}
+#stt .gi .sig.tup{color:#a8d4a0;border-color:#3d5a37;background:rgba(168,212,160,.08);font-weight:500}
 #stt .gi .sig.hold{color:#8fb8d8;border-color:#2a475e;background:rgba(102,192,244,.06);font-weight:500}
 #stt .gi .sig.plan{color:#66c0f4;border-color:#2a6f9c;background:rgba(102,192,244,.12);cursor:pointer}
 #stt .gi .sig.skip{color:#8f98a0;border-color:#3a4654;background:rgba(143,152,160,.08)}
@@ -170,6 +210,8 @@ const CSS = `
 #stt .logbar{flex:none;height:9px;cursor:ns-resize;border-top:1px solid var(--ln);background:var(--bg3);display:flex;align-items:center;justify-content:center;user-select:none}
 #stt .logbar::before{content:'';width:42px;height:3px;border-radius:2px;background:#3a4a5c;transition:background .12s}
 #stt .logbar:hover::before,#stt .logbar.drag::before{background:var(--acc)}
+/* ⚙ Ustawienia: diagnostic tools only in debug mode, the log can be switched off (applyPrefs) */
+#stt:not(.dbg-on) .dbg{display:none!important}#stt.nolog>.logbar,#stt.nolog>.log{display:none}
 #stt .status{display:flex;gap:14px;padding:6px 14px;font-size:12px;color:var(--mut);border-top:1px solid var(--ln);flex-wrap:wrap}
 #stt .prog{height:3px;background:var(--bg3)}#stt .prog i{display:block;height:100%;background:var(--acc);transition:width .3s}
 #stt details{padding:4px 14px}#stt summary{cursor:pointer;color:var(--acc)}
@@ -183,7 +225,7 @@ const CSS = `
 #stt .modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 .stt-i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:6px;border-radius:50%;border:1px solid #66c0f4;color:#66c0f4;font:700 10px/1 Georgia,serif;font-style:italic;text-transform:none;cursor:help;vertical-align:1px;user-select:none}
 .stt-i:hover,.stt-i.on{background:#66c0f4;color:#0e1621}
-#stt-tip{position:fixed;z-index:100002;max-width:300px;background:#0e1621;border:1px solid #66c0f4;color:#c6d4df;padding:9px 11px;border-radius:6px;font:12.5px/1.5 "Motiva Sans",Arial,sans-serif;box-shadow:0 6px 24px #000c;pointer-events:none}
+#stt-tip{position:fixed;z-index:100002;max-width:300px;white-space:pre-line;background:#0e1621;border:1px solid #66c0f4;color:#c6d4df;padding:9px 11px;border-radius:6px;font:12.5px/1.5 "Motiva Sans",Arial,sans-serif;box-shadow:0 6px 24px #000c;pointer-events:none}
 .stt-badge{position:absolute;left:2px;top:2px;right:2px;font:600 10px Arial,sans-serif;color:#fff;background:#000b;padding:1px 3px;border-radius:2px;pointer-events:none;display:flex;justify-content:space-between;z-index:3}
 .stt-badge .f{color:#9bd}
 .stt-badge.two{flex-wrap:wrap;row-gap:0}
@@ -202,7 +244,7 @@ export function init() {
 
   const fab = document.createElement('div');
   fab.id = 'stt-fab';
-  fab.innerHTML = `<span class="dot" title="Automaty"></span><span class="mut" id="stt-fab-t"></span><button>⚡ Flipster</button>`;
+  fab.innerHTML = `<span class="dot" title="Automaty"></span><span class="mut" id="stt-fab-t"></span><button><span class="logo">${TILE}</span>Flipster</button>`;
   fab.querySelector('button').onclick = () => open();
   fabDot = fab.querySelector('.dot');
   document.body.appendChild(fab);
@@ -211,7 +253,7 @@ export function init() {
   ov.id = 'stt-ov';
   ov.hidden = true;
   ov.innerHTML = `<div id="stt">
-    <header><h2>⚡ Flipster <span class="sub" style="font-size:11px">Steam Market · build ${typeof __BUILD__ !== 'undefined' ? __BUILD__ : '?'}</span></h2><nav></nav><button class="b" data-x>✕</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> · build ${typeof __BUILD__ !== 'undefined' ? __BUILD__ : '?'}</span></span></h2><nav></nav><button class="b" data-x>✕</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -226,6 +268,7 @@ export function init() {
   statusEl = root.querySelector('.status');
   progEl = root.querySelector('.prog i');
   initLogResize();
+  applyPrefs();
   ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
   root.querySelector('[data-x]').onclick = close;
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !ov.hidden && !root.querySelector('.modal')) close(); });
@@ -270,7 +313,8 @@ function initTips() {
     }
   };
   const showFor = (icon) => {
-    tip.textContent = icon.dataset.tip;
+    // a new line in a tip = a new paragraph, with an empty line between (easier to read)
+    tip.textContent = icon.dataset.tip.replace(/\n+/g, '\n\n');
     tip.hidden = false;
     const r = icon.getBoundingClientRect();
     const w = tip.offsetWidth, h = tip.offsetHeight;
@@ -282,7 +326,14 @@ function initTips() {
   };
   const hide = () => { tip.hidden = true; pinned?.classList.remove('on'); pinned = null; };
 
-  new MutationObserver(decorate).observe(root, { childList: true, subtree: true });
+  // once per frame, and not for the log / status lines (a scan logs every second, the whole panel was searched each time)
+  let queued = false;
+  const quiet = (n) => logEl.contains(n) || statusEl.contains(n);
+  new MutationObserver((ms) => {
+    if (queued || ms.every((m) => quiet(m.target))) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; decorate(); });
+  }).observe(root, { childList: true, subtree: true });
   root.addEventListener('mouseover', (e) => { const i = e.target.closest('.stt-i'); if (i && !pinned) showFor(i); });
   root.addEventListener('mouseout', (e) => { if (e.target.closest('.stt-i') && !pinned) tip.hidden = true; });
   root.addEventListener('focusin', (e) => { const i = e.target.closest('.stt-i'); if (i) showFor(i); });
@@ -322,19 +373,25 @@ export function tab(def) {
   tabs.push({ ...def, btn: b, el, mounted: false });
 }
 
-export function show(id) {
+export function show(id, arg) {
   const t = tabs.find((x) => x.id === id) || tabs[0];
   if (!t) return;
   tabs.forEach((x) => { x.btn.classList.toggle('on', x === t); x.el.classList.toggle('on', x === t); });
-  if (!t.mounted) { t.mounted = true; t.mount(t.el); }
+  mountTab(t.id);
   current = t;
   store.set('lastTab', t.id);
-  t.show?.();
+  t.show?.(arg);
+}
+/** build a tab without showing it (its lists load in the background, e.g. for the notification checks); true if it was built now */
+export function mountTab(id) {
+  const t = tabs.find((x) => x.id === id);
+  if (t && !t.mounted) { t.mounted = true; t.mount(t.el); return true; }
+  return false;
 }
 
-export function open(id) {
+export function open(id, arg) {
   ov.hidden = false;
-  show(id || current?.id || store.get('lastTab', null) || tabs[0]?.id);
+  show(id || current?.id || store.get('lastTab', null) || tabs[0]?.id, arg);
 }
 export const close = () => {
   ov.hidden = true;
@@ -382,6 +439,19 @@ export function log(msg, cls = '') {
   while (logEl.childElementCount > 400) logEl.firstChild.remove();
   if (atEnd) logEl.scrollTop = logEl.scrollHeight;
   if (cls === 'err') console.warn('[Flipster]', msg);
+  if (cls === 'err' && !store.settings.showLog) {
+    status('logerr', `<span class="err" title="Dziennik jest wyłączony w ⚙ Ustawieniach">⚠ ${esc(msg)}</span>`);
+    clearTimeout(errTimer);
+    errTimer = setTimeout(() => status('logerr', null), 20000);
+  }
+}
+let errTimer = 0;
+
+/** debug mode (diagnostic buttons, request counter, build) and the log on/off, from ⚙ Ustawienia */
+export function applyPrefs() {
+  root.classList.toggle('dbg-on', !!store.settings.debug);
+  root.classList.toggle('nolog', !store.settings.showLog);
+  if (store.settings.showLog) status('logerr', null);
 }
 
 export function progress(done, total) {
@@ -431,7 +501,7 @@ export function marketUrl(appid = 730, hash = '') {
   let url = `https://steamcommunity.com/market/listings/${appid}/${encodeURIComponent(hash)}`;
   if (String(appid) !== '730') return url;
   const q = [];
-  const wear = hash.match(/\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)\s*$/)?.[1];
+  const wear = wearOf(hash);
   if (wear) q.push(`category_Exterior=WearCategory${WEAR_TAG[wear]}`);
   const star = hash.startsWith('★'), st = /StatTrak™/.test(hash), souv = /^Souvenir /.test(hash);
   if (wear || star) q.push(`category_Quality=${souv ? 'tournament' : star ? (st ? 'unusual_strange' : 'unusual') : st ? 'strange' : 'normal'}`);

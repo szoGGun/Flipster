@@ -7,7 +7,8 @@ import * as store from '../core/store.js';
 import { settings } from '../core/store.js';
 import * as steam from '../core/steam.js';
 import { heldCosts } from './history.js';
-import { fillTable, queueChoice, LIST_SHARE } from '../core/analysis.js';
+import * as mt from './markettrend.js';
+import { fillTable, queueChoice, LIST_SHARE, recentTrend } from '../core/analysis.js';
 
 const hist = store.bucket('sellHist'); // hash -> { at, d: [[dayStart, avgPrice, volume]] } (last 35 days)
 const TTL = 12 * 3600000;
@@ -32,18 +33,58 @@ export function prune(days = 14) {
   hist.replace(all);
 }
 
-// (an entry saved before the listing advice v2 has no `f` → fetched once more)
-const fresh = (hash) => { const h = hist.get(hash); return h && 'f' in h && Date.now() - h.at < TTL ? h : null; };
+// the fill table's version: an entry saved by an older fillTable (no `fv`, or a lower one) is fetched once more,
+// or the 12 h cache keeps showing the old chances after an update (2026-11-20: 63% stayed on the cards after F5)
+const FILL_V = 4; // 4: the last half year (rt) for the trend chip, 2026-11-20
+// items too thin for a fill table keep their sales of the last 30 days (`p`, see soldAt); an entry without them is
+// fetched once more
+const fresh = (hash) => { const h = hist.get(hash); return h && 'f' in h && h.fv === FILL_V && (h.f || 'p' in h) && Date.now() - h.at < TTL ? h : null; };
 
 /** the item's own fill table (analysis.fillTable) for the listing advice, or null (no or too thin hourly history) */
 export const fill = (hash) => fresh(hash)?.f || null;
 
-/** fetch missing price histories one by one (market lane), calling onEach after every item */
-let running = null;
+/**
+ * Items too thin for a fill table: units sold lately and how many of them at ≥ price (buyer), from Steam's hourly
+ * records (an hour with several sales counts by its median). The last 14 days, 30 when that has fewer than 5 units
+ * (30 alone mixed in the time before a drop: Glock Royal Legion 23 of 41 at 145 zł, in November 2 of 17).
+ * → { n, total, days } or null when unknown or nothing sold.
+ */
+export function soldAt(hash, price) {
+  const r = recentSales(hash);
+  if (!r || price == null) return null;
+  let n = 0, total = 0;
+  for (const [, pr, v] of r.pts) { total += v; if (pr >= price) n += v; }
+  return { n, total, days: r.days };
+}
+/** the price at least half of those recent units sold at (volume-weighted median), null when unknown */
+export function recentMedian(hash) {
+  const r = recentSales(hash);
+  if (!r) return null;
+  const s = [...r.pts].sort((a, b) => a[1] - b[1]);
+  const tot = s.reduce((x, p) => x + p[2], 0);
+  let acc = 0;
+  for (const p of s) { acc += p[2]; if (acc >= tot / 2) return p[1]; }
+  return null;
+}
+function recentSales(hash) {
+  const h = hist.get(hash);
+  if (!h?.p) return null;
+  const within = (days) => { const since = Date.now() - days * DAY; return h.p.filter((p) => p[0] >= since && p[2] > 0); };
+  const units = (pts) => pts.reduce((x, p) => x + p[2], 0);
+  let pts = within(14), days = 14;
+  if (units(pts) < 5) { pts = within(30); days = 30; }
+  return pts.length ? { pts, days } : null;
+}
+
+/**
+ * fetch missing price histories one by one (market lane), calling onEach after every item. Asked again while a run
+ * is on (the listings, then the inventory): the new list waits its turn (it used to be dropped, those items kept
+ * "sprawdzam" until the next load); what the earlier run fetched isn't fetched twice.
+ */
+let chain = Promise.resolve();
 export function ensure(list, { onEach, isCancelled = () => false } = {}) {
-  if (running) return running;
-  const todo = [...new Map(list.filter((x) => !fresh(x.hash)).map((x) => [x.hash, x])).values()];
-  running = (async () => {
+  const run = chain.then(async () => {
+    const todo = [...new Map(list.filter((x) => !fresh(x.hash)).map((x) => [x.hash, x])).values()];
     for (const x of todo) {
       if (isCancelled()) break;
       try {
@@ -59,15 +100,20 @@ export function ensure(list, { onEach, isCancelled = () => false } = {}) {
         }
         let f = null;
         try { f = fillTable(pts); } catch { /* the trend chips still work without it */ }
-        hist.set(x.hash, { at: Date.now(), d: [...days].sort((a, b) => a[0] - b[0]).map(([d, [s, v]]) => [d, Math.round(s / v), v]), f });
+        let rt = null;
+        try { rt = recentTrend(pts); } catch { /* optional */ }
+        const e = { at: Date.now(), d: [...days].sort((a, b) => a[0] - b[0]).map(([d, [s, v]]) => [d, Math.round(s / v), v]), f, rt, fv: FILL_V };
+        if (!f) e.p = pts.filter((p) => p.t >= Date.now() - 30 * DAY && p.vol > 0).slice(-400).map((p) => [p.t, p.price, p.vol]);
+        hist.set(x.hash, e);
       } catch (e) {
         if (e.status === 429) break;
-        hist.set(x.hash, { at: Date.now(), d: [], f: null });
+        hist.set(x.hash, { at: Date.now(), d: [], f: null, p: [], fv: FILL_V });
       }
       onEach?.();
     }
-  })().finally(() => { running = null; });
-  return running;
+  });
+  chain = run.catch(() => {});
+  return run;
 }
 
 const avg = (rows) => { const v = rows.reduce((s, r) => s + r[2], 0); return v ? rows.reduce((s, r) => s + r[1] * r[2], 0) / v : null; };
@@ -101,7 +147,35 @@ export function signals(it, lowest) {
     }
     if (a7 && prev && a7 <= prev * (1 - th)) out.push({ k: 'fall', label: 'cena spada', cls: 'err', title: `Średnia z ostatniego tygodnia (${steam.fmt(Math.round(a7))}) jest o ${Math.round((1 - a7 / prev) * 100)}% niższa niż z 3 tygodni wcześniej (${steam.fmt(Math.round(prev))}).` });
   }
+  // the last half year against the market (markettrend.js), as information only: a chip when this item did something
+  // clearly different from the market (≥ 20 points), the numbers for every item in trendNote
+  const tr = trendOf(it);
+  if (tr?.ref && Math.abs(tr.t - tr.m) >= 0.2) {
+    out.push({ k: tr.t < tr.m ? 'tdown' : 'tup', label: `${tr.t < 0 ? '↘' : '↗'} ${pctTxt(tr.t)} w ${tr.span} (${tr.ref.label} ${pctTxt(tr.m)})`, cls: 'mut', title: `${trendNote(it)}\nTo tylko informacja o tym, co już się stało: na 650 przedmiotach z rynku takie ruchy nie zapowiadały ani ciągu dalszego, ani odwrotu.` });
+  }
   return out;
+}
+
+const pctTxt = (x) => `${x < 0 ? '−' : '+'}${Math.round(Math.abs(x) * 100)}%`;
+/** this item's last half year (or 3 months when younger) next to the market's: { t, m, span, rt, ref } or null */
+// the basket is CS2 only: other games (a Rust jacket was compared with "rynek −31%") get their own numbers, no market
+function trendOf(it) {
+  const rt = hist.get(it.hash)?.rt;
+  if (!rt) return null;
+  const ref = String(it.appid || 730) === '730' ? mt.refFor(it.hash, it.type || '') : null;
+  if (rt.t6 != null) return { t: rt.t6, m: ref?.t6 ?? null, span: 'pół roku', rt, ref: ref?.t6 != null ? ref : null };
+  if (rt.t3 != null) return { t: rt.t3, m: ref?.t3 ?? null, span: '3 mies.', rt, ref: ref?.t3 != null ? ref : null };
+  return null;
+}
+/** "Pół roku temu 127,20 zł, 3 miesiące temu 114,92 zł, teraz 88,02 zł (−31%). Rynek skinów w tym czasie: −33% (…)" or '' */
+export function trendNote(it) {
+  const tr = trendOf(it);
+  if (!tr) return '';
+  const f = (c) => (c ? steam.fmt(Math.round(c)) : '-');
+  const own = `Mediana sprzedaży z miesiąca: pół roku temu ${f(tr.rt.m6)}, 3 miesiące temu ${f(tr.rt.m3)}, teraz ${f(tr.rt.now)} (${pctTxt(tr.t)} w ${tr.span}).`;
+  if (!tr.ref) return own;
+  const who = tr.ref.label === 'rynek' ? 'Cały rynek' : tr.ref.label.replace(/^r/, 'R');
+  return `${own}\n${who} CS2 w tym czasie: ${pctTxt(tr.m)} (mediana z ${tr.ref.n} popularnych przedmiotów, sprawdzone ${new Date(tr.ref.at).toLocaleDateString()}).`;
 }
 
 /** whether the price history needed for the trend signals is: 'wait' (not fetched yet), 'none' (Steam has none), 'ok' */

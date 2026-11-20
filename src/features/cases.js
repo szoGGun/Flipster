@@ -371,10 +371,11 @@ async function scan(only) {
     const liq = el.querySelector('#k-liq').checked;
     // full recalculation: drop old results and cached prices, the table fills in as cases are computed
     fullScan = !only;
-    if (!only) { const keep = Object.fromEntries(Object.entries(cache.all()).filter(([h]) => { const c = list.find((x) => x.hash === h); return c && !want(c); })); cache.replace(keep); qCache.replace({}); render(); }
-    const stale = (c) => { const r = cache.get(c.hash); return !r || r.v !== 4 || Date.now() - r.at > EV_TTL; };
+    // (before the cleanup below, which already asks which kind is being recalculated)
     const kind = kindSel();
     const want = (c) => kind === 'all' || (kind === 'cap') === (c.kind === 'capsule');
+    if (!only) { const keep = Object.fromEntries(Object.entries(cache.all()).filter(([h]) => { const c = list.find((x) => x.hash === h); return c && !want(c); })); cache.replace(keep); qCache.replace({}); render(); }
+    const stale = (c) => { const r = cache.get(c.hash); return !r || r.v !== 4 || Date.now() - r.at > EV_TTL; };
     const todo = list.filter((c) => (only ? only.includes(c.hash) : want(c) && (!liq || c.listings >= 100) && stale(c)) && (c.kind === 'capsule' ? db?.caps?.[c.hash] : c.set || db?.cases[c.hash]));
     ui.log(`Skrzynie: liczę ${todo.length} ${kind === 'cap' ? 'kapsuł' : kind === 'all' ? 'skrzyń i kapsuł' : 'skrzyń'} (klucz ${steam.fmt(k.price)}, ${k.src})…`);
     let i = 0;
@@ -387,7 +388,7 @@ async function scan(only) {
       try { await (c.kind === 'capsule' ? computeCapsule(c, db.caps[c.hash]) : computeCase(c, k.price)); } catch (e) { ui.log(`Skrzynie: ${c.name}, ${e.message}`, 'warn'); }
       render();
     }
-    const miss = list.filter((c) => !c.set);
+    const miss = list.filter((c) => c.kind !== 'capsule' && !c.set && !db?.cases[c.hash]); // capsules need no collection; a case with known contents is computed anyway
     if (miss.length) console.warn('[Flipster] skrzynie bez rozpoznanej kolekcji (pominięte)', miss.map((c) => c.hash));
     ui.log('Skrzynie: gotowe.', 'ok');
   } catch (e) {
@@ -442,7 +443,7 @@ function render() {
   });
   el.querySelector('#k-tbl tbody').innerHTML = sorted.map(({ c, r }) => {
     const main = `<tr data-hash="${esc(c.hash)}" style="cursor:pointer">
-      <td>${ui.itemCell({ hash: c.hash, name: c.name, icon: c.icon, color: c.color, appid: 730, sub: c.set ? '' : '<span class="warn">nie rozpoznano kolekcji</span>' })}</td>
+      <td>${ui.itemCell({ hash: c.hash, name: c.name, icon: c.icon, color: c.color, appid: 730, sub: c.set || c.kind === 'capsule' || r ? '' : '<span class="warn" title="Nie znam zawartości tej skrzyni, więc jej nie liczę">nie rozpoznano kolekcji</span>' })}</td>
       <td class="${r ? (resOf(r) >= 0 ? 'pos' : 'neg') : ''}">${r ? `<b style="font-size:15px">${resOf(r) >= 0 ? '+' : '−'}${steam.fmt(Math.round(Math.abs(resOf(r))))}</b><div class="sub">wraca ${pct(r.ev / costOf(r), 0)} kosztu</div>` : '<span class="sub">…</span>'}</td>
       <td>${r ? `${steam.fmt(costOf(r))}<div class="sub">${r.kind === 'capsule' ? (owns(c.hash) ? 'kapsuła po prowizji, bez klucza' : 'bez klucza') : owns(c.hash) ? `klucz ${steam.fmt(r.keyCost)} + skrzynia po prowizji` : `+ klucz ${steam.fmt(r.keyCost)}`}</div><label class="sub" style="display:inline-flex;gap:4px;align-items:center;cursor:pointer;margin-top:2px" title="Masz tę skrzynię: otwarcie kosztuje klucz + to, co dostałbyś za jej sprzedaż (po prowizji), a nie jej cenę z rynku"><input type="checkbox" data-own="${esc(c.hash)}" ${owns(c.hash) ? 'checked' : ''}> mam ją${ownedCount(c.hash) ? ` (${ownedCount(c.hash)} w ekwipunku)` : ''}</label>` : ''}</td>
       <td>${r ? steam.fmt(Math.round(r.ev)) + (r.covered < 0.999 || r.v !== 4 ? ` <span class="warn" title="${r.v !== 4 ? 'Policzone starą metodą, kliknij „Przelicz skrzynie”' : `Brak cen dla części rzadkości (${pct(1 - r.covered, 2)} szans), EV zaniżone`}">!</span>` : '') : ''}</td>

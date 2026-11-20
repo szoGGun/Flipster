@@ -1,5 +1,5 @@
 // Smoke test: runs the built userscript in headless Chrome against a mocked steamcommunity.com.
-// Nothing leaves the machine – every request is answered here. `npm run smoke`
+// Nothing leaves the machine, every request is answered here. `npm run smoke`
 import puppeteer from 'puppeteer-core';
 import { readFileSync } from 'node:fs';
 import { receivedFromBuyer, buyerFromReceived } from '../src/core/fees.js';
@@ -17,8 +17,8 @@ const TEC = 'Tec-9 | Groundwater (Field-Tested)';
 // ------------------------------------------------------------------ mocked Steam state
 const state = {
   listings: [
-    { id: '111', assetid: '10000000001', hash: TEC, price: 210, fee: 31 },          // buyer 2,41 – someone sells at 2,30
-    { id: '222', assetid: '10000000106', hash: 'Revolution Case', price: 50, fee: 7 }, // buyer 0,57 – the cheapest
+    { id: '111', assetid: '10000000001', hash: TEC, price: 210, fee: 31 },          // buyer 2,41, someone sells at 2,30
+    { id: '222', assetid: '10000000106', hash: 'Revolution Case', price: 50, fee: 7 }, // buyer 0,57, the cheapest
   ],
   buyOrders: [{ id: '777', hash: 'Revolution Case', price: 20, qty: 5 }],               // someone bids 0,25
   nextId: 1000,
@@ -58,7 +58,8 @@ const histHtml = () => ({
     <div class="market_listing_item_name_block"><span id="history_row_${x.lid}_${x.pid}_name" class="market_listing_item_name">${x.hash}</span></div>
   </div>`).join(''),
   hovers: HIST.map((x) => `CreateItemHoverFromContainer( g_rgAssets, 'history_row_${x.lid}_${x.pid}_name', 730, '2', '${x.aid}', 0 );`).join('\n'),
-  assets: { 730: { 2: Object.fromEntries(HIST.map((x) => [x.aid, { market_hash_name: x.hash, name: x.hash, icon_url: 'x', amount: '1' }])) } },
+  // the AK-47 | Slate sold 5 days ago comes with its float and pattern seed, as Steam sends them for some items
+  assets: { 730: { 2: Object.fromEntries(HIST.map((x) => [x.aid, { market_hash_name: x.hash, name: x.hash, icon_url: 'x', amount: '1', ...(x.aid === '501' ? { asset_properties: [{ propertyid: 2, float_value: '0.2512' }, { propertyid: 1, int_value: '123' }] } : {}) }])) } },
 });
 const histJson = () => ({ success: true, total_count: 2, events: [
   { listingid: '1001', purchaseid: '6000', event_type: 3, time_event: tB / 1000 },
@@ -67,7 +68,9 @@ const histJson = () => ({ success: true, total_count: 2, events: [
 // inventory history: a market purchase newer than the market history, an opened case, a trade
 const ihDate = (t) => { const d = new Date(t); return `${d.getDate()} ${MON[d.getMonth()]}, ${d.getFullYear()}`; };
 const IH = [
-  { t: now - 2 * DAY, desc: 'You purchased an item on the Community Market.', plus: ['MP7 | Army Recon (Field-Tested)'], minus: [] },
+  // a purchase made after the market history was last read (Flipster takes only those from here: older ones are in the
+  // market history with their real price) → "30 minutes from now", the test reaches Historia well before that
+  { t: now + 30 * 60000, desc: 'You purchased an item on the Community Market.', plus: ['MP7 | Army Recon (Field-Tested)'], minus: [] },
   { t: now - 20 * DAY, desc: 'Unlocked a container', plus: ['P250 | Re.built (Field-Tested)'], minus: ['Revolution Case', 'Revolution Case Key'] },
   { t: now - 40 * DAY, desc: `You traded with <a href="https://steamcommunity.com/profiles/${PARTNER}">Kolega</a>`, plus: ['Snakebite Case'], minus: ['Recoil Case'] },
 ];
@@ -237,7 +240,8 @@ function respond(url, method, body) {
   }
   if (p.startsWith('/market/search/render')) return search(u.searchParams);
   if (p.startsWith('/market/appfilters')) return { success: true, facets: { '730_ItemSet': { tags: { set_community_32: { localized_name: 'The Revolution Collection' }, set_community_26: { localized_name: 'The Fracture Collection' } } } } };
-  if (/\/inventoryhistory/.test(p)) return u.searchParams.get('cursor[time]') ? { success: true, html: '', descriptions: {} } : invHistory();
+  // Steam filters the history by game: the Steam items' one (app 753, cards and backgrounds) is empty here
+  if (/\/inventoryhistory/.test(p)) return u.searchParams.get('cursor[time]') || u.searchParams.getAll('app[]').includes('753') ? { success: true, html: '', descriptions: {} } : invHistory();
   return null;
 }
 
@@ -311,7 +315,7 @@ await run('Panel: otwieranie i zamykanie', async () => {
   const visible = () => page.$eval('#stt-ov', (e) => getComputedStyle(e).display !== 'none');
   check(!(await visible()), 'panel jest schowany po załadowaniu strony');
   await clickEl('#stt-fab button');
-  check(await visible(), 'przycisk ⚡ Flipster otwiera panel');
+  check(await visible(), 'przycisk Flipster otwiera panel');
   await clickEl('#stt [data-x]');
   check(!(await visible()), '✕ zamyka panel');
   await clickEl('#stt-fab button');
@@ -320,7 +324,7 @@ await run('Panel: otwieranie i zamykanie', async () => {
   await clickEl('#stt-fab button');
   const tabs = await page.$$eval('#stt nav button', (b) => b.map((x) => x.textContent));
   check(tabs.join('|') === 'Rynek|Ekwipunek|Historia|Okazje|Czy warto otwierać?', 'zakładki: ' + tabs.join(', '));
-  check(/build \d/.test(await text('#stt header h2')), 'nagłówek pokazuje datę builda');
+  check(/build \d/.test(await page.$eval('#stt header h2', (e) => e.textContent)), 'nagłówek ma datę builda (widać ją w trybie debugowania)');
 });
 
 await run('Rynek → Moje oferty', async () => {
@@ -328,12 +332,12 @@ await run('Rynek → Moje oferty', async () => {
   await clickEl(`${T} [data-mt="sell"]`);
   const S = `${T} [data-sec="sell"]`;
   await page.waitForFunction((S) => document.querySelectorAll(`${S} tbody tr[data-id]`).length === 2, { timeout: 15000 }, S);
-  await waitText('#l-comp', /konkurencja sprawdzona/, 30000);
-  console.log('    pasek: ' + (await text('#l-comp')));
+  await waitText('#l-tick', /odświeżono \d\d:\d\d · następne za \d+:\d\d/, 30000); // the countdown after the first check
+  console.log('    pasek: ' + (await text('#l-tick')) + ' | ' + (await text('#l-comp')));
   check(/1 oferta przebita/.test(await text('#l-comp')), 'pasek: 1 oferta przebita');
   const tec = await text(`${S} tr[data-id="111"]`);
   check(/ktoś taniej o 0,11 zł/.test(tec), 'Tec-9: „ktoś taniej o 0,11 zł” (2,41 vs 2,30)');
-  check(/Ustaw 2,27 zł/.test(tec), 'Tec-9: propozycja 2,27 zł – najbliższa cena pod 2,30, jaką Steam pozwala ustawić (2,29 nie istnieje)');
+  check(/Ustaw 2,27 zł/.test(tec), 'Tec-9: propozycja 2,27 zł, najbliższa cena pod 2,30, jaką Steam pozwala ustawić (2,29 nie istnieje)');
   check(/float 0\.36/.test(tec), 'Tec-9: float widoczny przy ofercie');
   check(/najtańsza/.test(await text(`${S} tr[data-id="222"]`)), 'Revolution Case: „najtańsza”');
   // ⚙ row + highlighted button (style used to exist only in Historia)
@@ -357,7 +361,8 @@ await run('Rynek → Moje oferty', async () => {
   await waitText('#l-comp', /wszystkie Twoje oferty są najtańsze/, 20000);
   check(true, 'pasek: wszystkie oferty najtańsze');
   const after = await page.evaluate((S) => [...document.querySelectorAll(S + ' tbody tr[data-id]')].find((r) => /Tec-9/.test(r.innerText)).innerText, S);
-  check(/cena OK/.test(after) && !/Ustaw/.test(after), 'po zmianie nie ma już przycisku „Ustaw” – cena OK (wcześniej wracał w kółko)');
+  check(/cena OK/.test(after) && !/Ustaw/.test(after), 'po zmianie nie ma już przycisku „Ustaw”, cena OK (wcześniej wracał w kółko)');
+  console.log('    wiersz Tec-9 po zmianie: ' + after.replace(/\s+/g, ' '));
 });
 
 await run('Rynek → Zlecenia kupna', async () => {
@@ -391,6 +396,8 @@ await run('Rynek → Zlecenia kupna', async () => {
 });
 
 await run('Ekwipunek', async () => {
+  // your own pattern list (settings): the SG 553 | Bleached with seed 524 gets the 💎 frame and chip
+  await page.evaluate(() => localStorage.setItem('gm_patternsUser', JSON.stringify('SG 553 | Bleached: 524 = test smoke')));
   await navTab('Ekwipunek');
   await page.waitForFunction((T) => document.querySelectorAll(`${T} .gi`).length > 5, { timeout: 30000 }, T);
   await waitLog(/Wyceniono \d+ przedmiotów/, 180000);
@@ -401,12 +408,18 @@ await run('Ekwipunek', async () => {
   await checkTips('Ekwipunek');
   const withFloat = await page.evaluate((T) => [...document.querySelectorAll(`${T} .gi`)].find((g) => /seed/.test(g.innerText))?.innerText.replace(/\n+/g, ' '), T);
   check(!!withFloat, 'karta z floatem i seedem: ' + (withFloat || '').slice(0, 90));
+  const pat = await page.evaluate((T) => { const g = [...document.querySelectorAll(`${T} .gi`)].find((x) => x.title.startsWith('SG 553 | Bleached')); return g ? { cls: g.className, chip: g.querySelector('.pchip')?.innerText || '' } : null; }, T);
+  check(!!pat && /pat-user/.test(pat.cls) && /💎 test smoke/.test(pat.chip), `znany wzór z Twojej listy: ramka i znaczek (${pat ? pat.chip : 'brak karty'})`);
+  await page.evaluate(() => localStorage.removeItem('gm_patternsUser'));
   check(await page.evaluate((T) => [...document.querySelectorAll(`${T} .gi.listed`)].length >= 2, T), 'przedmioty wystawione na rynku widać jako „na rynku”');
-  await page.evaluate(() => document.querySelector('#i-mk').click());
+  // "Pokaż: Wszystkie / Sprzedawalne / Z blokadą handlu / Niesprzedawalne" (radio buttons; there used to be a checkbox)
+  const mkMode = (v) => page.evaluate((v) => { const r = document.querySelector(`input[name="i-mkmode"][value="${v}"]`); r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); }, v);
+  await mkMode('all');
   await sleep(300);
-  check(await page.evaluate((T) => [...document.querySelectorAll(`${T} .gi`)].some((g) => /niesprzedawalny/.test(g.innerText)), T), 'po wyłączeniu „tylko sprzedawalne” widać medale/odznaki jako „niesprzedawalny”');
-  await page.evaluate(() => document.querySelector('#i-mk').click());
+  check(await page.evaluate((T) => [...document.querySelectorAll(`${T} .gi`)].some((g) => /niesprzedawalny/.test(g.innerText)), T), 'w „Wszystkie” widać medale/odznaki jako „niesprzedawalny”');
+  await mkMode('sell');
   await sleep(300);
+  check(!(await page.evaluate((T) => [...document.querySelectorAll(`${T} .gi`)].some((g) => /niesprzedawalny/.test(g.innerText)), T)), 'w „Sprzedawalne” nie ma niesprzedawalnych');
   // search box
   await setInput('#i-q', 'karambit', 'input');
   await page.waitForFunction((T) => document.querySelectorAll(`${T} .gi`).length === 1, { timeout: 5000 }, T);
@@ -441,6 +454,7 @@ await run('Ekwipunek', async () => {
 });
 
 await run('Historia', async () => {
+  await page.evaluate(() => localStorage.setItem('gm_patternsUser', JSON.stringify('AK-47 | Slate: 123 = test historia')));
   await navTab('Historia');
   await waitLog(/Historia: \+6 nowych transakcji/, 60000);
   const trades = await gm('trades');
@@ -450,7 +464,7 @@ await run('Historia', async () => {
   }
   const sold = trades[`9003_${HIST[0].pid}`];
   check(sold?.price === receivedFromBuyer(260) && sold.type === 'sell', `sprzedaż zapisana po prowizji: 2,60 zł → ${receivedFromBuyer(260)} gr`);
-  check((await gm('tradesFmt')) === 4, 'format historii oznaczony jako aktualny');
+  check((await gm('tradesFmt')) === 5, 'format historii oznaczony jako aktualny');
   await setInput('#h-per', '0');
   await page.waitForFunction(() => document.querySelectorAll('#h-tbl tbody tr').length >= 6, { timeout: 15000 });
   const cards = (await text('#h-cards')).replace(/\n+/g, ' ');
@@ -459,6 +473,27 @@ await run('Historia', async () => {
   await checkTips('Historia');
   const rows = await page.$$eval('#h-tbl tbody tr', (r) => r.map((x) => x.innerText.replace(/\s+/g, ' ')));
   check(rows.some((r) => /AK-47 \| Slate/.test(r)) && rows.some((r) => /Recoil Case/.test(r)), `tabela transakcji: ${rows.length} wierszy`);
+  const slate = rows.find((r) => /AK-47 \| Slate/.test(r) && /seed/.test(r)) || '';
+  check(/seed 123/.test(slate) && /💎 test historia/.test(slate), `dawna sprzedaż z seedem z historii rynku i znakiem 💎 (${slate.slice(0, 140)})`);
+  await page.evaluate(() => localStorage.removeItem('gm_patternsUser'));
+  // one set of sync buttons (there were three: market, inventory history, store purchases)
+  check(await page.evaluate((T) => !document.querySelector(`${T} [data-a="ihsync"], ${T} [data-a="storehist"], ${T} [data-a="sync"]`), T), 'jeden komplet przycisków synchronizacji (bez dubli w podzakładkach)');
+  const storeLogs = () => page.evaluate(() => (document.querySelector('#stt .log').innerText.match(/Historia zakupów Steam:/g) || []).length);
+  const before = await storeLogs();
+  await clickEl(`${T} [data-a="syncall"]`);
+  // all three done: the store purchases logged again and the button is active again (greyed out while it runs)
+  await page.waitForFunction((n, T) => (document.querySelector('#stt .log').innerText.match(/Historia zakupów Steam:/g) || []).length > n && !document.querySelector(`${T} [data-a="syncall"]`).disabled, { timeout: 30000 }, before, T);
+  check(true, '„Synchronizuj” odświeża po kolei rynek, historię ekwipunku i historię zakupów');
+  // the game filter at the top also picks which game's inventory history is shown
+  await clickEl(`${T} [data-ht="ih"]`);
+  await waitText('#ih-list', /Kolega/, 30000);
+  await setInput('#h-game', '753');
+  await sleep(300);
+  check(!/Kolega/.test(await text('#ih-list')), 'filtr gry: historia ekwipunku tylko kart Steam (w teście pusta)');
+  await setInput('#h-game', 'all');
+  await sleep(300);
+  check(/Kolega/.test(await text('#ih-list')), 'filtr gry: „wszystkie gry” pokazuje znów zdarzenia CS2');
+  await clickEl(`${T} [data-ht="tx"]`);
   await waitText('#h-tbl', /MP7 \| Army Recon/, 30000);
   check(true, 'zakup widoczny tylko w historii ekwipunku trafił do transakcji (cena szacowana)');
   await setInput('#h-view', 'item');
@@ -477,7 +512,7 @@ await run('Historia', async () => {
   // opened cases
   await clickEl(`${T} [data-ht="cs"]`);
   await waitText(`${T} [data-sec="cs"]`, /Revolution Case/, 30000);
-  await clickEl(`${T} [data-a="storehist"]`);
+  await clickEl(`${T} [data-a="syncall"]`); // one button syncs all three histories (store purchases among them)
   await waitText(`${T} [data-sec="cs"]`, /10,35 zł/, 30000);
   const cs = (await text(`${T} [data-sec="cs"]`)).replace(/\n+/g, ' ');
   console.log('    skrzynie: ' + cs.slice(0, 300));
@@ -494,11 +529,17 @@ await run('Historia', async () => {
   // a full sync that fails half-way must not wipe the saved trades
   await clickEl(`${T} [data-ht="tx"]`);
   state.failHistory = true;
-  await clickEl(`${T} [data-a="full"]`);
+  await page.waitForFunction((T) => !document.querySelector(`${T} [data-a="fullall"]`).disabled, { timeout: 30000 }, T); // no sync running
+  await clickEl(`${T} [data-a="fullall"]`);
+  console.log('    okno: ' + (await confirmModal()));
   await waitLog(/Historia: HTTP 500/, 30000);
   state.failHistory = false;
   check(Object.keys(await gm('trades')).length === 6, 'nieudana pełna synchronizacja nie kasuje zapisanych transakcji');
-  await clickEl(`${T} [data-a="full"]`);
+  // the rest of that full run (inventory histories, store purchases) first: the buttons are greyed out until then
+  await page.waitForFunction((T) => !document.querySelector(`${T} [data-a="fullall"]`).disabled, { timeout: 30000 }, T);
+  check(true, 'przyciski synchronizacji są wyszarzone, dopóki trwa poprzednia');
+  await clickEl(`${T} [data-a="fullall"]`);
+  console.log('    okno: ' + (await confirmModal()));
   await page.waitForFunction(() => (document.querySelector('#stt .log').innerText.match(/Historia: \+\d+ nowych transakcji \(razem 6\)/g) || []).length >= 2, { timeout: 30000 });
   check(Object.keys(await gm('trades')).length === 6, 'ponowna pełna synchronizacja: nadal 6 transakcji, bez duplikatów');
 });
@@ -518,14 +559,14 @@ await run('Okazje', async () => {
   const reqs = Object.values(histHits).reduce((s, x) => s + x, 0);
   await setInput('#f-n', '3', 'input');
   const plan3 = (await text('#f-plan')).replace(/\s+/g, ' ');
-  check(/Od ręki 3 szt\.: ustaw zlecenie na 0,60 zł – zapłacisz razem 1,77 zł/.test(plan3), '3 szt. od ręki: jedna za 0,57 i dwie za 0,60 → zlecenie na 0,60 zł, razem 1,77 zł');
+  check(/Od ręki 3 szt\.: ustaw zlecenie na 0,60 zł, zapłacisz razem 1,77 zł/.test(plan3), '3 szt. od ręki: jedna za 0,57 i dwie za 0,60 → zlecenie na 0,60 zł, razem 1,77 zł');
   check(Object.values(histHits).reduce((s, x) => s + x, 0) === reqs, 'zmiana liczby sztuk nie odpytuje Steama ponownie');
   await checkTips('Okazje');
   // watchlist
   await clickEl(`${T} [data-v="watch"]`);
   await setInput('#w-add', 'Fracture Case');
   await clickEl(`${T} [data-a="wadd"]`);
-  await waitText('#w-table', /Obserwujesz 1 .*Fracture Case/, 5000);
+  await waitText('#w-table', /Obserwujesz 1\b.*Fracture Case/, 5000);
   check(true, 'dodany przedmiot widać od razu na liście obserwowanych');
   await clickEl(`${T} [data-a="wscan"]`);
   await page.waitForFunction((T) => document.querySelector(`${T} [data-a="stop"]`).hidden && /zł/.test(document.querySelector('#w-table')?.innerText || ''), { timeout: 40000 }, T);
@@ -560,7 +601,7 @@ await run('Okazje → szybki flip, szukanie do skutku', async () => {
   await waitLog(/Skaner zakończony: sprawdzono [34], znaleziono 1 z 1/, 60000);
   check(!bookHits['Dull D Test Case'] && !bookHits['Dull E Test Case'], 'po znalezieniu 1 przedmiotu skaner nie idzie dalej po liście');
   check((await gm('flipSeen'))?.['Dull A Test Case']?.k === 'q', 'odrzucony przedmiot jest zapamiętany (nie będzie pobierany przy następnym skanie)');
-  check(bookHits['Dull A Test Case'] === 1 && !histHits['Dull A Test Case'] && histHits['Flip Test Case'] === 1, 'przedmiot bez szans (ciasna księga zleceń) odpada po 1 zapytaniu – historia cen nie jest pobierana');
+  check(bookHits['Dull A Test Case'] === 1 && !histHits['Dull A Test Case'] && histHits['Flip Test Case'] === 1, 'przedmiot bez szans (ciasna księga zleceń) odpada po 1 zapytaniu, historia cen nie jest pobierana');
   const note = (await text('#s-table .note')).replace(/\s+/g, ' ');
   console.log('    nagłówek: ' + note.slice(0, 160));
   check(/Znaleziono 1 z 1 · sprawdzono [34] \(pozycja 4 z 6 na liście Steama dla tej kategorii\) · 1 ryzykownych \(ukryte/.test(note), 'nagłówek: znaleziono 1 z 1, sprawdzono 3, 1 ryzykowny ukryty');
@@ -575,9 +616,9 @@ await run('Okazje → szybki flip, szukanie do skutku', async () => {
   const before = { ...bookHits };
   await setInput('#s-find', '3');
   await clickEl(`${T} [data-a="scan"]`);
-  await waitLog(/Steam zwrócił pustą stronę na pozycji 4 z 6 – ponawiam za 5 s/, 60000);
-  check(true, 'pusta strona w środku listy nie kończy skanu – skaner czeka i pyta ponownie');
-  await waitLog(/Skaner: koniec listy – sprawdzono 6, znaleziono 1 z 3\. Lista Steama dla tej kategorii: pozycja 6 z 6\./, 60000);
+  await waitLog(/Steam zwrócił pustą stronę na pozycji 4 z 6, ponawiam za 5 s/, 60000);
+  check(true, 'pusta strona w środku listy nie kończy skanu, skaner czeka i pyta ponownie');
+  await waitLog(/Skaner: koniec listy, sprawdzono 6, znaleziono 1 z 3\. Lista Steama dla tej kategorii: pozycja 6 z 6\./, 60000);
   check(bookHits['Dull C Test Case'] === 1 && bookHits['Flip Test Case'] === before['Flip Test Case'], 'drugi skan: sprawdza tylko nowy przedmiot, wcześniejszych nie pobiera drugi raz');
   check(/koniec listy/.test(await text('#s-table .note')), 'nagłówek mówi, że lista się skończyła');
   check(await page.$eval(`${T} [data-a="stop"]`, (b) => b.hidden), 'przycisk Stop znika po zakończeniu');
@@ -585,7 +626,7 @@ await run('Okazje → szybki flip, szukanie do skutku', async () => {
   await setInput('#s-find', '');
   await clickEl(`${T} [data-a="scan"]`);
   await waitLog(/bez limitu/, 10000);
-  await waitLog(/Skaner: koniec listy – sprawdzono 6, znaleziono 1\./, 60000);
+  await waitLog(/Skaner: koniec listy, sprawdzono 6, znaleziono 1\./, 60000);
   check(/Znaleziono 1 · sprawdzono 6 \(pozycja 6 z 6 na liście Steama dla tej kategorii\)/.test((await text('#s-table .note')).replace(/\s+/g, ' ')), 'puste „Ile znaleźć” = bez limitu: nagłówek bez „z N”, skan do końca listy');
   check((await gm('flipFind')) === '', 'ustawienie „bez limitu” jest zapamiętane');
   await setInput('#s-find', '5');
@@ -599,7 +640,7 @@ await run('Czy warto otwierać?', async () => {
   await waitLog(/Skrzynie: gotowe\./, 90000);
   const log = await logText();
   check(/klucz 10,35 zł, jak Twój ostatni klucz/.test(log), 'koszt klucza wzięty z Twojego ostatniego zakupu (10,35 zł)');
-  check(!/Skrzynie: (Revolution|Fracture) Case –/.test(log), 'obie skrzynie policzone bez ostrzeżeń');
+  check(!/Skrzynie: (Revolution|Fracture) Case,/.test(log), 'obie skrzynie policzone bez ostrzeżeń');
   const rows = await page.$$eval('#k-tbl tbody tr[data-hash]', (r) => r.map((x) => x.innerText.replace(/\s+/g, ' ')));
   rows.forEach((r) => console.log('    ' + r.slice(0, 200)));
   check(rows.length === 2 && rows.every((r) => /%/.test(r)), 'tabela: 2 skrzynie ze zwrotem w %');
@@ -619,6 +660,32 @@ await run('Ustawienia', async () => {
   await clickEl(`${T} [data-a="resetlanes"]`);
   await waitLog(/Zresetowano tempo zapytań/, 5000);
   check(true, 'reset tempa zapytań działa');
+  // SMOKE_SHOTS=<dir>: pictures of the settings tab (top and bottom, "Zaawansowane" open) to look at the layout
+  if (process.env.SMOKE_SHOTS) {
+    await page.$eval(`${T} details`, (d) => { d.open = true; });
+    for (const [name, top] of [['ustawienia-1', 0], ['ustawienia-2', 1e6]]) {
+      await page.$eval('#stt .body', (b, y) => { b.scrollTop = y; }, top);
+      await sleep(200);
+      await (await page.$('#stt')).screenshot({ path: `${process.env.SMOKE_SHOTS}/${name}.png` });
+    }
+    await page.$eval(`${T} details`, (d) => { d.open = false; });
+    const fab = await page.$("#stt-fab");
+    if (fab) await fab.screenshot({ path: `${process.env.SMOKE_SHOTS}/fab.png` }).catch(() => {});
+  }
+  // debug mode: diagnostic tools hidden by default, shown after ticking the box
+  const shown = (sel) => page.$eval(sel, (e) => getComputedStyle(e).display !== 'none').catch(() => null);
+  check(await shown(`${T} .set-sec.dbg`) === false && await shown('#stt header h2 .dbg') === false, 'bez trybu debugowania licznik zapytań i numer wersji są ukryte');
+  await clickEl(`${T} input[data-k="debug"]`);
+  await page.waitForFunction(() => document.querySelector('#stt').classList.contains('dbg-on'), { timeout: 5000 });
+  check(await shown(`${T} .set-sec.dbg`) === true && await shown('#stt header h2 .dbg') === true, 'tryb debugowania je pokazuje');
+  await clickEl(`${T} input[data-k="debug"]`);
+  // the log can be switched off and back on
+  await clickEl(`${T} input[data-k="showLog"]`);
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#stt .log')).display === 'none', { timeout: 5000 });
+  check(true, 'dziennik da się wyłączyć');
+  await clickEl(`${T} input[data-k="showLog"]`);
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#stt .log')).display !== 'none', { timeout: 5000 });
+  check(true, 'i z powrotem włączyć');
 });
 
 await run('Okno wymiany', async () => {
@@ -651,4 +718,4 @@ if (fw.length) console.log('\nOstrzeżenia skryptu w konsoli:\n    ' + fw.join('
 if (errLines.length) console.log('\nCzerwone wpisy w dzienniku (ostatnia strona):\n    ' + errLines.join('\n    '));
 const real = errors.filter(Boolean);
 if (real.length) { console.log(`\nBŁĘDY (${real.length}):\n  - ` + real.join('\n  - ')); process.exit(1); }
-console.log('\nOK – wszystkie kroki przeszły, brak błędów JS');
+console.log('\nOK, wszystkie kroki przeszły, brak błędów JS');

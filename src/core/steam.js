@@ -208,6 +208,48 @@ function saveShared(lane, patch) {
   store.set(LANE_KEY, all);
 }
 
+// ---------------------------------------------------------------- request counter (measuring only)
+// How many requests went to Steam, per lane and per endpoint, by the hour (all tabs together, the last 48 hours), and
+// how many were answered 429. Shown in the settings, to see what really costs requests before changing anything.
+const REQ_KEY = 'reqStats';
+let reqPend = {};
+const hourOf = (t = Date.now()) => Math.floor(t / 3600000) * 3600000;
+function countReq(key, n = 1) {
+  const h = hourOf();
+  const b = (reqPend[h] ||= {});
+  b[key] = (b[key] || 0) + n;
+}
+// "https://steamcommunity.com/market/listings/730/AK-47.../render?…" → "/market/listings/…/render"
+const endpointOf = (url) => {
+  try {
+    const p = new URL(url, ORIGIN).pathname;
+    if (/^\/inventory\//.test(p)) return '/inventory';
+    if (/^\/market\/listings\//.test(p)) return /\/render\/?$/.test(p) ? '/market/listings/…/render' : '/market/listings/…';
+    if (/^\/(id|profiles)\//.test(p)) return /inventoryhistory/.test(p) ? '/…/inventoryhistory' : '/…/(profil)';
+    return p.replace(/\/\d{5,}(\/|$)/g, '/…$1').replace(/\/$/, '');
+  } catch { return '?'; }
+};
+function flushReq() {
+  const pend = reqPend;
+  reqPend = {};
+  if (!Object.keys(pend).length) return;
+  try {
+    const all = store.get(REQ_KEY, {}) || {};
+    for (const [h, b] of Object.entries(pend)) { const t = (all[h] ||= {}); for (const [k, n] of Object.entries(b)) t[k] = (t[k] || 0) + n; }
+    const lim = hourOf() - 48 * 3600000;
+    for (const h of Object.keys(all)) if (+h < lim) delete all[h];
+    store.set(REQ_KEY, all);
+  } catch { /* measuring is optional */ }
+}
+if (typeof window !== 'undefined') { setInterval(flushReq, 15000); window.addEventListener('beforeunload', flushReq); }
+/** { hour: {key: n}, day: {key: n} }: keys "lane:hist", "429:hist", "url:/market/orderbook" */
+export function requestStats() {
+  flushReq();
+  const all = store.get(REQ_KEY, {}) || {};
+  const now = hourOf(), sum = (from) => { const o = {}; for (const [h, b] of Object.entries(all)) if (+h >= from) for (const [k, n] of Object.entries(b)) o[k] = (o[k] || 0) + n; return o; };
+  return { hour: sum(now), day: sum(now - 23 * 3600000), since: now };
+}
+
 export function laneStats() {
   const all = shared();
   return Object.fromEntries(Object.keys(LANES).filter((k) => !LANES[k].fixed).map((k) => [k, all[k]?.iv ?? LANES[k].start]));
@@ -228,6 +270,7 @@ export function schedule(lane, fn) {
         await sleep(Math.min(wait, 2000)); // re-check: another tab may have changed the schedule
       }
       saveShared(lane, { next: Date.now() + interval() });
+      countReq('lane:' + lane);
       try {
         const r = await fn();
         if (!cfg.fixed && ++l.ok >= 8) {
@@ -237,6 +280,7 @@ export function schedule(lane, fn) {
         return r;
       } catch (e) {
         if (e.status === 429) {
+          countReq('429:' + lane);
           l.ok = 0;
           const s = shared()[lane] || {};
           const backoff = Math.min((s.backoff || 15000) * 2, 600000);
@@ -258,6 +302,7 @@ export function schedule(lane, fn) {
 }
 
 async function getJSON(url) {
+  countReq('url:' + endpointOf(url));
   const r = await fetch(url, { credentials: 'include' });
   if (!r.ok) throw new HttpError(r.status, r.status === 429 ? 'Steam: za dużo zapytań (429)' : r.status === 403 ? 'Brak dostępu (403), prywatny ekwipunek lub wylogowano' : undefined);
   const t = await r.text();
@@ -265,12 +310,14 @@ async function getJSON(url) {
 }
 
 async function getText(url) {
+  countReq('url:' + endpointOf(url));
   const r = await fetch(url, { credentials: 'include' });
   if (!r.ok) throw new HttpError(r.status, r.status === 429 ? 'Steam: za dużo zapytań (429)' : undefined);
   return r.text();
 }
 
 async function post(url, data, referrer) {
+  countReq('url:' + endpointOf(url));
   const r = await fetch(url, {
     method: 'POST',
     credentials: 'include',
@@ -393,6 +440,18 @@ export function sellResultText(res) {
 // short-lived inventory cache shared between pages (panel ↔ badges on Steam's inventory page),
 // so we don't hit Steam's strict inventory rate limit twice for the same data
 const INV_CACHE_KEY = 'invcache';
+/**
+ * The inventory as the last load of it saved it (any tab), without asking Steam: the given contexts merged (first
+ * one first, each asset once) → { at (when the first was loaded), items }, or null when the first isn't saved
+ */
+export function cachedInventory(steamId = ctx().steamId, appid = 730, contexts = [2]) {
+  const all = store.get(INV_CACHE_KEY, {});
+  const main = all[`${steamId}|${appid}|${contexts[0]}`];
+  if (!main?.items) return null;
+  const seen = new Set(), items = [];
+  for (const c of contexts) for (const it of all[`${steamId}|${appid}|${c}`]?.items || []) if (!seen.has(it.assetid)) { seen.add(it.assetid); items.push(it); }
+  return { at: main.at, items };
+}
 export async function inventory(steamId = ctx().steamId, appid = 730, contextid = 2, { maxAgeMin = 0 } = {}) {
   const key = `${steamId}|${appid}|${contextid}`;
   if (maxAgeMin > 0) {
@@ -415,9 +474,13 @@ export async function inventory(steamId = ctx().steamId, appid = 730, contextid 
 // float we've seen per assetid, so a listed item still shows its float if we saw it before listing.
 const PROPS_KEY = 'assetProps';
 const PROPS_MAX = 8000;
+// kept in memory: read for every item shown (a listed item, a badge on the inventory page), and every read from GM
+// storage copies all 8000 entries; re-read after 30 s (another tab may have added some)
+let propsMem = null, propsAt = 0;
+const propsAll = () => (propsMem && Date.now() - propsAt < 30000 ? propsMem : ((propsAt = Date.now()), (propsMem = store.get(PROPS_KEY, {}))));
 export function rememberProps(items) {
   try {
-    const m = store.get(PROPS_KEY, {});
+    const m = propsAll();
     let changed = false;
     for (const i of items) {
       if (i.float == null && !i.nameTag) continue;
@@ -428,12 +491,13 @@ export function rememberProps(items) {
     const keys = Object.keys(m);
     if (keys.length > PROPS_MAX) { keys.slice(0, keys.length - PROPS_MAX).forEach((k) => delete m[k]); changed = true; }
     if (changed) store.set(PROPS_KEY, m);
+    propsMem = m; propsAt = Date.now();
   } catch { /* optional */ }
 }
 /** fill float/seed/nameTag from memory when missing */
 export function recallProps(item) {
   if (!item || (item.float != null && item.nameTag)) return item;
-  const v = store.get(PROPS_KEY, {})[item.assetid];
+  const v = propsAll()[item.assetid];
   if (!v) return item;
   return { ...item, float: item.float ?? v[0], seed: item.seed ?? v[1], nameTag: item.nameTag || v[2] };
 }
@@ -607,15 +671,22 @@ export function parseOrderBook(b) {
 }
 
 let orderBookBroken = false;
+let histWarned = false; // the fallback is said in the console once per page, not for every item
 export async function histogram(appid, hash) {
   if (!orderBookBroken) {
-    try {
-      return await orderBook(appid, hash);
-    } catch (e) {
-      if (e.status === 429) throw e;
-      if (e.status === 404) orderBookBroken = true; // endpoint gone → use legacy path from now on
-      else if (e.message === 'brak danych o zleceniach') throw new Error(`brak danych o zleceniach (sprawdź nazwę: ${hash})`);
-      console.warn('[Flipster] orderbook failed, trying legacy histogram', e);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await orderBook(appid, hash);
+      } catch (e) {
+        if (e.status === 429) throw e;
+        if (e.status === 404) { orderBookBroken = true; break; } // endpoint gone → use legacy path from now on
+        if (e.message === 'brak danych o zleceniach') throw new Error(`brak danych o zleceniach (sprawdź nazwę: ${hash})`);
+        // a Steam server hiccup (502 Bad Gateway & co.): once more after a moment, before the slower old endpoint
+        // (it needs the item's page first)
+        if (e.status >= 500 && attempt === 0) { await sleep(1500); continue; }
+        if (!histWarned) { histWarned = true; console.warn('[Flipster] orderbook failed, trying legacy histogram', e); }
+        break;
+      }
     }
   }
   return legacyHistogram(appid, hash);
@@ -671,30 +742,6 @@ async function fetchPriceHistory(appid, hash) {
 
 export const myHistoryPage = (start, count = 500) =>
   schedule('market', () => getJSON(`${ORIGIN}/market/myhistory/render/?query=&start=${start}&count=${count}&norender=1`));
-
-/**
- * Official localized CS2 wear names, straight from Steam (market search in the user's language):
- * the market_name of any item in a wear category ends with "(<wear name>)". Cached permanently.
- * returns { 'Factory New': 'prosto z fabryki', … }
- */
-const WEAR_TAGS = ['Factory New', 'Minimal Wear', 'Field-Tested', 'Well-Worn', 'Battle-Scarred'];
-export async function wearNames(lang = 'polish') {
-  const key = 'wearNames_' + lang;
-  const cached = store.get(key, null);
-  if (cached && Object.keys(cached).length === WEAR_TAGS.length) return cached;
-  const out = { ...(cached || {}) };
-  for (let i = 0; i < WEAR_TAGS.length; i++) {
-    if (out[WEAR_TAGS[i]]) continue;
-    try {
-      const d = await schedule('market', () =>
-        getJSON(`${ORIGIN}/market/search/render/?norender=1&appid=730&start=0&count=3&l=${lang}&category_730_Exterior%5B%5D=tag_WearCategory${i}`));
-      const name = (d.results || []).map((r) => r.asset_description?.market_name || r.name || '').map((n) => n.match(/\(([^()]+)\)\s*$/)?.[1]).find(Boolean);
-      if (name) out[WEAR_TAGS[i]] = name;
-    } catch (e) { console.warn('[Flipster] nazwy stanów', e.message); break; }
-  }
-  store.set(key, out);
-  return out;
-}
 
 /** the HTML version, what Steam's own "My market history" tab renders (up to date, unlike norender=1) */
 export const myHistoryHtmlPage = (start, count = 100) =>

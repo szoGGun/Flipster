@@ -292,15 +292,16 @@ export function parseMyHistoryHtml(d, parse, now = new Date(), dateOf = null) {
     const hash = desc.market_hash_name;
     if (!hash || !(price > 0)) continue;
     const amount = parseInt(desc.amount ?? desc.original_amount, 10) || 1;
-    // float, when Steam includes asset properties in the history assets (propertyid 2 = wear rating)
+    // float and pattern seed, when Steam includes asset properties in the history assets (2 = wear rating, 1 = seed)
     const fl = (desc.asset_properties || []).find((p) => p.propertyid === 2)?.float_value;
+    const sd = (desc.asset_properties || []).find((p) => p.propertyid === 1)?.int_value;
     out.push({
       key: row.id.replace('history_row_', ''),
       t, type: sign === '+' ? 'buy' : 'sell', hash, appid: String(a.appid || 730), amount,
       // buys: what you paid; sells: Steam shows the buyer's price → converted to "received" by the caller
       price: Math.round(price / amount), priceIsBuyer: sign === '-', pending,
       cur: curFromText(priceTxt), name: desc.name, icon: desc.icon_url, color: desc.name_color,
-      assetid: a.id || null, float: fl != null ? parseFloat(fl) : null,
+      assetid: a.id || null, float: fl != null ? parseFloat(fl) : null, seed: sd != null ? parseInt(sd, 10) : null,
     });
   }
   return out;
@@ -314,22 +315,6 @@ function parsePriceCents(s) {
   let int = v, dec = '';
   if (di >= 0 && v.length - di - 1 <= 2) { int = v.slice(0, di); dec = v.slice(di + 1); }
   return parseInt(int.replace(/[.,]/g, '') || '0', 10) * 100 + parseInt((dec + '00').slice(0, 2), 10);
-}
-
-/**
- * wear from a CS2 market hash name: "AK-47 | Redline (Field-Tested)" → {short: "FT", en: "Field-Tested", pl: <official name>}
- * Official localized names come from Steam (steam.wearNames) and are passed in; without them the English name is used.
- */
-// verified against Steam's Polish market names (fallback when the live lookup isn't available)
-const WEAR_PL = {
-  'Factory New': 'prosto z fabryki', 'Minimal Wear': 'lekkie zużycie', 'Field-Tested': 'po testach bojowych',
-  'Well-Worn': 'mocne zużycie', 'Battle-Scarred': 'po ciężkich walkach',
-};
-const WEAR_SHORT = { 'Factory New': 'FN', 'Minimal Wear': 'MW', 'Field-Tested': 'FT', 'Well-Worn': 'WW', 'Battle-Scarred': 'BS' };
-export function wearOf(hash = '', names = null) {
-  const m = hash.match(/\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)\s*$/);
-  if (!m) return null;
-  return { short: WEAR_SHORT[m[1]], en: m[1], pl: names?.[m[1]] || WEAR_PL[m[1]] };
 }
 
 /**
@@ -359,8 +344,12 @@ export function optimalSellPrice({ sellGraph, mine = {}, perDay, maxWaitDays = 2
     ahead += l.qty;
   }
   if (!best) best = { price: Math.max(MIN_BUYER, others[0].price - undercut), waitDays: 1 / perDay, ahead: 0 };
-  if (rule.max != null && best.price > rule.max) best = { ...best, price: rule.max };
-  if (rule.min != null && best.price < rule.min) best = { ...best, price: rule.min, belowMin: true };
+  // a price set by your max / min has its own queue: everything listed at or under it goes first (it used to keep
+  // the wait of the price it replaced: Glock Royal Legion "3,9 dnia" was the wait one cent under the cheapest, shown
+  // for the 145,01 minimum with a listing in front of it)
+  const at = (p) => { let a = 0; for (const l of others) if (l.price <= p) a += l.qty; return { ahead: a, waitDays: (a + 1) / perDay }; };
+  if (rule.max != null && best.price > rule.max) best = { ...best, price: rule.max, ...at(rule.max) };
+  if (rule.min != null && best.price < rule.min) best = { ...best, price: rule.min, belowMin: true, ...at(rule.min) };
   return best;
 }
 
@@ -380,8 +369,10 @@ export const LIST_SHARE = 0.6;
  *  sellNow, listing would bring at most ~2% (min 1 grosz) more than selling to the buy order now: not worth the wait
  *  dumped, the cheapest listing is ≥ 15% under the typical sale: others are dumping, waiting may pay
  * sellGraph: cumulative [[price, qty]]; perDay: all sales per day; d7 / d30: typical sale prices; net: buyer → seller.
+ * held: the price at least half of the recent units sold at (sellsignals.recentMedian), a cap too: the queue counts
+ * buyers, not what they pay (a test item was proposed at 2,59 zł after 0 of 881 units in 14 days sold that high).
  */
-export function listAdvice({ sellGraph, highestBuy = null, perDay = null, d7 = null, d30 = null, net, maxWaitDays = 2, undercut = 1, mine = {} }) {
+export function listAdvice({ sellGraph, highestBuy = null, perDay = null, d7 = null, d30 = null, held = null, net, maxWaitDays = 2, undercut = 1, mine = {} }) {
   const asks = levels(sellGraph);
   if (!asks.length) return null;
   const quick = realPrice(Math.max(MIN_BUYER, asks[0].price - undercut), net);
@@ -390,7 +381,8 @@ export function listAdvice({ sellGraph, highestBuy = null, perDay = null, d7 = n
   const rate = perDay > 0 ? perDay * LIST_SHARE : null;
   let price = quick, wait = rate ? 1 / rate : null, ahead = 0;
   if (rate) {
-    const o = optimalSellPrice({ sellGraph, mine, perDay: rate, maxWaitDays: maxWaitDays * (falling ? 0.5 : 1), undercut, cap: typical ? Math.round(typical * 1.25) : null });
+    const cap = [typical ? Math.round(typical * 1.25) : null, held].filter((x) => x > 0);
+    const o = optimalSellPrice({ sellGraph, mine, perDay: rate, maxWaitDays: maxWaitDays * (falling ? 0.5 : 1), undercut, cap: cap.length ? Math.min(...cap) : null });
     if (o && realPrice(o.price, net) > quick) { price = realPrice(o.price, net); wait = o.waitDays; ahead = o.ahead; }
   }
   const instant = highestBuy ? { price: highestBuy, net: net(highestBuy) } : null;
@@ -425,36 +417,73 @@ export function floatRank(f, range = null) {
 // The queue model above assumes the cheaper listings ahead of you just get bought, but new, cheaper ones keep
 // arriving (undercutting bots), and part of the sales go to buy orders. On 182 items it promised "sells in hours" at
 // prices that the next 2 days reached only ~1 time in 3. Instead: how often did this item's price actually reach
-// k × its typical price within N days, over the last month, hour by hour?
+// k × its price at the time within N days, over the last month, hour by hour?
+// Fixed 2026-11-20 (M4A4 Desolate Space MW: "96,28 zł, 63% in a day" with the cheapest listing at 78,56 zł):
+// - "reached" used to be ANY hour at ≥ the price. A skin that sells one unit an hour shows every buyer who picked a
+//   better float or pattern as a spike, and those count for nobody else's listing. Now the price must hold over
+//   FILL_RUN units in a row (their volume-weighted median ≥ the price): the cheapest listings really got there.
+// - the price "at the time" used to be the 7-day median, which lags: a case at 0,68 zł after a week at 0,76 was told
+//   0,78 zł sells in a day 56% of the time. Now the last 24 h (REF_UNITS units at least). On 49 items against the
+//   order book at export it was the closest to the cheapest listing: median off 2,2% (7-day median: 6,3%).
+// Walk-forward (table from the data before, outcome in the days after, same rule): announced 55% → 56%, 65% → 66%,
+// 85% → 88%. The old table judged by this rule: announced 65% → 47%, 84% → 67%.
 export const FILL_K = [0.97, 1, 1.02, 1.04, 1.06, 1.08, 1.1, 1.13, 1.16, 1.2, 1.25, 1.3];
 export const FILL_N = [1, 2, 4, 7];
+export const FILL_RUN = 5;
+const REF_UNITS = 5;
+/** the waiting time as the fill table knows it: the first of 1, 2, 4, 7 days that is at least maxWaitDays */
+export const horizonOf = (maxWaitDays = 2) => FILL_N.find((x) => x >= maxWaitDays) ?? FILL_N[FILL_N.length - 1];
 const HOUR_MS = 3600000;
+
+/** the highest price the market held: the volume-weighted median of every run of hours with ≥ FILL_RUN units */
+function heldTop(next) {
+  let top = -Infinity;
+  for (let i = 0; i < next.length; i++) {
+    let u = 0, j = i;
+    while (j < next.length && u < FILL_RUN) u += next[j++].vol;
+    if (u < FILL_RUN && i > 0) break; // the tail is part of the run before it (a window with fewer units: all of them)
+    const m = vwMedian(next.slice(i, j));
+    if (m > top) top = m;
+  }
+  return top;
+}
 
 /**
  * points: price history [{t (ms), price, vol}] (Steam gives hours for the last month). For start hours every 3 h:
- * ref = volume-weighted median of the 7 days before; P[N][i] = share of starts where some hour of the next N days
- * traded at ≥ FILL_K[i] × ref; D[N] = average median of the N-th day ÷ ref (what selling "at the market" then gave).
- * ref (returned) = today's 7-day median, the table is applied relative to it. null when there are too few hours.
+ * r = the price then (volume-weighted median of the 24 h before, further back up to 7 days until REF_UNITS units);
+ * P[N][i] = share of starts where the next N days held (heldTop) ≥ FILL_K[i] × r; D[N] = average median of the N-th
+ * day ÷ r (what selling "at the market" then gave). ref (returned) = the same price now, the table is applied
+ * relative to it (anchorTable caps it by today's listings). null when there are too few hours.
  */
 export function fillTable(points, { minStarts = 24 } = {}) {
   if (!points?.length) return null;
   const end = points[points.length - 1].t;
   const hr = points.filter((p) => p.t > end - 30 * DAY_MS && p.vol > 0);
   if (hr.length < 120) return null; // too thin for hour-by-hour statistics
-  const ref = vwMedian(hr.filter((p) => p.t > end - 7 * DAY_MS));
+  // the hours in time order (Steam sends them so; sorted just in case), windows (a, b] by binary search
+  const hs = hr.every((p, i) => !i || hr[i - 1].t <= p.t) ? hr : [...hr].sort((a, b) => a.t - b.t);
+  const after = (x) => { let lo = 0, hi = hs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (hs[m].t <= x) lo = m + 1; else hi = m; } return lo; };
+  const win = (a, b) => hs.slice(after(a), after(b));
+  const priceAt = (t) => {
+    const j = after(t);
+    let i = j, u = 0;
+    while (i > 0 && hs[i - 1].t > t - 7 * DAY_MS && (hs[i - 1].t > t - DAY_MS || u < REF_UNITS)) u += hs[--i].vol;
+    return u >= REF_UNITS ? vwMedian(hs.slice(i, j)) : null;
+  };
+  const ref = priceAt(end);
   if (!ref) return null;
   const P = {}, D = {};
   let n = 0;
+  const rOf = new Map(); // start → its price then (the same for every horizon)
   for (const N of FILL_N) {
     const hits = FILL_K.map(() => 0);
     let starts = 0, dsum = 0;
-    for (let t = hr[0].t + 7 * DAY_MS; t <= end - N * DAY_MS; t += 3 * HOUR_MS) {
-      const past = hr.filter((p) => p.t > t - 7 * DAY_MS && p.t <= t);
-      if (past.reduce((s, p) => s + p.vol, 0) < 7) continue;
-      const r = vwMedian(past);
-      const next = hr.filter((p) => p.t > t && p.t <= t + N * DAY_MS);
+    for (let t = hs[0].t + 7 * DAY_MS; t <= end - N * DAY_MS; t += 3 * HOUR_MS) {
+      if (!rOf.has(t)) rOf.set(t, priceAt(t));
+      const r = rOf.get(t);
+      const next = win(t, t + N * DAY_MS);
       if (!r || !next.length) continue;
-      const top = Math.max(...next.map((p) => p.price)) / r;
+      const top = heldTop(next) / r;
       FILL_K.forEach((k, i) => { if (top >= k) hits[i]++; });
       const lastDay = next.filter((p) => p.t > t + (N - 1) * DAY_MS);
       dsum += (vwMedian(lastDay.length ? lastDay : next) || r) / r;
@@ -466,6 +495,21 @@ export function fillTable(points, { minStarts = 24 } = {}) {
     if (N === 2) n = starts;
   }
   return Object.keys(P).length ? { ref, P, D, n } : null;
+}
+
+/**
+ * The table's price now, checked against today's listings (others' only): at most the price of the 3rd cheapest
+ * unit. A sale spike of the last 24 h isn't the market any more once 3 units are listed under it; one or two lone
+ * cheap listings don't drag it down. (Raising it to the cheapest listing when that is higher was not tested on
+ * data, so it isn't done.) Without listings the table as it is.
+ */
+export function anchorTable(table, sellGraph) {
+  const lv = levels(sellGraph);
+  if (!table || !lv.length) return table;
+  let cum = 0, third = lv[lv.length - 1].price;
+  for (const l of lv) { cum += l.qty; if (cum >= 3) { third = l.price; break; } }
+  const ref = Math.min(third, table.ref);
+  return ref === table.ref ? table : { ...table, ref };
 }
 
 /** chance (0-1) that price p is reached within the horizon, read off the table (linear between the grid points) */
@@ -482,8 +526,8 @@ export function fillChance(table, N, p) {
 }
 
 export const MIN_CHANCE = 0.5; // never propose a lottery ticket: at least an even chance to sell within the wait
-// walk-forward on 758 cases (182 items, 2026-11-17): announced 60-70% sold 56%, 70-80% → 65%, 80-90% → 77%,
-// the past month flatters a little; × 0.92 brings the announced chance in line with what then happened
+// the past month flatters a little; × 0.92 brings the announced chance in line with what then happened (fit on
+// 182 items 2026-11-17, still right for the 2026-11-20 table: 49 items, announced 55% → 56%, 65% → 66%, 85% → 88%)
 const CHANCE_FIT = 0.92;
 /**
  * Which price level to undercut, when cheaper listings may be left in front of you. Every level is an option: list
@@ -495,7 +539,7 @@ const CHANCE_FIT = 0.92;
  * → the chosen level's price, or null (no price history / no sales: the cheapest counts).
  */
 export function queueChoice({ table, perDay, levels: lv, net, undercut = 1, maxWaitDays = 2 }) {
-  const N = FILL_N.find((x) => x >= maxWaitDays) ?? FILL_N[FILL_N.length - 1];
+  const N = horizonOf(maxWaitDays);
   if (!table?.P?.[N] || !(perDay > 0) || !lv?.length) return null;
   const x = perDay * N;
   // P(at least m buyers within the wait)
@@ -514,18 +558,19 @@ export function queueChoice({ table, perDay, levels: lv, net, undercut = 1, maxW
   }
   return best ? best.price : null;
 }
-/** the announced chance for any price you type in (same fit as the advice) */
-export const sellChance = (table, N, p) => { const c = fillChance(table, N, p); return c == null ? null : c * CHANCE_FIT; };
+/** the announced chance for any price you type in (same fit as the advice); sellGraph: today's others' listings */
+export const sellChance = (table, N, p, sellGraph = null) => { const c = fillChance(anchorTable(table, sellGraph), N, p); return c == null ? null : c * CHANCE_FIT; };
 
 /**
  * Listing price from the item's own record: among real prices at k × typical (and one cent under the cheapest
  * listing), the one with the best expected result, sold at that price with its chance, otherwise sold at the market
  * at the end of the wait, keeping at least an even chance to sell. Returns the listAdvice() shape + chance/horizon.
  */
-export function listAdviceFill({ table, sellGraph, highestBuy = null, net, maxWaitDays = 2, undercut = 1 }) {
+export function listAdviceFill({ table: raw, sellGraph, highestBuy = null, net, maxWaitDays = 2, undercut = 1 }) {
   const asks = levels(sellGraph);
-  const N = FILL_N.find((x) => x >= maxWaitDays) ?? FILL_N[FILL_N.length - 1];
-  if (!table?.P?.[N] || !asks.length) return null;
+  const N = horizonOf(maxWaitDays);
+  if (!raw?.P?.[N] || !asks.length) return null;
+  const table = anchorTable(raw, sellGraph);
   const ref = table.ref;
   const quick = realPrice(Math.max(MIN_BUYER, asks[0].price - undercut), net);
   const later = net(Math.round(ref * table.D[N])); // not sold in time → sold at the market then
@@ -544,10 +589,10 @@ export function listAdviceFill({ table, sellGraph, highestBuy = null, net, maxWa
   const gain = instant ? best.ev - instant.net : null;
   return {
     method: 'fill', horizon: N, price: best.price, net: net(best.price), chance: best.chance, ev: best.ev, lowChance: !instantBest && !ok.length, instantBest,
-    options: opts.filter((o) => o.chance >= 0.2), quick, cheapest: asks[0].price, instant, typical: ref, starts: table.n,
+    options: opts.filter((o) => o.chance >= 0.2), quick, cheapest: asks[0].price, instant, typical: raw.ref, starts: table.n,
     falling: table.D[N] < 0.97, wait: null, rate: null, ahead: 0,
     sellNow: instant != null && (instantBest || gain <= Math.max(1, Math.round(instant.net * 0.02))),
-    dumped: asks[0].price < ref * 0.85,
+    dumped: asks[0].price < raw.ref * 0.85, // vs the sales: the anchored ref is never far above the cheapest
   };
 }
 
@@ -566,6 +611,28 @@ export function dailyBars(points) {
   for (const p of points) { const d = Math.floor(p.t / DAY_MS); const a = m.get(d); if (a) a.push(p); else m.set(d, [p]); }
   return [...m].sort((a, b) => a[0] - b[0]).map(([d, a]) => ({ d, med: vwMedian(a), v: a.reduce((q, p) => q + (p.vol || 1), 0) }));
 }
+
+// ---------------------------------------------------------------- the last half year, as information
+// Shown on the inventory cards as a plain fact ("↘ −30% w pół roku"), because it did happen (M4A4 Desolate Space MW:
+// 126 → 88 zł). Not a forecast: on the 800-item market sample such moves predicted neither more of the same nor a
+// rebound (see the note below).
+/** the price of the last 30 days, 3 and 6 months ago (volume-weighted medians of daily prices) → { now, m3, m6, t3, t6 } */
+export function recentTrend(points) {
+  if (!points?.length) return null;
+  const bars = dailyBars(points);
+  const last = bars[bars.length - 1].d;
+  const at = (d) => { const w = bars.filter((b) => b.d > d - 30 && b.d <= d); return w.length >= 5 ? vwMedian(w.map((b) => ({ price: b.med, vol: b.v }))) : null; };
+  const now = at(last), m3 = at(last - 91), m6 = at(last - 182);
+  if (!now) return null;
+  const ch = (x) => (x ? Math.round((now / x - 1) * 1000) / 1000 : null);
+  return { now, m3, m6, t3: ch(m3), t6: ch(m6) };
+}
+
+// ---------------------------------------------------------------- tried and dropped: "schodzi po skoku"
+// 2026-11-20: a chip for items ≥ 1.5× their 2-year median and lower than 6 months ago looked predictive on 44 items
+// (next 3 months −10%, n = 45 of 19 items). On a 800-item market sample (653 with 2+ years, 37 541 monthly points)
+// it wasn't: −0.2% (vs the market +2%), skins −2% per item, stickers strong only before 2025 and driven by a few.
+// A long or steady decline alone predicted nothing either (> 30% in 6 months: +0.0%). Don't rebuild it on a small sample.
 
 /**
  * What holding this item did in the past, NET of the market fee, from its own price history.

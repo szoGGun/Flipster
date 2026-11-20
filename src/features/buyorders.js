@@ -26,7 +26,7 @@ export function mount(root) {
       <button class="b go" data-a="newform">+ Nowe zlecenie</button>
       <span class="sub" id="b-state"></span>
       <span class="sp"></span>
-      <button class="b" data-a="research" title="Pobiera z Rynku Steam księgę zleceń i pełną historię cen przedmiotów z Twoich zleceń kupna i zapisuje je do pliku, do wspólnej analizy, czy i po ile sprzedawać. Tylko odczyt, niczego nie kupuje ani nie wystawia.">⬇ Dane do analizy</button>
+      <button class="b dbg" data-a="research" title="Pobiera z Rynku Steam księgę zleceń i pełną historię cen przedmiotów z Twoich zleceń kupna i zapisuje je do pliku, do wspólnej analizy, czy i po ile sprzedawać. Tylko odczyt, niczego nie kupuje ani nie wystawia.">⬇ Dane do analizy</button>
       <button class="b" data-a="autopanel" title="Automatyczne przebijanie w tle">⚙ Automat: <b id="b-autostate">${settings.autoBuy ? 'wł.' : 'wył.'}</b></button>
       <button class="b" data-a="stop" hidden>■ Stop</button>
     </div>
@@ -105,7 +105,7 @@ export function mount(root) {
     if (r) { e.preventDefault(); saveEdit(r); }
   });
   setInterval(() => {
-    if (ui.isOpen() && el.closest('.tab')?.classList.contains('on') && el.offsetParent && !checking && Date.now() - lastCheck > 2 * 60000) refresh();
+    if (ui.isOpen() && !document.hidden && el.closest('.tab')?.classList.contains('on') && el.offsetParent && !checking && Date.now() - lastCheck > 2 * 60000) refresh();
   }, 15000);
   root.querySelector('tbody').addEventListener('change', (e) => {
     const r = rows.find((x) => x.id === e.target.closest('tr')?.dataset.id);
@@ -194,6 +194,7 @@ function proposal(r) {
 }
 
 function render() {
+  if (!el) return; // the automation also runs in tabs where this list was never opened
   const tb = el.querySelector('tbody');
   const cnt = document.querySelector('#stt [data-mt="buy"] .cnt');
   if (cnt) cnt.textContent = `(${rows.length})`;
@@ -288,7 +289,9 @@ async function marketFor(list, tk, quiet) {
     try {
       r.h = await prices.hist(r.appid, r.hash, quiet ? 60000 : 5000);
       const comp = competitorBuy(r.h.buyGraph, shown(r), r.remaining, settings.ignoreBelow ?? 2);
-      if (quiet && comp != null && comp > shown(r) && !(r.comp != null && r.comp > shown(r))) ui.log(`Ktoś przebił Twoje zlecenie: ${r.hash}, ${steam.fmt(comp)} (Twoje ${steam.fmt(r.price)})`, 'warn');
+      if (quiet && comp != null && comp > shown(r) && !(r.comp != null && r.comp > shown(r))) {
+        ui.log(`Ktoś przebił Twoje zlecenie: ${r.hash}, ${steam.fmt(comp)} (Twoje ${steam.fmt(r.price)})`, 'warn');
+      }
       r.comp = comp;
       render();
     } catch (e) { setStatus(r, e.message, 'err'); if (e.status === 429) break; }
@@ -299,6 +302,7 @@ async function marketFor(list, tk, quiet) {
   const beaten = rows.filter((r) => r.comp != null && r.comp > shown(r)).length;
   ui.status('outbid', beaten ? `<b class="err">Przebite zlecenia: ${beaten}</b>` : null);
 }
+
 
 async function autoMarket() {
   if (checking || !rows.length) return;

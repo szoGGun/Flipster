@@ -74,12 +74,17 @@ export async function sync({ onProgress = () => {} } = {}) {
   }
   const uniq = [...new Map(rows.map((x) => [x.id, x])).values()];
   store.set(KEY, { at: Date.now(), rows: uniq });
+  mem = null;
   return uniq;
 }
 
 export const isCS = (x) => /counter-strike/i.test(x.items) && /in-game|purchase|w grze|zakup/i.test(x.type) && !x.refund;
-export const all = () => store.get(KEY, { rows: [] }).rows;
-export const syncedAt = () => store.get(KEY, { at: 0 }).at;
+// kept in memory: every case opening asks about its day (a copy of the whole history from GM storage each time);
+// re-read after 30 s, another tab may have synced
+let mem = null, memAt = 0;
+const data = () => (mem && Date.now() - memAt < 30000 ? mem : ((memAt = Date.now()), (mem = store.get(KEY, { rows: [], at: 0 }))));
+export const all = () => data().rows || [];
+export const syncedAt = () => data().at || 0;
 
 /** CS2 in-game purchases on the calendar day of ts (±1 day for timezone edges) */
 export function onDay(ts) {
@@ -96,21 +101,28 @@ const isKeyRow = (x) => /\bkeys?\b|klucz/i.test(x.items);
  * 1) a row that names a key; 2) Steam often lists in-game purchases only as "Counter-Strike 2" → a CS2 purchase
  *    from that day whose amount is a key price (±20% of `expect`, i.e. 2.49 USD in your currency), or a multiple of it.
  */
-export function keyPaid(ts, used, expect) {
-  const day = onDay(ts).filter((x) => !used.has(x.id));
+// conv(amount, cur, t): a row's amount in its own currency ('EUR', 'USD'…) → the wallet currency on that day (NBP),
+// null when it can't be converted. Without it the row's number is used as is: in 2014-15 this account paid for keys in
+// euro, and 1,99 € was taken as 1,99 zł (a key cost ~8,50 zł then). Every price below goes through it.
+const amountOf = (x, conv) => (conv ? conv(x.total, x.cur, x.t) : x.total);
+
+export function keyPaid(ts, used, expect, conv = null) {
+  const amt = (x) => amountOf(x, conv);
+  const day = onDay(ts).filter((x) => !used.has(x.id) && amt(x) != null);
   const order = (a, b) => (sameDay(b.t, ts) - sameDay(a.t, ts)) || Math.abs(a.t - ts) - Math.abs(b.t - ts);
   const named = day.filter(isKeyRow).sort(order)[0];
   if (named) {
-    const qty = Number(named.items.match(/(\d+)\s*x\b/i)?.[1]) || (expect ? Math.max(1, Math.round(named.total / expect)) : 1);
+    const qty = Number(named.items.match(/(\d+)\s*x\b/i)?.[1]) || (expect ? Math.max(1, Math.round(amt(named) / expect)) : 1);
     if (qty <= 1) used.add(named.id);
-    return { price: Math.round(named.total / qty), row: named, how: 'nazwa' };
+    return { price: Math.round(amt(named) / qty), row: named, how: 'nazwa' };
   }
   if (!expect) return null;
-  const single = day.filter((x) => nearKey(x, expect)).sort(order)[0];
-  if (single) { used.add(single.id); return { price: single.total, row: single, how: 'kwota' }; }
+  const near = (x) => amt(x) >= expect * 0.8 && amt(x) <= expect * 1.2;
+  const single = day.filter(near).sort(order)[0];
+  if (single) { used.add(single.id); return { price: amt(single), row: single, how: 'kwota' }; }
   // several keys in one purchase
-  const multi = day.find((x) => { const q = Math.round(x.total / expect); return q >= 2 && q <= 20 && Math.abs(x.total / q - expect) <= expect * 0.2; });
-  if (multi) return { price: Math.round(multi.total / Math.round(multi.total / expect)), row: multi, how: 'kwota' };
+  const multi = day.find((x) => { const q = Math.round(amt(x) / expect); return q >= 2 && q <= 20 && Math.abs(amt(x) / q - expect) <= expect * 0.2; });
+  if (multi) return { price: Math.round(amt(multi) / Math.round(amt(multi) / expect)), row: multi, how: 'kwota' };
   return null;
 }
 
@@ -130,18 +142,36 @@ export function nearestKeyPrice(ts, walletCur, expectAt) {
 }
 
 /** terminal purchase around ts: a CS2 in-game purchase that isn't a key; name match first, key-priced rows last */
-export function terminalPaid(ts, itemName, used, keyExpect) {
-  const cands = onDay(ts).filter((x) => !isKeyRow(x) && !used.has(x.id));
+export function terminalPaid(ts, itemName, used, keyExpect, conv = null) {
+  const cands = onDay(ts).filter((x) => !isKeyRow(x) && !used.has(x.id) && amountOf(x, conv) != null);
   // the store lists the item in your Steam language ("USP-S | Cichy wystrzał (prosto z fabryki)"), the inventory
   // history in English ("USP-S | Silent Shot") → skin name first, else the weapon name (same in every language)
   const [weapon, skin] = (itemName || '').toLowerCase().split('|').map((p) => p.trim());
   const has = (x, w) => w && x.items.toLowerCase().includes(w);
   const byName = cands.find((x) => has(x, skin) && has(x, weapon)) || cands.find((x) => has(x, weapon + ' |'));
-  const order = (a, b) => (nearKey(a, keyExpect) - nearKey(b, keyExpect)) || (sameDay(b.t, ts) - sameDay(a.t, ts)) || Math.abs(a.t - ts) - Math.abs(b.t - ts);
+  // a key-priced row last (it is more likely a key); compared in the wallet currency
+  const keyish = (x) => !!keyExpect && amountOf(x, conv) >= keyExpect * 0.8 && amountOf(x, conv) <= keyExpect * 1.2;
+  const order = (a, b) => (keyish(a) - keyish(b)) || (sameDay(b.t, ts) - sameDay(a.t, ts)) || Math.abs(a.t - ts) - Math.abs(b.t - ts);
   const pick = byName || cands.sort(order)[0];
   if (!pick) return null;
   used.add(pick.id);
-  return { price: pick.total, row: pick };
+  return { price: amountOf(pick, conv), row: pick };
+}
+
+/**
+ * what an item bought in the Steam store (any game, e.g. a Rust skin from the item store) cost: the purchase from that
+ * day (±1) whose items name it (the history is read in English, like the item's market name), its amount converted to
+ * the wallet currency by `conv` (see amountOf). → { price (cents, per copy), row } or null when no such purchase is listed.
+ */
+export function itemPaid(ts, name, conv = null) {
+  const n = String(name || '').toLowerCase().replace(/\s*\([^)]*\)\s*$/, '').trim();
+  if (!n) return null;
+  const d = new Date(ts); d.setHours(12, 0, 0, 0);
+  const row = all().filter((x) => !x.refund && Math.abs(x.t - d.getTime()) <= 86400000 + 1 && x.items.toLowerCase().includes(n) && amountOf(x, conv) != null)
+    .sort((a, b) => Math.abs(a.t - ts) - Math.abs(b.t - ts))[0];
+  if (!row) return null;
+  const qty = Number(row.items.match(/(\d+)\s*x\b/i)?.[1]) || 1;
+  return { price: Math.round(amountOf(row, conv) / qty), row };
 }
 
 export async function ensure(onDone) {
@@ -152,6 +182,7 @@ export async function ensure(onDone) {
     onDone?.();
   } catch (e) {
     store.set(KEY, { ...store.get(KEY, { rows: [] }), at: Date.now() - 3000000 }); // retry in ~10 min
+    mem = null;
     ui.log('Historia zakupów Steam: ' + e.message, 'warn');
   }
 }

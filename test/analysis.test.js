@@ -252,10 +252,10 @@ test('fillTable + listAdviceFill: list where the item\'s own price really reache
   assert.equal(at(1.06), 1);       // so is +6% (the daily top is +10%)
   assert.equal(at(1.13), 0);       // never +13%
   assert.equal(A.fillChance(t, 2, Math.round(t.ref * 1.3) + 1), 0);
-  const a = A.listAdviceFill({ table: t, sellGraph: [[205, 4], [215, 9]], highestBuy: 180, net, maxWaitDays: 2 });
+  const a = A.listAdviceFill({ table: t, sellGraph: [[198, 4], [215, 9]], highestBuy: 180, net, maxWaitDays: 2 });
   assert.equal(a.method, 'fill');
   assert.ok(a.chance >= A.MIN_CHANCE);
-  assert.ok(a.price > 205 && a.price <= Math.round(t.ref * 1.1) + 1, `price ${a.price}`); // up to the daily top, not past it
+  assert.ok(a.price > 198 && a.price <= Math.round(t.ref * 1.1) + 1, `price ${a.price}`); // up to the daily top, not past it
   assert.equal(a.sellNow, false);
   // never a listing under the best buy order: buyers already pay 2,30 → sell to them now
   const hi = A.listAdviceFill({ table: t, sellGraph: [[240, 4]], highestBuy: 230, net, maxWaitDays: 2 });
@@ -264,6 +264,121 @@ test('fillTable + listAdviceFill: list where the item\'s own price really reache
   assert.ok(a.price > 180); // (the earlier case: bids at 1,80, the proposal stays above them)
   // too little hourly data → no table (the queue model is used instead)
   assert.equal(A.fillTable(points.slice(-100)), null);
+});
+
+test('optimalSellPrice: a price set by your minimum gets its own queue and wait', () => {
+  // Glock Royal Legion FN: one other listing at 138,65, the next at 149,04, ~0,26 listing buyers a day, min 145,01
+  const o = A.optimalSellPrice({ sellGraph: [[13865, 1], [14904, 2]], perDay: 0.26, maxWaitDays: 1, undercut: 1, rule: { min: 14501 } });
+  assert.equal(o.price, 14501);
+  assert.equal(o.belowMin, true);
+  assert.equal(o.ahead, 1);                            // the 138,65 goes first
+  assert.ok(Math.abs(o.waitDays - 2 / 0.26) < 1e-9);   // not the 1 / 0,26 of one cent under the cheapest
+  const m = A.optimalSellPrice({ sellGraph: [[100, 1], [110, 5], [120, 9]], perDay: 10, maxWaitDays: 2, undercut: 1, rule: { max: 105 } });
+  assert.equal(m.price, 105);
+  assert.equal(m.ahead, 1);                            // only the 1,00 is under the 1,05 maximum
+});
+
+test('listAdvice: the queue model stops where recent sales stop (held)', () => {
+  const net = (p) => Math.floor(p / 1.15);
+  const g = [[230, 1], [245, 6], [260, 20]]; // 1 × 2,30, 5 × 2,45, 14 × 2,60; ~47 listing buyers a day
+  assert.equal(A.listAdvice({ sellGraph: g, perDay: 80, d7: 233, net, maxWaitDays: 2 }).price, 259); // behind 6, sells in hours
+  // …but nobody paid more than ~2,33 lately: no higher than that
+  assert.ok(A.listAdvice({ sellGraph: g, perDay: 80, d7: 233, held: 233, net, maxWaitDays: 2 }).price <= 233);
+});
+
+test('fillTable: a lone dearer sale is somebody\'s chosen copy, not the market reaching that price', () => {
+  // a thin skin: one sale an hour at 1,00 zł, and once a day a buyer who picks a better float pays 1,30
+  const now = Date.UTC(2026, 10, 20);
+  const pts = Array.from({ length: 720 }, (_, i) => ({ t: now - (719 - i) * 3600000, price: i % 24 === 12 ? 130 : 100, vol: 1 }));
+  const t = A.fillTable(pts);
+  assert.equal(t.ref, 100);
+  assert.equal(t.P[1][A.FILL_K.indexOf(1)], 1);    // its own price: every day
+  assert.equal(t.P[1][A.FILL_K.indexOf(1.13)], 0); // the 1,30 spikes don't make +13% "reachable"
+  // the same, but the price really moves up to 1,30 for 6 hours a day: that counts
+  const real = Array.from({ length: 720 }, (_, i) => ({ t: now - (719 - i) * 3600000, price: i % 24 >= 12 && i % 24 < 18 ? 130 : 100, vol: 1 }));
+  assert.equal(A.fillTable(real).P[1][A.FILL_K.indexOf(1.3)], 1);
+});
+
+test('anchorTable: the price now is checked against today\'s listings', () => {
+  const t = { ref: 150, P: {}, D: {} };
+  assert.equal(A.anchorTable(t, [[120, 5]]).ref, 120);                  // a spike in the last 24 h, listed at 1,20 now
+  assert.equal(A.anchorTable(t, [[90, 1], [100, 3], [118, 13]]).ref, 100); // the 3rd cheapest unit (graph is cumulative)
+  assert.equal(A.anchorTable(t, [[90, 1], [140, 9]]).ref, 140);         // one lone cheap listing doesn't drag it down
+  assert.equal(A.anchorTable({ ...t, ref: 100 }, [[110, 5]]).ref, 100); // listings above the sales: not raised (untested)
+  assert.equal(A.anchorTable({ ...t, ref: 100 }, [[95, 1], [104, 9]]).ref, 100); // within the book: unchanged
+  assert.equal(A.anchorTable(t, null), t);
+  // the advice from a 7-day-old price level: the case at 0,68 now isn't proposed at 0,78
+  const PLN = { feePercent: 0.05, feeMin: 4, feeBase: 0, pubDefault: 0.1 };
+  const net = (p) => receivedFromBuyer(p, 0.1, PLN);
+  const now = Date.UTC(2026, 10, 20);
+  const pts = Array.from({ length: 720 }, (_, i) => ({ t: now - (719 - i) * 3600000, price: i < 690 ? 76 : 68, vol: 500 }));
+  const a = A.listAdviceFill({ table: A.fillTable(pts), sellGraph: [[68, 4000]], highestBuy: 67, net, maxWaitDays: 1 });
+  assert.ok(a.price <= 70, `price ${a.price}`);
+});
+
+test('fillTable with binary-searched windows gives exactly the numbers of the plain version', () => {
+  // the version before the speed-up, kept here as the reference
+  const DAY = 86400000, HOUR = 3600000;
+  const vw = (pts) => { if (!pts.length) return null; const q = [...pts].sort((a, b) => a.price - b.price); const tot = q.reduce((x, p) => x + (p.vol || 1), 0); let acc = 0; for (const p of q) { acc += p.vol || 1; if (acc >= tot / 2) return p.price; } return q[q.length - 1].price; };
+  const ref = (points, minStarts = 24) => {
+    const end = points[points.length - 1].t;
+    const hr = points.filter((p) => p.t > end - 30 * DAY && p.vol > 0);
+    if (hr.length < 120) return null;
+    // the price at t: the last 24 h, or back to 5 units (at most 7 days)
+    const priceAt = (t) => {
+      const before = hr.filter((p) => p.t > t - 7 * DAY && p.t <= t).reverse();
+      const got = [];
+      for (const p of before) { if (p.t <= t - DAY && got.reduce((x, q) => x + q.vol, 0) >= 5) break; got.push(p); }
+      return got.reduce((x, q) => x + q.vol, 0) >= 5 ? vw(got) : null;
+    };
+    // held: the highest vw-median of 5 units in a row (fewer in the whole window: all of them)
+    const held = (next) => {
+      let top = -Infinity;
+      for (let i = 0; i < next.length; i++) {
+        const run = []; let u = 0;
+        for (let j = i; j < next.length && u < 5; j++) { run.push(next[j]); u += next[j].vol; }
+        if (u < 5 && i > 0) break;
+        top = Math.max(top, vw(run));
+      }
+      return top;
+    };
+    const r0 = priceAt(end);
+    if (!r0) return null;
+    const P = {}, D = {};
+    let n = 0;
+    for (const N of A.FILL_N) {
+      const hits = A.FILL_K.map(() => 0);
+      let starts = 0, dsum = 0;
+      for (let t = hr[0].t + 7 * DAY; t <= end - N * DAY; t += 3 * HOUR) {
+        const r = priceAt(t);
+        const next = hr.filter((p) => p.t > t && p.t <= t + N * DAY);
+        if (!r || !next.length) continue;
+        const top = held(next) / r;
+        A.FILL_K.forEach((k, i) => { if (top >= k) hits[i]++; });
+        const lastDay = next.filter((p) => p.t > t + (N - 1) * DAY);
+        dsum += (vw(lastDay.length ? lastDay : next) || r) / r;
+        starts++;
+      }
+      if (starts < minStarts) continue;
+      P[N] = hits.map((h) => Math.round((h / starts) * 100) / 100);
+      D[N] = Math.round((dsum / starts) * 1000) / 1000;
+      if (N === 2) n = starts;
+    }
+    return Object.keys(P).length ? { ref: r0, P, D, n } : null;
+  };
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (let k = 0; k < 6; k++) {
+    const pts = [];
+    let price = 100 + k * 300;
+    const t0 = Date.UTC(2026, 9, 1);
+    for (let h = 0; h < 24 * 33; h++) {
+      if (rnd() < 0.15 * (k + 1)) continue; // thin hours, gaps
+      price = Math.max(3, Math.round(price * (1 + (rnd() - 0.5) * 0.04)));
+      pts.push({ t: t0 + h * 3600000, price, vol: 1 + Math.floor(rnd() * 6) });
+    }
+    assert.deepEqual(A.fillTable(pts), ref(pts), 'series ' + k);
+  }
 });
 
 test('lone offers in front of a wall are not the competition (minQty)', () => {
@@ -339,6 +454,51 @@ test('buyPlan: up to what price it pays to buy several units', () => {
   assert.equal(A.buyPlan({ ...book, points, net, sell: 240, qty: 50 }).now.short, 40); // only 10 listed
 });
 
+test('store buckets: one per key, edits from another tab are seen and not overwritten, caches written later', async () => {
+  const gm = new Map();
+  globalThis.GM_getValue = (k) => (gm.has(k) ? structuredClone(gm.get(k)) : undefined);
+  globalThis.GM_setValue = (k, v) => gm.set(k, structuredClone(v));
+  globalThis.GM_deleteValue = (k) => gm.delete(k);
+  const S = await import('../src/core/store.js');
+  const realNow = Date.now;
+  let now = realNow();
+  Date.now = () => now;
+  try {
+    // the same object for every module asking for a key
+    assert.equal(S.bucket('sellPlans'), S.bucket('sellPlans'));
+    const plans = S.bucket('sellPlans');
+    plans.set('A', { qty: 1 });
+    // another tab adds a plan: seen after a moment, and an edit here keeps it
+    gm.set('sellPlans', { ...gm.get('sellPlans'), B: { qty: 2 } });
+    plans.set('C', { qty: 3 });
+    assert.deepEqual(Object.keys(gm.get('sellPlans')).sort(), ['A', 'B', 'C']);
+    gm.set('sellPlans', { A: { qty: 1 }, C: { qty: 3 } }); // the other tab deleted B
+    now += 2500;
+    assert.equal(plans.get('B'), undefined);
+    // a setting switched off in another tab stops this one too
+    S.settings.autoRelist = true;
+    gm.set('settings', { ...gm.get('settings'), autoRelist: false });
+    now += 2500;
+    assert.equal(S.settings.autoRelist, false);
+    // a cache: written a few seconds later (or when the page is left), not on every change
+    const pr = S.bucket('prices');
+    pr.set('730|X', { lowest: 5 });
+    assert.equal(gm.get('prices'), undefined);
+    pr.flush();
+    assert.deepEqual(gm.get('prices'), { '730|X': { lowest: 5 } });
+    // replaced or deleted from outside (import, "clear prices"): the copy in memory doesn't come back
+    pr.set('730|Y', { lowest: 7 });
+    S.del('prices');
+    assert.equal(pr.get('730|X'), undefined);
+    pr.flush();
+    assert.equal(gm.get('prices'), undefined);
+    S.set('prices', { '730|Z': { lowest: 9 } });
+    assert.deepEqual(pr.get('730|Z'), { lowest: 9 });
+  } finally {
+    Date.now = realNow;
+  }
+});
+
 test('cache: reuses a value within its lifetime, one fetch for two askers, never keeps an empty answer', async () => {
   const C = await import('../src/core/cache.js'); // no IndexedDB in node → the memory layer alone
   assert.equal(C.ttl(), 5 * 60000);               // default: 5 minutes
@@ -365,4 +525,90 @@ test('cache: reuses a value within its lifetime, one fetch for two askers, never
   const slim = C.slimSearch({ total_count: 7, results: [{ name: 'A', hash_name: 'A', sell_listings: 3, sell_price: 10, sell_price_text: '$0.10', app_icon: 'x', asset_description: { icon_url: 'i', name_color: 'c', type: 't', descriptions: [1, 2, 3] } }] });
   assert.deepEqual(slim, { total_count: 7, results: [{ name: 'A', hash_name: 'A', sell_listings: 3, sell_price: 10, sell_price_text: '$0.10', asset_description: { icon_url: 'i', name_color: 'c', type: 't' } }] });
   assert.equal(C.slimSearch(null), null);
+});
+
+test('patterns: known seeds are found in any wear / StatTrak, your own lines too', async () => {
+  const P = await import('../src/core/patterns.js');
+  assert.equal(P.baseName('★ StatTrak™ Karambit | Case Hardened (Field-Tested)'), 'karambit | case hardened');
+  assert.equal(P.baseName('Souvenir AK-47 | Case Hardened (Well-Worn)'), 'ak-47 | case hardened');
+  const ak = P.patternOf('StatTrak™ AK-47 | Case Hardened (Battle-Scarred)', 661);
+  assert.equal(ak.what, 'Blue gem');
+  assert.equal(ak.level, 'top');
+  assert.equal(P.patternOf('AK-47 | Case Hardened (Field-Tested)', 670).level, 'high');
+  assert.equal(P.patternOf('AK-47 | Case Hardened (Field-Tested)', 662), null);
+  assert.equal(P.patternOf('AK-47 | Redline (Field-Tested)', 661), null);              // the seed alone means nothing
+  assert.equal(P.patternOf('★ Karambit | Marble Fade (Factory New)', 412).label, '#1 (max)');
+  assert.equal(P.patternOf('★ Butterfly Knife | Marble Fade (Factory New)', 412), null); // Fire & Ice seeds differ per knife
+  assert.equal(P.patternOf('AK-47 | Case Hardened (Field-Tested)', null), null);
+  assert.equal(P.patternOf('StatTrak™ Five-SeveN | Kami (Minimal Wear)', 909).level, 'top'); // picture patterns too
+  assert.equal(P.patternOf('Five-SeveN | Kami (Field-Tested)', 906).label, '„Togepi”');
+  assert.equal(P.patternOf('Five-SeveN | Case Hardened (Field-Tested)', 909), null);
+  // your own lines: ranges, labels, comments, mistakes reported by line
+  const txt = '# moje\nAK-47 | Case Hardened: 661, 100-102 = mój\nUSP-S | Kill Confirmed: 7\nzepsuta linia\nGlock-18 | Fade: 5-2000';
+  const u = P.parseUser(txt);
+  assert.deepEqual(u.errors, [4, 5]);
+  assert.deepEqual(u.entries[0].tiers[0].seeds, [661, 100, 101, 102]);
+  assert.equal(u.entries[1].what, 'Twój wzór');
+  assert.equal(P.patternOf('AK-47 | Case Hardened (Minimal Wear)', 661, txt).what, 'mój'); // yours wins over the starter
+  assert.equal(P.patternOf('AK-47 | Case Hardened (Minimal Wear)', 101, txt).level, 'user');
+  assert.equal(P.patternOf('StatTrak™ USP-S | Kill Confirmed (Field-Tested)', 7, txt).what, 'Twój wzór');
+  assert.equal(P.patternOf('AK-47 | Case Hardened (Minimal Wear)', 955, txt).level, 'high'); // the starter list still works
+});
+
+test('patterns: the community catalog (cs2pattern pattern.json) becomes marks, the hand-checked list wins', async () => {
+  const P = await import('../src/core/patterns.js');
+  const cat = {
+    'case hardened': { 'ak-47': [{ name: 'gem_blue', ordered: true, pattern: [661, 670, 955, 179, 387, 151, 321, 592, 809, 555] }] },
+    kami: { 'five-seven': [{ name: 'pussy', ordered: false, pattern: [590, 909] }] },
+    paw: { awp: [{ name: 'golden_cat', ordered: false, pattern: [41, 350] }, { name: 'stoner_cat', ordered: false, pattern: [420] }] },
+  };
+  const extra = P.fromCatalog(cat);
+  const m = P.patternOf('AK-47 | Case Hardened (Field-Tested)', 179, '', extra);
+  assert.equal(m.what, 'Blue gem');
+  assert.equal(m.label, '#4 z 10');
+  assert.equal(m.level, 'mid');                                                       // #1 gold, #2-#3 violet, the rest blue
+  assert.equal(P.patternOf('AK-47 | Case Hardened (Field-Tested)', 670, '', extra).label, 'Tier 1'); // hand-checked wins
+  assert.equal(P.patternOf('★ StatTrak™ AWP | Paw (Field-Tested)', 41, '', extra).what, 'Złoty kot');
+  assert.equal(P.patternOf('AWP | Paw (Minimal Wear)', 420, '', extra).what, 'Stoner cat');
+  assert.equal(P.patternOf('AWP | Paw (Field-Tested)', 41), null);                    // without the catalog
+  assert.deepEqual(P.fromCatalog(null), []);
+  assert.deepEqual(P.fromCatalog({ x: { y: [{ name: 'a', pattern: ['oops', 5000] }] } }), []); // junk is skipped
+});
+
+test('market sample: kinds and an even spread over kind and price band', async () => {
+  const S = await import('../src/core/sample.js');
+  assert.equal(S.kindOf('★ Karambit | Fade (Factory New)', '★ Covert Knife'), 'knife');
+  assert.equal(S.kindOf('Gamma Case', 'Base Grade Container'), 'container');
+  assert.equal(S.kindOf('Sticker | Bomb Code', 'High Grade Sticker'), 'sticker');
+  assert.equal(S.kindOf('AK-47 | Redline (Field-Tested)', 'Classified Rifle'), 'skin');
+  assert.equal(S.kindOf("Charm | Lil' Zen", 'Remarkable Charm'), 'other');
+  assert.equal(S.bandOf(10), 0);
+  assert.equal(S.bandOf(300), 2);
+  assert.equal(S.bandOf(50000), 5);
+  // 1000 cheap skins and 10 knives: the knives aren't drowned out
+  const pool = [...Array.from({ length: 1000 }, (_, i) => ({ hash: 's' + i, kind: 'skin', band: 0 })), ...Array.from({ length: 10 }, (_, i) => ({ hash: 'k' + i, kind: 'knife', band: 5 }))];
+  const pick = S.stratify(pool, 40, 7);
+  assert.equal(pick.length, 40);
+  assert.equal(pick.filter((x) => x.kind === 'knife').length, 10);
+  assert.equal(new Set(pick.map((x) => x.hash)).size, 40);
+  assert.deepEqual(S.stratify(pool, 40, 7), pick); // the same seed, the same sample
+});
+
+test('recentTrend: the price now, 3 and 6 months ago (information for the cards)', () => {
+  const DAY = 86400000, end = Date.UTC(2026, 10, 20);
+  // 126 for a year, then a slide to 88 over the last 6 months (M4A4 Desolate Space MW)
+  const pts = Array.from({ length: 400 }, (_, i) => { const ago = 399 - i; return { t: end - ago * DAY, price: Math.round(ago > 182 ? 12600 : 8800 + (ago / 182) * 3800), vol: 20 }; });
+  const r = A.recentTrend(pts);
+  assert.ok(Math.abs(r.now - 8900) < 200 && Math.abs(r.m6 - 12600) < 300, JSON.stringify(r));
+  assert.ok(r.t6 < -0.25 && r.t3 < 0 && r.t3 > r.t6, JSON.stringify(r));
+  assert.equal(A.recentTrend(pts.slice(-60)).m6, null); // 2 months of history: no 6-month figure
+  assert.equal(A.recentTrend([]), null);
+});
+
+test('market sample kinds: a bare case name (no type) is a container', async () => {
+  const S = await import('../src/core/sample.js');
+  assert.equal(S.kindOf('CS:GO Weapon Case 2'), 'container');
+  assert.equal(S.kindOf('Sealed Dead Hand Terminal'), 'container');
+  assert.equal(S.kindOf('Budapest 2025 Champions Autograph Capsule'), 'container');
+  assert.equal(S.kindOf('AK-47 | Case Hardened (Field-Tested)'), 'skin'); // "Case" inside a skin name isn't a case
 });

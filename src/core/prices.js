@@ -53,8 +53,9 @@ export async function lowestPrices(list, { onEach, isCancelled, force = false, m
       const h = await hist(appid, hash, force ? 0 : 60000);
       onEach?.(hash, h.lowestSell, null, ++done, todo.length);
     } catch (e) {
-      // remember items without a market (no order book) so we don't ask again on every load
-      if (e.status !== 429) { const k = appid + '|' + hash; const old = cached(appid, hash); cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: old?.lowest ?? null, lowAt: Date.now(), ask: old?.ask ?? [] }); }
+      // remember items without a market (no order book) so we don't ask again on every load; not after a network
+      // hiccup or a Steam server error (that left a valued item without a price for 6 h)
+      if (e.status === 400 || e.status === 404 || /brak danych o zleceniach|nie udało się pobrać zleceń/.test(e.message || '')) { const k = appid + '|' + hash; const old = cached(appid, hash); cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: old?.lowest ?? null, lowAt: Date.now(), ask: old?.ask ?? [] }); }
       onEach?.(hash, null, e, ++done, todo.length);
       if (e.status === 429) break;
     }

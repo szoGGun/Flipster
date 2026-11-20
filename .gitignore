@@ -1,0 +1,5 @@
+node_modules/
+# build output (npm run build); the dev loader in it also holds a local file path
+dist/
+# local backups made before big changes (git history replaces them)
+.backup/

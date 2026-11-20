@@ -4,26 +4,41 @@ import * as steam from '../core/steam.js';
 import * as store from '../core/store.js';
 import * as ui from '../core/ui.js';
 
-const KEY = 'invhist'; // { events: [...], syncedAt }
+// One history per game, each in its own store: CS2 (730, used everywhere) and, since 2026-11-20, every other game you
+// traded on the market (753 = Steam's own items: cards, backgrounds, emoticons; 252490 = Rust…), used only for where an
+// item came from (history.itemOrigins, the sources of sales). Kept apart so nothing that assumes CS2 events gets them.
+const keyOf = (app) => (+app === 730 ? 'invhist' : `invhist${+app}`); // { events: [...], syncedAt, tail, complete }
 const MAX = 30000;
 
-// GM_getValue deep-copies the whole (large) object on every call → keep one copy in memory, refreshed on save
-// and at most every 30 s (another browser tab may have synced meanwhile)
-let mem = null, memAt = 0;
-const data = () => {
-  if (!mem || Date.now() - memAt > 30000) {
-    mem = store.get(KEY, { events: [] }); memAt = Date.now();
-    if (mem.fmt) { mem = { ...mem, events: (mem.events || []).filter((e) => !/#\d+$/.test(e.id)) }; delete mem.fmt; store.set(KEY, mem); }
+// GM_getValue deep-copies the whole (large) object on every call → keep one copy in memory per history, refreshed
+// on save and at most every 30 s (another browser tab may have synced meanwhile)
+const mems = new Map(); // app → { v, at }
+const data = (app = 730) => {
+  let m = mems.get(app);
+  if (!m || Date.now() - m.at > 30000) {
+    let v = store.get(keyOf(app), { events: [] });
+    if (v.fmt) { v = { ...v, events: (v.events || []).filter((e) => !/#\d+$/.test(e.id)) }; delete v.fmt; store.set(keyOf(app), v); }
+    m = { v, at: Date.now() };
+    mems.set(app, m);
   }
-  return mem;
+  return m.v;
 };
-let kinded = null;
-export const all = () => {
-  const ev = data().events || [];
-  if (kinded !== ev) { for (const e of ev) e.kind = kind(e.desc); kinded = ev; }
+const kinded = new Map();
+const eventsOf = (app) => {
+  const ev = data(app).events || [];
+  if (kinded.get(app) !== ev) { for (const e of ev) { e.kind = kind(e.desc); e.app = +app; } kinded.set(app, ev); }
   return ev;
 };
-export const syncedAt = () => data().syncedAt || 0;
+/** the CS2 inventory history, newest first */
+export const all = () => eventsOf(730);
+/** Steam's own items (753): card drops, booster packs, badge crafting, newest first; only for item origins */
+export const allSteam = () => eventsOf(753);
+/** the other games' histories together (only events not already in the CS2 one, should Steam ever ignore the filter) */
+export function allOf(apps = []) {
+  const cs = new Set(all().map((e) => e.id));
+  return apps.filter((a) => +a !== 730).flatMap((a) => eventsOf(+a)).filter((e) => !cs.has(e.id));
+}
+export const syncedAt = (app = 730) => data(app).syncedAt || 0;
 
 const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 /** "13 Nov, 2026" + "3:41pm" → ms (local time) */
@@ -87,9 +102,9 @@ export function parsePage(d) {
   return out;
 }
 
-async function fetchPage(cursor) {
+async function fetchPage(cursor, app = 730) {
   const c = steam.ctx();
-  let url = `${steam.ORIGIN}/profiles/${c.steamId}/inventoryhistory/?ajax=1&l=english&sessionid=${c.sessionId}&app%5B%5D=730`;
+  let url = `${steam.ORIGIN}/profiles/${c.steamId}/inventoryhistory/?ajax=1&l=english&sessionid=${c.sessionId}&app%5B%5D=${app}`;
   if (cursor) url += `&cursor%5Btime%5D=${cursor.time}&cursor%5Btime_frac%5D=${cursor.time_frac}&cursor%5Bs%5D=${cursor.s}`;
   const d = await steam.schedule('inv', async () => {
     const r = await fetch(url, { credentials: 'include' });
@@ -104,10 +119,11 @@ async function fetchPage(cursor) {
 /**
  * sync: newest pages until an already known event; then, while the history isn't complete yet
  * (first sync interrupted, rate limit, older data never fetched), keep going back from where the last run
- * stopped (`tail` cursor) until Steam has no more pages. `full` = re-read everything.
+ * stopped (`tail` cursor) until Steam has no more pages. `full` = re-read everything. app: 730 (CS2) or 753 (Steam).
  */
-export async function sync({ full = false, isCancelled = () => false, onProgress = () => {} } = {}) {
-  const saved = store.get(KEY, { events: [] }); mem = null;
+export async function sync({ full = false, isCancelled = () => false, onProgress = () => {}, app = 730 } = {}) {
+  const saved = store.get(keyOf(app), { events: [] });
+  mems.delete(app);
   const known = new Set(full ? [] : saved.events.map((e) => e.id));
   const complete = !full && saved.complete;
   const fresh = [];
@@ -118,7 +134,7 @@ export async function sync({ full = false, isCancelled = () => false, onProgress
   let jumped = false;
   for (;;) {
     if (isCancelled()) break;
-    const d = await fetchPage(cursor);
+    const d = await fetchPage(cursor, app);
     const evs = parsePage(d);
     pages++;
     let hitKnown = false;
@@ -129,8 +145,8 @@ export async function sync({ full = false, isCancelled = () => false, onProgress
     if (!d.cursor || !evs.length) reachedEnd = true;
     // older part already being walked (or jumped to) → remember where to resume
     if (!complete && (jumped || !saved.tail)) tail = d.cursor || null;
-    save(fresh, saved.events, { tail, complete: reachedEnd });
-    onProgress(fresh.length, pages, oldestT());
+    save(fresh, saved.events, { tail, complete: reachedEnd }, app);
+    onProgress(fresh.length, pages, oldestT(app));
     if (reachedEnd) break;
     if (hitKnown && !jumped) {
       if (complete) break; // caught up with the newest known event and the past is complete
@@ -139,19 +155,19 @@ export async function sync({ full = false, isCancelled = () => false, onProgress
     }
     cursor = d.cursor;
   }
-  save(fresh, saved.events, { tail, complete: reachedEnd || complete, done: true });
+  save(fresh, saved.events, { tail, complete: reachedEnd || complete, done: true }, app);
   return fresh.length;
 }
 
-function save(fresh, old, { tail, complete, done = false }) {
+function save(fresh, old, { tail, complete, done = false }, app = 730) {
   const seen = new Set();
   const events = [...fresh, ...old].filter((e) => !seen.has(e.id) && seen.add(e.id)).sort((a, b) => b.t - a.t).slice(0, MAX);
-  const v = { events, tail: complete ? null : tail, complete: !!complete, syncedAt: done ? Date.now() : data().syncedAt || Date.now() };
-  store.set(KEY, v);
-  mem = v; memAt = Date.now();
+  const v = { events, tail: complete ? null : tail, complete: !!complete, syncedAt: done ? Date.now() : data(app).syncedAt || Date.now() };
+  store.set(keyOf(app), v);
+  mems.set(app, { v, at: Date.now() });
 }
-const oldestT = () => { const ev = all(); return ev.length ? ev[ev.length - 1].t : null; };
-export const isComplete = () => !!data().complete;
+const oldestT = (app = 730) => { const ev = eventsOf(app); return ev.length ? ev[ev.length - 1].t : null; };
+export const isComplete = (app = 730) => !!data(app).complete;
 export const oldest = oldestT;
 
 /** what happened to an item I no longer have: the newest event where it left the inventory */

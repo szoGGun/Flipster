@@ -30,12 +30,18 @@ export const toInput = (c) => (c == null || isNaN(c) ? '' : (c / 100).toFixed(2)
 
 export const pct = (x, digits = 1) => (x == null || !isFinite(x) ? '-' : (x * 100).toFixed(digits).replace('.', ',') + '%');
 
-export function median(arr) {
-  if (!arr.length) return null;
-  const s = [...arr].sort((a, b) => a - b);
-  const m = s.length >> 1;
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-}
+/** "19.11, 21:00" (local), or `none` without a time */
+export const fmtWhen = (t, none = 'po odblokowaniu') => (t ? new Date(t).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : none);
+/** a small share: "<0,1%", "0,4%", "12%" */
+export const shareTxt = (x) => (x < 0.001 ? '<0,1%' : x < 0.01 ? `${(x * 100).toFixed(1).replace('.', ',')}%` : `${Math.round(x * 100)}%`);
+/** "1 dzień" / "4 dni" */
+export const daysTxt = (n) => (n === 1 ? '1 dzień' : `${n} dni`);
+
+const WEAR_SHORT = { 'Factory New': 'FN', 'Minimal Wear': 'MW', 'Field-Tested': 'FT', 'Well-Worn': 'WW', 'Battle-Scarred': 'BS' };
+/** the wear in a CS2 market name: "AK-47 | Redline (Field-Tested)" → "Field-Tested" (null without one) */
+export const wearOf = (hash) => String(hash || '').match(/\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)\s*$/)?.[1] || null;
+/** … and its short form: "FT" */
+export const wearShort = (hash) => WEAR_SHORT[wearOf(hash)] || '';
 
 export const icon = (hash, size = '96fx96f') =>
   hash ? `https://community.cloudflare.steamstatic.com/economy/image/${hash}/${size}` : '';

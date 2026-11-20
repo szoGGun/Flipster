@@ -42,7 +42,7 @@ function main() {
       buyorders.mount(root.querySelector('[data-sec="buy"]'));
       showSub(store.get('marketTab', 'sell'));
     },
-    show() { listings.show(); buyorders.show(); },
+    show(sub) { if (sub) market?.showSub(sub); listings.show(); buyorders.show(); },
   });
   ui.tab({ id: 'inv', title: 'Ekwipunek', mount: inventory.mount, show: inventory.show });
   ui.tab({ id: 'hist', title: 'Historia', mount: history.mount, show: history.show });
@@ -68,8 +68,14 @@ function main() {
   inventory.startSellPlans(); // planned sales of trade-locked items, whichever tab is open
   setInterval(refreshFab, 5000);
 
-  prices.pruneCache();
-  sellsignals.prune();
+  // housekeeping of the price caches (each reads a big value from storage): once the page is idle, at most every 6 h
+  const tidy = () => {
+    if (Date.now() - store.get('pruneAt', 0) < 6 * 3600000) return;
+    store.set('pruneAt', Date.now());
+    prices.pruneCache();
+    sellsignals.prune();
+  };
+  setTimeout(() => (window.requestIdleCallback ? requestIdleCallback(tidy, { timeout: 10000 }) : tidy()), 15000);
   inventory.initBadges();
   trade.init();
 }

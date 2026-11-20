@@ -55,7 +55,8 @@ export function mount(root) {
       <button class="b" data-v="watch">★ Obserwowane</button>
       <button class="b" data-v="scan">📡 Skaner rynku</button>
       <span class="sp"></span>
-      <button class="b" data-a="research" title="Pobiera z Rynku Steam księgę zleceń i pełną historię cen przedmiotów widocznych teraz na liście (skaner, obserwowane albo analizowany przedmiot) i zapisuje je do pliku, do sprawdzenia, czy faktycznie się opłacają. Gdy lista jest pusta, bierze stałą próbkę ok. 100 popularnych przedmiotów. Niczego nie kupuje ani nie wystawia.">⬇ Dane do analizy</button>
+      <button class="b dbg" data-a="research" title="Pobiera z Rynku Steam księgę zleceń i pełną historię cen przedmiotów widocznych teraz na liście (skaner, obserwowane albo analizowany przedmiot) i zapisuje je do pliku, do sprawdzenia, czy faktycznie się opłacają. Gdy lista jest pusta, bierze stałą próbkę ok. 100 popularnych przedmiotów. Niczego nie kupuje ani nie wystawia.">⬇ Dane do analizy</button>
+      <button class="b dbg" data-a="sample" title="Losuje kilkaset przedmiotów z listy najpopularniejszych na Rynku Steam (po równo z każdego rodzaju i przedziału cen) i zapisuje ich historię cen i księgę zleceń do pliku, do sprawdzania algorytmów Flipstera na szerszym rynku. Niczego nie kupuje ani nie wystawia.">⬇ Próbka rynku</button>
       <button class="b" data-a="stop" hidden>■ Stop</button>
     </div>
     <section data-s="analyze">
@@ -165,6 +166,7 @@ function onClick(e) {
     shidden: () => { showHidden = !showHidden; renderScan(); },
     unhideall: () => { hidden.replace({}); showHidden = false; renderScan(); },
     research: exportResearch,
+    sample: () => { if (!scanning) research.exportMarketSample({ onBusy: (on) => (el.querySelector('[data-a="stop"]').hidden = !on) }); },
   })[b.dataset.a]?.();
 }
 
@@ -491,10 +493,11 @@ function renderScan() {
   const ok = (r) => flipVerdict(r).k === 'ok';
   const fd = findState;
   const onlyOk = el.querySelector('#s-only').checked;
-  const hidden = onlyOk ? rows.filter((r) => !ok(r)).length : 0;
+  // (not "hidden": that name is the ✕ list used above, a local one would hide it and break this function as soon as a row exists)
+  const notOk = onlyOk ? rows.filter((r) => !ok(r)).length : 0;
   const FIND_STATE = { run: '<span class="acc"><span class="spin"></span>szukam dalej…</span>', stop: '<span class="ok">gotowe</span>', end: 'koniec listy, więcej przedmiotów w tym przedziale nie ma', cancel: 'zatrzymano, „Skanuj” wznowi', stall: '<span class="warn">Steam przestał zwracać listę (to nie jej koniec), „Skanuj” za kilka minut wznowi</span>', limit: '<span class="warn">Steam ogranicza zapytania, spróbuj za kilka minut</span>', error: '<span class="err">błąd</span>' };
   const progress = fd ? `Znaleziono <b>${fd.found}</b>${fd.want === Infinity ? '' : ` z ${fd.want}`} · sprawdzono ${fd.checked}${fd.walk?.total ? ` (pozycja ${fd.walk.pos} z ${fd.walk.total} na liście Steama dla tej kategorii)` : ''}${fd.risky ? ` · ${fd.risky} ryzykownych (${onlyOk ? 'ukryte, odznacz „tylko opłacalne”' : 'na liście, wyszarzone'})` : ''}${fd.skipped ? ` · ${fd.skipped} pominiętych (sprawdzone niedawno)` : ''}${fd.failed ? ` · ${fd.failed} bez danych` : ''} · ${FIND_STATE[fd.state]}<br>` : '';
-  const empty = fd ? (fd.state === 'run' ? 'Na razie nic nie przeszło, szukam dalej…' : hidden ? 'Żaden przedmiot nie dostał oceny „Flip możliwy”. Odznacz „tylko opłacalne”, żeby zobaczyć ryzykowne.' : 'Żaden sprawdzony przedmiot nie przeszedł. Obniż Min. ROI albo Min. sprzedaży, poszerz ceny lub zmień kategorię.') : 'Ustaw filtry i kliknij „Skanuj”.';
+  const empty = fd ? (fd.state === 'run' ? 'Na razie nic nie przeszło, szukam dalej…' : notOk ? 'Żaden przedmiot nie dostał oceny „Flip możliwy”. Odznacz „tylko opłacalne”, żeby zobaczyć ryzykowne.' : 'Żaden sprawdzony przedmiot nie przeszedł. Obniż Min. ROI albo Min. sprzedaży, poszerz ceny lub zmień kategorię.') : 'Ustaw filtry i kliknij „Skanuj”.';
   renderTable('#s-table', onlyOk ? rows.filter(ok) : rows, false, `${hiddenNote()}${ageNote(rows)}${progress}Przechodzi przedmiot z zyskiem ≥ ${Math.round(minRoi * 100)}% przy sprzedaży po niższej z dwóch cen (dzisiejszej i typowej z 7 dni), większym niż typowa zmiana ceny w tydzień, po którego cenie zlecenia sprzedano w tygodniu co najmniej ${MIN_FILL_WEEK} szt. i który sprzedaje się ≥ ${minVol} razy na dobę. Kupiony przedmiot sprzedasz dopiero po 7 dniach, a typowa zmiana ceny w tydzień to kilka procent, w badaniu taki flip prawie nigdy nie wychodził na plus.`, ok, 'flip', empty);
 }
 function renderWatch() {

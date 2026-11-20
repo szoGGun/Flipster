@@ -3,6 +3,8 @@
 // @namespace    szoggun.flipster
 // @version      __VERSION__
 // @description  Flipster, relist, auto-relist, zlecenia kupna, ekwipunek z cenami i floatem, masowa sprzedaż, historia P&L, analiza flipów i wymian
+// @icon         __ICON__
+// @icon64       __ICON64__
 // @match        https://steamcommunity.com/*
 // @connect      api.nbp.pl
 // @connect      store.steampowered.com
