@@ -21,7 +21,7 @@ export async function exportResearch(list, where, { onBusy = () => {} } = {}) {
   if (running) return ui.log(L('research.dataForAnalysisThePrevious'), 'warn');
   const items = [...new Map(list.filter((x) => x?.hash).map((x) => [`${+(x.appid || 730)}|${x.hash}`, { hash: x.hash, appid: +(x.appid || 730) }])).values()];
   if (!items.length) return ui.log(L('research.dataForAnalysisThereAre'), 'warn');
-  if (!(await ui.ask(L('research.collectDataForAnalysis'), L('research.illDownloadTheOrderBook', { items: items.length, where, Math: Math.max(1, Math.ceil(items.length / 40)) }), { ok: L('research.collectData') }))) return;
+  if (!(await ui.ask(L('research.collectDataForAnalysis'), L('research.illDownloadTheOrderBook', { items: items.length, where, min: Math.max(1, Math.ceil(items.length / 40)) }), { ok: L('research.collectData') }))) return;
   const tk = (running = token());
   onBusy(true);
   const w = steam.wallet();

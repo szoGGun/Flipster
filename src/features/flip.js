@@ -712,7 +712,7 @@ async function scan() {
       else {
         findState = null;
         scanSet = new Set(list.map((c) => c.hash));
-        ui.log(L('flip.scannerCheckingItemsInThe', { list: list.length, Math: Math.max(1, Math.ceil(list.length / 60)) }));
+        ui.log(L('flip.scannerCheckingItemsInThe', { list: list.length, min: Math.max(1, Math.ceil(list.length / 60)) }));
         renderScan();
         await runMetrics(list, '#s-table', false);
         renderScan();

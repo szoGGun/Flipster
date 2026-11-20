@@ -414,7 +414,7 @@ async function autoCycle() {
 
 function updateAuto(st) {
   const on = settings.autoBuy;
-  const info = !on ? L('buyorders.off2') : !isLeader() ? L('buyorders.runsInAnotherTab') : st?.running ? L('buyorders.working') : L('buyorders.nextInMin', { Math: Math.max(0, Math.round((auto.next - Date.now()) / 60000)) });
+  const info = !on ? L('buyorders.off2') : !isLeader() ? L('buyorders.runsInAnotherTab') : st?.running ? L('buyorders.working') : L('buyorders.nextInMin', { min: Math.max(0, Math.round((auto.next - Date.now()) / 60000)) });
   ui.status('autobuy', `${L('buyorders.autoOutbid')}: <b class="${on ? 'ok' : 'mut'}">${info}</b>${lastAuto ? ` · ${timeAgo(lastAuto.at)}: ${esc(lastAuto.msg)}` : ''}`);
   const i = el?.querySelector('#b-autoinfo');
   if (i) i.textContent = info;

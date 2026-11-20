@@ -683,7 +683,7 @@ function raiseCap(l, h, mine) {
 
 function updateAuto(st) {
   const on = settings.autoRelist;
-  const info = !on ? L('listings.off3') : !isLeader() ? L('listings.runsInAnotherTab') : st?.running ? L('listings.working') : L('listings.nextInMin', { Math: Math.max(0, Math.round((auto.next - Date.now()) / 60000)) });
+  const info = !on ? L('listings.off3') : !isLeader() ? L('listings.runsInAnotherTab') : st?.running ? L('listings.working') : L('listings.nextInMin', { min: Math.max(0, Math.round((auto.next - Date.now()) / 60000)) });
   ui.status('autorelist', `Auto-relist: <b class="${on ? 'ok' : 'mut'}">${info}</b>${lastAuto ? ` · ${L('listings.last')} ${timeAgo(lastAuto.at)}: ${esc(lastAuto.msg)}` : ''}`);
   autoBtn();
   const i = document.getElementById('l-autoinfo');

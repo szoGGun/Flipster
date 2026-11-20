@@ -855,7 +855,7 @@ async function fetchPrices() {
   const base = sel.size ? groups().filter((g) => sel.has(g.key)) : groups();
   const list = [...new Map(base.filter((g) => g.rep.marketable).map((g) => [g.hash, g.rep])).values()].map((it) => ({ appid: it.appid, hash: it.hash }));
   if (!list.length) return ui.log(L('inventory.noSellableItems'), 'warn');
-  ui.log(L('inventory.refreshingSteamPricesForItems', { list: list.length, Math: Math.max(1, Math.ceil((list.length * 1.2) / 60)) }));
+  ui.log(L('inventory.refreshingSteamPricesForItems', { list: list.length, min: Math.max(1, Math.ceil((list.length * 1.2) / 60)) }));
   await autoPrice({ force: true, list });
 }
 
