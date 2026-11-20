@@ -750,11 +750,14 @@ function profitOf(g, now) {
   const net = steam.receivedFromBuyer(now);
   return { v: net - o.cost, pct: o.cost > 0 ? net / o.cost - 1 : null, approx: !((o.src === 'kupiony' && !o.approx) || o.cost === 0) };
 }
+/** a grouped card shows the whole group: the amounts × the number of units, the unit amount in a line under it */
+const unitLine = (g, v) => (g.qty > 1 && v != null ? `<span class="sub">${g.qty} × ${steam.fmt(v)}</span>` : '');
+const forAll = (g) => (g.qty > 1 ? L(`, for all ${g.qty} units`, `, za wszystkie ${g.qty} szt.`) : '');
 function profitTag(g, now, what = L('selling at the lowest price', 'sprzedaży po najniższej cenie')) {
   const p = profitOf(g, now);
   if (!p) return '';
   const sign = p.v >= 0 ? '+' : '−';
-  return `<div class="pl ${p.v >= 0 ? 'pos' : 'neg'}" title="${L(`What you get when ${what} minus what it cost you${p.approx ? ' (estimated cost)' : ''}${g.qty > 1 ? ', per unit' : ''}`, `Na rękę przy ${what} minus to, ile Cię kosztował${p.approx ? ' (koszt szacunkowy)' : ''}${g.qty > 1 ? ', za sztukę' : ''}`)}"><span class="lb">${L('result', 'wynik')}${p.approx ? ' ok.' : ''}</span><b>${sign}${steam.fmt(Math.abs(p.v))}${p.pct != null ? ` <span class="sub">(${sign}${Math.round(Math.abs(p.pct) * 100)}%)</span>` : ''}</b></div>`;
+  return `<div class="pl ${p.v >= 0 ? 'pos' : 'neg'}" title="${L(`What you get when ${what} minus what it cost you${p.approx ? ' (estimated cost)' : ''}${forAll(g)}`, `Na rękę przy ${what} minus to, ile Cię kosztował${p.approx ? ' (koszt szacunkowy)' : ''}${forAll(g)}`)}${g.qty > 1 ? `\n${L('Per unit', 'Na sztukę')}: ${sign}${steam.fmt(Math.abs(p.v))}` : ''}"><span class="lb">${L('result', 'wynik')}${p.approx ? ' ok.' : ''}</span><b>${sign}${steam.fmt(Math.abs(p.v * g.qty))}${p.pct != null ? ` <span class="sub">(${sign}${Math.round(Math.abs(p.pct) * 100)}%)</span>` : ''}</b></div>`;
 }
 
 function costTag(g, now) {
@@ -764,7 +767,7 @@ function costTag(g, now) {
   if (o.cost == null) return `<div title="${o.wait ? L('Working out the cost…', 'Liczę koszt…') : L('Couldn\'t work out the cost', 'Nie udało się ustalić kosztu')}"><span class="lb">${L('cost', 'koszt')}</span><b class="mut">${o.wait ? '…' : '?'}</b></div>`;
   const net = now ? steam.receivedFromBuyer(now) : null;
   const cls = free || net == null ? '' : net >= o.cost ? 'pos' : 'neg';
-  return `<div title="${L('What it cost you', 'Ile Cię kosztował')}${o.src === 'kupiony' && !o.approx ? '' : o.approx ? L(' (estimated, this purchase is not in the trade history, market price of that day)', ' (szacunkowo, brak tego zakupu w historii transakcji, cena rynkowa z tamtego dnia)') : L(' (estimated)', ' (szacunkowo)')}${net != null && !free ? L(`; today you'd get ${steam.fmt(net)}`, `; dziś dostałbyś na rękę ${steam.fmt(net)}`) : ''}"><span class="lb">${L('cost', 'koszt')}${(o.src === 'kupiony' && !o.approx) || free ? '' : ' ok.'}</span><b class="${cls}">${free ? L('free', 'za darmo') : steam.fmt(o.cost)}</b></div>`;
+  return `<div title="${L('What it cost you', 'Ile Cię kosztował')}${o.src === 'kupiony' && !o.approx ? '' : o.approx ? L(' (estimated, this purchase is not in the trade history, market price of that day)', ' (szacunkowo, brak tego zakupu w historii transakcji, cena rynkowa z tamtego dnia)') : L(' (estimated)', ' (szacunkowo)')}${forAll(g)}${net != null && !free ? L(`; today you'd get ${steam.fmt(net * g.qty)}`, `; dziś dostałbyś na rękę ${steam.fmt(net * g.qty)}`) : ''}"><span class="lb">${L('cost', 'koszt')}${(o.src === 'kupiony' && !o.approx) || free ? '' : ' ok.'}</span><b class="${cls}">${free ? L('free', 'za darmo') : steam.fmt(o.cost * g.qty)}</b>${free ? '' : unitLine(g, o.cost)}</div>`;
 }
 
 /** "Tradable/Marketable After Nov 19, 2026 (8:00:00) GMT" → "19.11 09:00" (local time) */
@@ -796,7 +799,7 @@ function card(g) {
       <div class="sub warn">🛒 ${L('on the market for', 'na rynku za')} <b>${steam.fmt(it.listPrice)}</b></div>
       <div class="sub ${beaten ? 'err' : low != null ? 'ok' : ''}">${low == null ? L('checking the market…', 'sprawdzam rynek…') : beaten ? L(`undercut, cheapest ${steam.fmt(low)}`, `przebita, najniższa ${steam.fmt(low)}`) : L('Yours is the cheapest', 'Twoja jest najtańsza')}</div>
       <div class="pv">
-        <div title="${L('What you get after the fee at your listing price; below it the lowest price on the market', 'Ile dostaniesz po prowizji przy Twojej cenie wystawienia; pod spodem najniższa cena na rynku')}"><span class="lb">${L('you get', 'na rękę')}</span><b>${steam.fmt(steam.receivedFromBuyer(it.listPrice))}</b><span class="sub">${low != null ? `${L('market', 'rynek')} ${steam.fmt(low)}` : ''}</span></div>
+        <div title="${L('What you get after the fee at your listing price; below it the lowest price on the market', 'Ile dostaniesz po prowizji przy Twojej cenie wystawienia; pod spodem najniższa cena na rynku')}"><span class="lb">${L('you get', 'na rękę')}</span><b>${steam.fmt(steam.receivedFromBuyer(it.listPrice) * g.qty)}</b><span class="sub">${low != null ? `${L('market', 'rynek')} ${steam.fmt(low * g.qty)}` : ''}</span>${unitLine(g, steam.receivedFromBuyer(it.listPrice))}</div>
         ${costTag(g, it.listPrice)}${profitTag(g, it.listPrice, L('selling at your listing price', 'sprzedaży po Twojej cenie wystawienia'))}
       </div>
     </div>
@@ -813,7 +816,7 @@ function card(g) {
     <div class="meta">${nameTag}${it.float != null ? `<div class="fl"><i style="left:${(it.float * 100).toFixed(1)}%"></i></div>${floatLine(it, g.key)}` : ''}</div>
     <div class="foot">
     ${!it.marketable && !it.lock ? '' : `<div class="pv">
-      <div title="${esc(`${L('You get = what you get after Steam\'s fee. Market = the lowest price on the Steam market (what the buyer pays)', 'Na rękę = ile dostaniesz po prowizji Steama. Rynek = najniższa cena na rynku Steam (tyle płaci kupujący)')}${st?.volume != null ? L(` · ${st.volume} sell per 24h`, ` · sprzedaje się ${st.volume} szt./24h`) : ''}${sig.trendNote(it) ? `\n\n${sig.trendNote(it)}` : ''}`)}"><span class="lb">${L('you get', 'na rękę')}</span><b>${up.v ? steam.fmt(steam.receivedFromBuyer(up.v)) : '-'}</b><span class="sub">${up.v ? `${L('market', 'rynek')} ${steam.fmt(up.v)}` : ''}</span></div>
+      <div title="${esc(`${L('You get = what you get after Steam\'s fee. Market = the lowest price on the Steam market (what the buyer pays)', 'Na rękę = ile dostaniesz po prowizji Steama. Rynek = najniższa cena na rynku Steam (tyle płaci kupujący)')}${st?.volume != null ? L(` · ${st.volume} sell per 24h`, ` · sprzedaje się ${st.volume} szt./24h`) : ''}${sig.trendNote(it) ? `\n\n${sig.trendNote(it)}` : ''}${g.qty > 1 ? L(`\n\nFor all ${g.qty} units together, the line below is one unit.`, `\n\nZa wszystkie ${g.qty} szt. razem, linia niżej to jedna sztuka.`) : ''}`)}"><span class="lb">${L('you get', 'na rękę')}</span><b>${up.v ? steam.fmt(steam.receivedFromBuyer(up.v) * g.qty) : '-'}</b><span class="sub">${up.v ? `${L('market', 'rynek')} ${steam.fmt(up.v * g.qty)}` : ''}</span>${up.v ? unitLine(g, steam.receivedFromBuyer(up.v)) : ''}</div>
       ${costTag(g, up.v)}${profitTag(g, up.v)}
     </div>`}
     ${adviceLine(it, up.v)}
