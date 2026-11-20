@@ -5,7 +5,7 @@ import { buyerFromReceived as _b2r, receivedFromBuyer as _r2b, DEFAULT_WALLET } 
 import * as disk from './cache.js';
 import { L } from './i18n.js';
 // "no order data": prices.js recognises it by text (in either language)
-const NO_ORDERS = () => L('no order data', 'brak danych o zleceniach');
+const NO_ORDERS = () => L('steam.noOrderData');
 
 export const ORIGIN = 'https://steamcommunity.com';
 export const bus = emitter();
@@ -71,7 +71,7 @@ export function ctx() {
 export async function marketListings(appid, hash, { start = 0, count = 100 } = {}) {
   const w = wallet();
   const d = await schedule('page', () => getJSON(`${ORIGIN}/market/listings/${appid}/${encodeURIComponent(hash)}/render/?query=&start=${start}&count=${count}&country=${w.country || 'PL'}&language=english&currency=${w.currency}`));
-  if (!d?.success) throw new Error(L('Steam returned no listings', 'Steam nie zwrócił ofert'));
+  if (!d?.success) throw new Error(L('steam.steamReturnedNoListings'));
   const props = new Map((Array.isArray(d.asset_properties) ? d.asset_properties : []).map((p) => [String(p.assetid), p.asset_properties || []]));
   const out = [];
   for (const l of Object.values(d.listinginfo || {})) {
@@ -126,7 +126,7 @@ export async function refreshWallet(maxAgeMs = 60000) {
   const html = await schedule('page', () => getText(`${ORIGIN}/market/`));
   const m = html.match(/g_rgWalletInfo\s*=\s*(\{[^;]*?\})\s*;/);
   const b = m ? parseInt(JSON.parse(m[1]).wallet_balance, 10) : NaN;
-  if (!(b >= 0)) throw new Error(L('Steam gave no wallet balance (are you logged in?)', 'Steam nie podał salda portfela (czy jesteś zalogowany?)'));
+  if (!(b >= 0)) throw new Error(L('steam.steamGaveNoWalletBalance'));
   c.wallet.balance = b;
   c.walletAt = Date.now();
   store.set('wallet', c.wallet);
@@ -307,15 +307,15 @@ export function schedule(lane, fn) {
 async function getJSON(url) {
   countReq('url:' + endpointOf(url));
   const r = await fetch(url, { credentials: 'include' });
-  if (!r.ok) throw new HttpError(r.status, r.status === 429 ? L('Steam: too many requests (429)', 'Steam: za dużo zapytań (429)') : r.status === 403 ? L('No access (403): private inventory or logged out', 'Brak dostępu (403), prywatny ekwipunek lub wylogowano') : undefined);
+  if (!r.ok) throw new HttpError(r.status, r.status === 429 ? L('steam.steamTooManyRequests429') : r.status === 403 ? L('steam.noAccess403PrivateInventory') : undefined);
   const t = await r.text();
-  try { return JSON.parse(t) ?? {}; } catch { throw new HttpError(r.status, L('Invalid response from Steam (are you logged in?)', 'Nieprawidłowa odpowiedź Steam (czy jesteś zalogowany?)')); }
+  try { return JSON.parse(t) ?? {}; } catch { throw new HttpError(r.status, L('steam.invalidResponseFromSteamAre')); }
 }
 
 async function getText(url) {
   countReq('url:' + endpointOf(url));
   const r = await fetch(url, { credentials: 'include' });
-  if (!r.ok) throw new HttpError(r.status, r.status === 429 ? L('Steam: too many requests (429)', 'Steam: za dużo zapytań (429)') : undefined);
+  if (!r.ok) throw new HttpError(r.status, r.status === 429 ? L('steam.steamTooManyRequests429') : undefined);
   return r.text();
 }
 
@@ -330,7 +330,7 @@ async function post(url, data, referrer) {
   });
   let json = null;
   try { json = await r.json(); } catch { /* not json */ }
-  if (r.status === 429) throw new HttpError(429, L('Steam: too many requests (429)', 'Steam: za dużo zapytań (429)'));
+  if (r.status === 429) throw new HttpError(429, L('steam.steamTooManyRequests429'));
   return { ok: r.ok, status: r.status, json: json || {} };
 }
 
@@ -346,7 +346,7 @@ export async function myListings() {
   let total = Infinity;
   while (start < total) {
     const d = await schedule('market', () => getJSON(`${ORIGIN}/market/mylistings/?norender=1&start=${start}&count=100`));
-    if (!d.success) throw new Error(L('Couldn\'t load listings (are you logged in?)', 'Nie udało się pobrać ofert (czy jesteś zalogowany?)'));
+    if (!d.success) throw new Error(L('steam.couldntLoadListingsAreYou'));
     total = d.total_count || 0;
     if (start === 0) {
       buyOrders = (d.buy_orders || []).map(parseBuyOrder);
@@ -531,7 +531,7 @@ async function fetchInventory(steamId, appid, contextid) {
       try { d = await schedule('inv', () => getJSON(url)); break; } catch (e) {
         if (e.status !== 500 && e.status !== 400 && e.status !== 502 && e.status !== 503) throw e;
         if (si < SIZES.length - 1) { si++; store.set('invPage', SIZES[si]); console.warn(`[Flipster] ekwipunek: Steam ${e.status}, zmniejszam stronę do ${SIZES[si]}`); continue; }
-        if (++tries > 2) throw new HttpError(e.status, L(`Steam isn't returning the inventory (error ${e.status}). Steam's servers have a problem, try again in a moment`, `Steam nie zwraca ekwipunku (błąd ${e.status}), serwery Steama mają problem, spróbuj za chwilę`));
+        if (++tries > 2) throw new HttpError(e.status, L('steam.steamIsntReturningTheInventory', { status: e.status }));
         await sleep(3000 * tries);
       }
     }
@@ -612,7 +612,7 @@ export async function priceOverview(appid, hash, currency = wallet().currency) {
   const d = await schedule('price', () =>
     getJSON(`${ORIGIN}/market/priceoverview/?appid=${appid}&currency=${currency}&market_hash_name=${encodeURIComponent(hash)}`),
   );
-  if (!d.success) throw new Error(L('no price data', 'brak danych cenowych'));
+  if (!d.success) throw new Error(L('steam.noPriceData'));
   return {
     lowest: parsePrice(d.lowest_price),
     median: parsePrice(d.median_price),
@@ -627,7 +627,7 @@ export async function nameId(appid, hash) {
   if (cached) return cached;
   const html = await schedule('page', () => getText(`${ORIGIN}/market/listings/${appid}/${encodeURIComponent(hash)}`));
   const m = html.match(/Market_LoadOrderSpread\(\s*(\d+)\s*\)/) || html.match(/item_?name_?id["']?\s*[:=]\s*["']?(\d+)/i);
-  if (!m) throw new Error(L('couldn\'t load buy orders (new Steam market)', 'nie udało się pobrać zleceń (nowy rynek Steam)'));
+  if (!m) throw new Error(L('steam.couldntLoadBuyOrdersNew'));
   nameIds.set(key, m[1]);
   return m[1];
 }
@@ -651,7 +651,7 @@ async function orderBook(appid, hash) {
   const url = `${ORIGIN}/market/orderbook?q=Load&qp=${encodeURIComponent(JSON.stringify([Number(appid), hash]))}`;
   const d = await schedule('hist', async () => {
     const r = await fetch(url, { credentials: 'include', headers: { 'x-valve-action-type': 'queryAction' } });
-    if (r.status === 429) throw new HttpError(429, L('Steam: too many requests (429)', 'Steam: za dużo zapytań (429)'));
+    if (r.status === 429) throw new HttpError(429, L('steam.steamTooManyRequests429'));
     if (!r.ok) throw new HttpError(r.status);
     return r.json();
   });
@@ -683,7 +683,7 @@ export async function histogram(appid, hash) {
       } catch (e) {
         if (e.status === 429) throw e;
         if (e.status === 404) { orderBookBroken = true; break; } // endpoint gone → use legacy path from now on
-        if (e.message === NO_ORDERS()) throw new Error(L(`no order data (check the name: ${hash})`, `brak danych o zleceniach (sprawdź nazwę: ${hash})`));
+        if (e.message === NO_ORDERS()) throw new Error(L('steam.noOrderDataCheckThe', { hash }));
         // a Steam server hiccup (502 Bad Gateway & co.): once more after a moment, before the slower old endpoint
         // (it needs the item's page first)
         if (e.status >= 500 && attempt === 0) { await sleep(1500); continue; }
@@ -736,7 +736,7 @@ async function fetchPriceHistory(appid, hash) {
     const inner = r?.data?.data ?? r?.data;
     d = { success: true, prices: Array.isArray(inner) ? inner : inner?.prices || [] };
   }
-  if (!d.prices?.length) throw new Error(L('no price history', 'brak historii cen'));
+  if (!d.prices?.length) throw new Error(L('steam.noPriceHistory'));
   // legacy endpoint: ["Nov 14 2026 20: +0", 4.336, "6766"]; new endpoint: {time, price_median, purchases}
   return (d.prices || []).map((p) => (Array.isArray(p)
     ? { t: Date.parse(String(p[0]).replace(/: \+0$/, ':00 +0000')), price: Math.round(p[1] * 100), vol: parseInt(p[2], 10) || 0 }
@@ -753,18 +753,18 @@ export const myHistoryHtmlPage = (start, count = 100) =>
 // ---------------------------------------------------------------- external services (NBP exchange rates)
 export function gmJSON(url) {
   return new Promise((resolve, reject) => {
-    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('GM_xmlhttpRequest unavailable', 'GM_xmlhttpRequest niedostępne')));
+    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('steam.gmXmlhttprequestUnavailable')));
     GM_xmlhttpRequest({
       method: 'GET',
       url,
       headers: { Accept: 'application/json' },
       timeout: 30000,
       onload: (r) => {
-        if (r.status === 429) return reject(new HttpError(429, L('External service: request limit, try again in a few minutes', 'Serwis zewnętrzny: limit zapytań, spróbuj za kilka minut')));
+        if (r.status === 429) return reject(new HttpError(429, L('steam.externalServiceRequestLimitTry')));
         if (r.status >= 400) return reject(new HttpError(r.status));
-        try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('Invalid response', 'Nieprawidłowa odpowiedź'))); }
+        try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('steam.invalidResponse'))); }
       },
-      onerror: () => reject(new Error(L('Network error', 'Błąd sieci'))),
+      onerror: () => reject(new Error(L('steam.networkError'))),
       ontimeout: () => reject(new Error('Timeout')),
     });
   });

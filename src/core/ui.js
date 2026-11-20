@@ -258,7 +258,7 @@ export function init() {
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
-    <div class="logbar" title="${L(`Drag up to make the log bigger (the window above gets smaller) · double-click to switch between big and small`, `Przeciągnij w górę, żeby powiększyć log (kosztem okna powyżej) · dwuklik: duży / mały`)}"></div>
+    <div class="logbar" title="${L('ui.dragUpToMakeThe')}"></div>
     <div class="log"></div>
   </div>`;
   document.body.appendChild(ov);
@@ -441,7 +441,7 @@ export function log(msg, cls = '') {
   if (atEnd) logEl.scrollTop = logEl.scrollHeight;
   if (cls === 'err') console.warn('[Flipster]', msg);
   if (cls === 'err' && !store.settings.showLog) {
-    status('logerr', `<span class="err" title="${L(`The log is turned off in ⚙ Settings`, `Dziennik jest wyłączony w ⚙ Ustawieniach`)}">⚠ ${esc(msg)}</span>`);
+    status('logerr', `<span class="err" title="${L('ui.theLogIsTurnedOff')}">⚠ ${esc(msg)}</span>`);
     clearTimeout(errTimer);
     errTimer = setTimeout(() => status('logerr', null), 20000);
   }
@@ -473,7 +473,7 @@ export function fab(on, text = '') {
 /** in-page confirm (native confirm() is ugly and blocking) */
 /** collect(modalEl) runs before the modal is removed; its result is returned instead of `true` */
 /** onOpen(modal): wire live behaviour into the dialog's own inputs (runs once it is on the page) */
-export function ask(title, html, { ok = 'OK', cancel = L('Cancel', 'Anuluj'), danger = false, collect = null, wide = false, onOpen = null } = {}) {
+export function ask(title, html, { ok = 'OK', cancel = L('ui.cancel'), danger = false, collect = null, wide = false, onOpen = null } = {}) {
   return new Promise((resolve) => {
     const m = document.createElement('div');
     m.className = 'modal';
@@ -540,7 +540,7 @@ export function sorter(defaultKey, defaultDir = -1) {
 /** SVG line chart. series: [{points:[[x,y]], color, label}] ; fmtY for labels */
 export function lineChart(series, { fmtY = (v) => v, fmtX = (v) => new Date(v).toLocaleDateString(), height = 220, bars = null, zero = false } = {}) {
   const all = series.flatMap((s) => s.points);
-  if (!all.length) return L('<div class="empty">No data</div>', '<div class="empty">Brak danych</div>');
+  if (!all.length) return L('ui.noData');
   const W = 1000, H = height, P = { l: 70, r: 12, t: 12, b: 26 };
   const xs = all.map((p) => p[0]), ys = all.map((p) => p[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs);
@@ -564,7 +564,7 @@ export function lineChart(series, { fmtY = (v) => v, fmtX = (v) => new Date(v).t
     const bw = Math.max(1, (W - P.l - P.r) / bars.length - 1);
     g += bars.map(([x, v]) => `<rect x="${X(x) - bw / 2}" width="${bw}" y="${H - P.b - (v / bm) * 40}" height="${(v / bm) * 40}" fill="#2a475e"/>`).join('');
   }
-  if (zero) g += `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#8f98a0" stroke-width="1" stroke-dasharray="4 4"/><text x="${W - P.r - 4}" y="${Y(0) - 4}" fill="#8f98a0" font-size="11" text-anchor="end">0 (${L(`break-even`, `wyjście na zero`)})</text>`;
+  if (zero) g += `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#8f98a0" stroke-width="1" stroke-dasharray="4 4"/><text x="${W - P.r - 4}" y="${Y(0) - 4}" fill="#8f98a0" font-size="11" text-anchor="end">0 (${L('ui.breakEven')})</text>`;
   for (const s of series) {
     const d = s.points.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
     g += `<path d="${d}" fill="none" stroke="${s.color || '#66c0f4'}" stroke-width="${s.width || 1.8}" ${s.dash ? 'stroke-dasharray="5 4"' : ''}/>`;

@@ -33,16 +33,16 @@ export async function relist(jobs, hooks = {}) {
   for (const [k, list] of groups) {
     const [appid, contextid] = k.split('_');
     if (isCancelled()) break;
-    log(L(`Inventory snapshot ${appid}/${contextid}…`, `Snapshot ekwipunku ${appid}/${contextid}…`));
+    log(L('relist-engine.inventorySnapshot', { appid, contextid }));
     const before = await invMap(appid, contextid);
 
     const removed = [];
     for (const j of list) {
       if (isCancelled()) { onStatus(j.listing, 'anulowano', 'warn'); continue; }
-      onStatus(j.listing, L('removing…', 'zdejmowanie…'));
+      onStatus(j.listing, L('relist-engine.removing'));
       const r = await steam.removeListing(j.listing.listingid);
-      if (r.ok) { removed.push(j); onStatus(j.listing, L('removed, waiting for the inventory…', 'zdjęto, czekam na ekwipunek…')); }
-      else { res.failed++; onStatus(j.listing, L(`removing failed (HTTP ${r.status})`, `błąd zdejmowania (HTTP ${r.status})`), 'err'); log(L(`Couldn't remove ${j.listing.hash} (HTTP ${r.status})`, `Nie udało się zdjąć ${j.listing.hash} (HTTP ${r.status})`), 'err'); }
+      if (r.ok) { removed.push(j); onStatus(j.listing, L('relist-engine.removedWaitingForTheInventory')); }
+      else { res.failed++; onStatus(j.listing, L('relist-engine.removingFailedHttp', { status: r.status }), 'err'); log(L('relist-engine.couldntRemoveHttp', { hash: j.listing.hash, status: r.status }), 'err'); }
     }
     if (!removed.length) continue;
 
@@ -58,28 +58,28 @@ export async function relist(jobs, hooks = {}) {
         if (id) { resolved.set(j, id); used.set(id, (used.get(id) || 0) + j.listing.amount); } else still.push(j);
       }
       pending = still;
-      if (pending.length) log(L(`Waiting for ${pending.length} items to come back to the inventory…`, `Czekam na powrót ${pending.length} przedmiotów do ekwipunku…`), 'warn');
+      if (pending.length) log(L('relist-engine.waitingForItemsToCome', { pending: pending.length }), 'warn');
     }
     for (const j of pending) {
       res.failed++;
-      onStatus(j.listing, L('not found in the inventory, list it by hand', 'nie znaleziono w ekwipunku, wystaw ręcznie'), 'err');
-      log(L(`${j.listing.hash}: removed but not found in the inventory, list it by hand!`, `${j.listing.hash}: zdjęty, ale nie znaleziony w ekwipunku, wystaw ręcznie!`), 'err');
+      onStatus(j.listing, L('relist-engine.notFoundInTheInventory'), 'err');
+      log(L('relist-engine.removedButNotFoundIn', { hash: j.listing.hash }), 'err');
     }
 
     for (const [j, assetid] of resolved) {
       const price = steam.receivedFromBuyer(j.price, j.listing.pub);
-      onStatus(j.listing, L('listing…', 'wystawianie…'));
+      onStatus(j.listing, L('relist-engine.listing'));
       const r = steam.sellResultText(await steam.sellItem({ appid, contextid, assetid, amount: j.listing.amount, price }));
       const shown = steam.fmt(steam.buyerFromReceived(price, j.listing.pub));
       if (r.ok) {
         res.ok++;
         if (r.confirm) { res.confirm++; res.waiting.push({ listing: j.listing, recv: price, buyer: steam.buyerFromReceived(price, j.listing.pub) }); }
-        onStatus(j.listing, L(`listed for ${shown}${r.confirm ? ', confirm in the app' : ''}`, `wystawiono za ${shown}${r.confirm ? ', potwierdź w aplikacji' : ''}`), 'ok');
-        log(`${j.listing.hash}: ${steam.fmt(j.listing.buyer)} → ${shown}${r.confirm ? L(' (to confirm)', ' (do potwierdzenia)') : ''}`, 'ok');
+        onStatus(j.listing, L('relist-engine.listedFor', { shown, confirm: r.confirm ? L('relist-engine.confirmInTheApp') : '' }), 'ok');
+        log(`${j.listing.hash}: ${steam.fmt(j.listing.buyer)} → ${shown}${r.confirm ? L('relist-engine.toConfirm') : ''}`, 'ok');
       } else {
         res.failed++;
-        onStatus(j.listing, L(`listing failed: ${r.msg} (the item is in the inventory)`, `błąd wystawiania: ${r.msg} (przedmiot w ekwipunku)`), 'err');
-        log(L(`${j.listing.hash}: listing failed, ${r.msg}. The item is in the inventory.`, `${j.listing.hash}: błąd wystawiania, ${r.msg}. Przedmiot jest w ekwipunku.`), 'err');
+        onStatus(j.listing, L('relist-engine.listingFailedTheItemIs', { msg: r.msg }), 'err');
+        log(L('relist-engine.listingFailedTheItemIs2', { hash: j.listing.hash, msg: r.msg }), 'err');
       }
     }
   }
@@ -94,14 +94,14 @@ export async function sellMany(jobs, hooks = {}) {
     if (isCancelled()) break;
     const pub = steam.wallet().pubDefault;
     const price = steam.receivedFromBuyer(j.price, pub);
-    onStatus(j.item, L('listing…', 'wystawianie…'));
+    onStatus(j.item, L('relist-engine.listing'));
     const r = steam.sellResultText(await steam.sellItem({ appid: j.item.appid, contextid: j.item.contextid, assetid: j.item.assetid, amount: j.amount || j.item.amount, price }));
     const shown = steam.fmt(steam.buyerFromReceived(price, pub));
     if (r.ok) {
       res.ok++;
       if (r.confirm) res.confirm++;
-      onStatus(j.item, L(`listed for ${shown}`, `wystawiono za ${shown}`), 'ok');
-      log(L(`Listed ${j.item.hash}: you get ${steam.fmt(price)}, the buyer pays about ${shown}${r.confirm ? ' (confirm in the Steam app)' : ''}`, `Wystawiono ${j.item.hash}: dostaniesz ${steam.fmt(price)}, kupujący zapłaci ok. ${shown}${r.confirm ? ' (potwierdź w aplikacji Steam)' : ''}`), 'ok');
+      onStatus(j.item, L('relist-engine.listedFor2', { shown }), 'ok');
+      log(L('relist-engine.listedYouGetTheBuyer', { hash: j.item.hash, price: steam.fmt(price), shown, confirm: r.confirm ? L('relist-engine.confirmInTheSteamApp') : '' }), 'ok');
     } else {
       res.failed++;
       onStatus(j.item, r.msg, 'err');

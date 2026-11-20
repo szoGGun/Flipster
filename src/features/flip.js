@@ -10,7 +10,7 @@ import { parsePrice, toInput, esc, pct, sleep } from '../core/util.js';
 import { MIN_BUYER } from '../core/fees.js';
 import { RESEARCH_ITEMS } from './research-items.js';
 import * as research from './research.js';
-import { L, locale } from '../core/i18n.js';
+import { L, dec, locale } from '../core/i18n.js';
 
 const watch = store.bucket('watchlist'); // hash -> {appid, added}
 // items you don't want to see in the scanner: not listed and not even checked (saves requests); restored under "Ukryte"
@@ -25,9 +25,9 @@ let openBuyOrder = () => {};
 export const setBuyOrderOpener = (fn) => (openBuyOrder = fn);
 
 const CATS = [
-  ['', L('Everything', 'Wszystko')], ['case', L('Cases', 'Skrzynie')], ['capsule', L('Capsules and packages', 'Kapsuły i paczki')], ['tag_CSGO_Tool_Sticker', L('Stickers', 'Naklejki')], ['tag_CSGO_Type_Rifle', L('Rifles', 'Karabiny')],
-  ['tag_CSGO_Type_Pistol', L('Pistols', 'Pistolety')], ['tag_CSGO_Type_SMG', L('SMGs', 'PM')], ['tag_CSGO_Type_Knife', L('Knives', 'Noże')], ['tag_Type_Hands', L('Gloves', 'Rękawice')],
-  ['tag_Type_CustomPlayer', L('Agents', 'Agenci')], ['tag_CSGO_Type_Spray', 'Graffiti'], ['tag_CSGO_Type_MusicKit', L('Music kits', 'Muzyka')],
+  ['', L('flip.everything')], ['case', L('flip.cases')], ['capsule', L('flip.capsulesAndPackages')], ['tag_CSGO_Tool_Sticker', L('flip.stickers')], ['tag_CSGO_Type_Rifle', L('flip.rifles')],
+  ['tag_CSGO_Type_Pistol', L('flip.pistols')], ['tag_CSGO_Type_SMG', L('flip.smgs')], ['tag_CSGO_Type_Knife', L('flip.knives')], ['tag_Type_Hands', L('flip.gloves')],
+  ['tag_Type_CustomPlayer', L('flip.agents')], ['tag_CSGO_Type_Spray', 'Graffiti'], ['tag_CSGO_Type_MusicKit', L('flip.musicKits')],
 ];
 
 // Steam has one type for every container (weapon cases, sticker capsules, souvenir packages, graffiti / music boxes):
@@ -52,58 +52,50 @@ export function mount(root) {
   el = root;
   root.innerHTML = `
     <div class="bar">
-      <button class="b" data-v="analyze">🔎 ${L('Item analysis', 'Analiza przedmiotu')}</button>
-      <button class="b" data-v="watch">★ ${L('Watchlist', 'Obserwowane')}</button>
-      <button class="b" data-v="scan">📡 ${L('Market scanner', 'Skaner rynku')}</button>
+      <button class="b" data-v="analyze">🔎 ${L('flip.itemAnalysis')}</button>
+      <button class="b" data-v="watch">★ ${L('flip.watchlist')}</button>
+      <button class="b" data-v="scan">📡 ${L('flip.marketScanner')}</button>
       <span class="sp"></span>
-      <button class="b dbg" data-a="research" title="${L('Downloads from the Steam market the order book and the full price history of the items shown on the list right now (scanner, watchlist or the analysed item) and saves them to a file, to check whether they really pay off. When the list is empty, it takes a fixed sample of about 100 popular items. Nothing is bought or listed.', 'Pobiera z Rynku Steam księgę zleceń i pełną historię cen przedmiotów widocznych teraz na liście (skaner, obserwowane albo analizowany przedmiot) i zapisuje je do pliku, do sprawdzenia, czy faktycznie się opłacają. Gdy lista jest pusta, bierze stałą próbkę ok. 100 popularnych przedmiotów. Niczego nie kupuje ani nie wystawia.')}">⬇ ${L('Data for analysis', 'Dane do analizy')}</button>
-      <button class="b dbg" data-a="sample" title="${L('Picks a few hundred random items from the most popular ones on the Steam market (evenly from every kind and price range) and saves their price history and order book to a file, to test Flipster\'s algorithms on a wider market. Nothing is bought or listed.', 'Losuje kilkaset przedmiotów z listy najpopularniejszych na Rynku Steam (po równo z każdego rodzaju i przedziału cen) i zapisuje ich historię cen i księgę zleceń do pliku, do sprawdzania algorytmów Flipstera na szerszym rynku. Niczego nie kupuje ani nie wystawia.')}">⬇ ${L('Market sample', 'Próbka rynku')}</button>
+      <button class="b dbg" data-a="research" title="${L('flip.downloadsFromTheSteamMarket')}">⬇ ${L('flip.dataForAnalysis')}</button>
+      <button class="b dbg" data-a="sample" title="${L('flip.picksAFewHundredRandom')}">⬇ ${L('flip.marketSample')}</button>
       <button class="b" data-a="stop" hidden>■ Stop</button>
     </div>
     <section data-s="analyze">
       <div class="row2">
-        <label style="position:relative">${L('Item (name in English or Polish, or a market link)', 'Przedmiot (nazwa po polsku lub angielsku, albo link do rynku)')}<input type="text" id="f-q" style="width:420px" placeholder="${L('e.g.', 'np.')} Budapest 2025 Champions Autograph Capsule" autocomplete="off"><div id="f-sugg" class="sugg" hidden></div></label>
+        <label style="position:relative">${L('flip.itemNameInEnglishOr')}<input type="text" id="f-q" style="width:420px" placeholder="${L('flip.eG')} Budapest 2025 Champions Autograph Capsule" autocomplete="off"><div id="f-sugg" class="sugg" hidden></div></label>
         <label>AppID<input type="number" id="f-app" value="730" style="width:70px"></label>
-        <label>${L('Your buy price (optional)', 'Twoja cena zakupu (opcjonalnie)')}<input class="p" id="f-mine" placeholder="-"></label>
-        <label>${L('Units to buy', 'Ile sztuk chcę kupić')}<input type="number" id="f-n" value="1" min="1" style="width:70px"></label>
-        <button class="b go" data-a="analyze">${L('Analyse', 'Analizuj')}</button>
+        <label>${L('flip.yourBuyPriceOptional')}<input class="p" id="f-mine" placeholder="-"></label>
+        <label>${L('flip.unitsToBuy')}<input type="number" id="f-n" value="1" min="1" style="width:70px"></label>
+        <button class="b go" data-a="analyze">${L('flip.analyse')}</button>
       </div>
       <div id="f-out"></div>
     </section>
     <section data-s="watch" hidden>
       <div class="row2">
-        <label>${L('Add to watchlist', 'Dodaj do obserwowanych')}<input type="text" id="w-add" style="width:380px" placeholder="${L('name in English or Polish', 'nazwa po polsku lub angielsku')}"></label>
-        <button class="b" data-a="wadd">${L('Add', 'Dodaj')}</button>
-        <button class="b go" data-a="wscan">${L('Scan watchlist', 'Skanuj obserwowane')}</button>
+        <label>${L('flip.addToWatchlist')}<input type="text" id="w-add" style="width:380px" placeholder="${L('flip.nameInEnglishOrPolish')}"></label>
+        <button class="b" data-a="wadd">${L('flip.add')}</button>
+        <button class="b go" data-a="wscan">${L('flip.scanWatchlist')}</button>
       </div>
       <div class="tw" id="w-table"></div>
     </section>
     <section data-s="scan" hidden>
       <div class="row2">
-        <label>${L('Goal', 'Cel')}<select id="s-goal"><option value="hold">${L('long term (case season)', 'na dłużej (sezon skrzyń)')}</option><option value="flip">${L('quick flip (7-day lock)', 'szybki flip (7 dni blokady)')}</option></select></label>
-        <label>${L('Category', 'Kategoria')}<select id="s-cat">${CATS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
-        <label>${L('Search', 'Szukaj')}<input type="text" id="s-q" style="width:150px" placeholder="${L('(optional)', '(opcjonalnie)')}"></label>
-        <label>${L('Price from', 'Cena od')}<input class="p" id="s-min" value="${toInput(100)}"></label>
-        <label>${L('to', 'do')}<input class="p" id="s-max" data-auto="1" value="${toInput(maxDefault())}"></label>
-        <label>${L('Min. listings', 'Min. ofert na rynku')}<input type="number" id="s-list" value="100" style="width:80px"></label>
-        <label data-only="hold">${L('Items to check', 'Ile przedmiotów sprawdzić')}<input type="number" id="s-n" value="40" style="width:70px"></label>
-        <label data-only="flip">${L('How many to find', 'Ile znaleźć')}<input type="number" id="s-find" value="${esc(store.get('flipFind', '5'))}" min="0" placeholder="${L('no limit', 'bez limitu')}" style="width:92px"></label>
-        <label data-only="flip">${L('Min. sales/24h', 'Min. sprzedaży/24h')}<input type="number" id="s-vol" value="${settings.minVolume}" style="width:70px"></label>
+        <label>${L('flip.goal')}<select id="s-goal"><option value="hold">${L('flip.longTermCaseSeason')}</option><option value="flip">${L('flip.quickFlip7DayLock')}</option></select></label>
+        <label>${L('flip.category')}<select id="s-cat">${CATS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
+        <label>${L('flip.search')}<input type="text" id="s-q" style="width:150px" placeholder="${L('flip.optional')}"></label>
+        <label>${L('flip.priceFrom')}<input class="p" id="s-min" value="${toInput(100)}"></label>
+        <label>${L('flip.to')}<input class="p" id="s-max" data-auto="1" value="${toInput(maxDefault())}"></label>
+        <label>${L('flip.minListings')}<input type="number" id="s-list" value="100" style="width:80px"></label>
+        <label data-only="hold">${L('flip.itemsToCheck')}<input type="number" id="s-n" value="40" style="width:70px"></label>
+        <label data-only="flip">${L('flip.howManyToFind')}<input type="number" id="s-find" value="${esc(store.get('flipFind', '5'))}" min="0" placeholder="${L('flip.noLimit')}" style="width:92px"></label>
+        <label data-only="flip">${L('flip.minSales24h')}<input type="number" id="s-vol" value="${settings.minVolume}" style="width:70px"></label>
         <label data-only="flip">Min. ROI %<input type="number" id="s-roi" value="${Math.round(settings.minRoi * 100)}" style="width:60px"></label>
-        <label data-only="flip" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:6px" title="${L('Only items with the “Flip possible” verdict stay on the list. Untick it to also see the risky ones (profit smaller than the typical weekly price swing).', 'Na liście zostają tylko przedmioty z oceną „Flip możliwy”. Odznacz, żeby widzieć też ryzykowne (zysk mniejszy niż typowa zmiana ceny w tydzień).')}"><input type="checkbox" id="s-only" ${store.get('flipOnlyOk', true) ? 'checked' : ''}> ${L('profitable only', 'tylko opłacalne')}</label>
-        <label data-only="flip" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:6px" title="${L('Ticked, the scanner reuses what it checked recently, rejected items (12 h when the order book alone left no room for a flip, 3 h after a full check), hits and “risky” ones (30 min), and the lists and order books (a few minutes). Untick it so this scan downloads everything from Steam again.', 'Zaznaczone: skaner bierze z pamięci to, co niedawno sprawdził, odrzucone przedmioty (12 godz., gdy sama księga zleceń nie dawała szans na flip; 3 godz. po pełnym sprawdzeniu), trafienia i „ryzykowne” (30 min) oraz listy i księgi zleceń (kilka minut). Odznacz, żeby ten skan pobrał wszystko ze Steama od nowa.')}"><input type="checkbox" id="s-skip" ${store.get('flipSkipSeen', true) ? 'checked' : ''}> ${L('use remembered data', 'korzystaj z zapamiętanych danych')}</label>
-        <button class="b go" data-a="scan">${L('Scan', 'Skanuj')}</button>
-        <button class="b" data-a="sclear" title="${L('Removes the results of the previous scan from the list (also the ones kept across a page reload). Watched and hidden items stay.', 'Usuwa z listy wyniki poprzedniego skanu (także zapamiętane po odświeżeniu strony). Obserwowane i ukryte zostają.')}">${L('Clear list', 'Wyczyść listę')}</button>
+        <label data-only="flip" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:6px" title="${L('flip.onlyItemsWithTheFlip')}"><input type="checkbox" id="s-only" ${store.get('flipOnlyOk', true) ? 'checked' : ''}> ${L('flip.profitableOnly')}</label>
+        <label data-only="flip" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:6px" title="${L('flip.tickedTheScannerReusesWhat')}"><input type="checkbox" id="s-skip" ${store.get('flipSkipSeen', true) ? 'checked' : ''}> ${L('flip.useRememberedData')}</label>
+        <button class="b go" data-a="scan">${L('flip.scan')}</button>
+        <button class="b" data-a="sclear" title="${L('flip.removesTheResultsOfThe')}">${L('flip.clearList')}</button>
       </div>
-      <details><summary>${L('How does it work?', 'Jak to działa?')}</summary><div class="note" style="font-size:13px">${L(`
-        The scanner takes the most popular items of the category and price range from the Steam market, and for each of them the order book and the full price history.<br>
-        <b>Long term.</b> Shows what holding the item gave in the past, after the fee. How many winters (bought at the end of November, sold half a year later) ended in profit, the result after one and after two years, the price against the yearly average and the change over the last month. A “candidate” is a case older than 4 years, from 1 zł, whose price didn't fall more than 10% in 30 days and which sells ≥ 20 units a day. The case's own winter record is shown but doesn't decide, in the research it didn't tell the better cases from the worse ones, and age did. For other items, at least 3 winters of data and a profit in ≥ 70% of them.<br>
-        <b>Quick flip.</b> Buying with an order a cent above the ones really waiting in the order book, selling at the price sales actually go at, minus the fee. A bought item can be listed only after 7 days, so next to it you see the typical weekly price swing and whether anyone sold that cheap lately. In this mode the scanner keeps searching, it walks the list from the most popular until it finds as many “Flip possible” items as you type in “How many to find”, the list ends or you click Stop. An empty “How many to find” means no limit, it searches until Stop. With “profitable only” just the hits stay on the list, untick it to also see the “risky” ones.<br>
-        <b>Where these rules come from.</b> Research on 108 items with up to 13 years of history (15.11.2026). Flips and buying dips didn't beat the fee, holding old cases bought in winter did make money. New items usually lose a lot of value. This is history, not a guarantee.`, `
-        Skaner pobiera z Rynku Steam najpopularniejsze przedmioty z kategorii i przedziału cen, a dla każdego, księgę zleceń i pełną historię cen.<br>
-        <b>Na dłużej.</b> Pokazuje, co trzymanie tego przedmiotu dawało w przeszłości, po prowizji: ile zim (zakup pod koniec listopada, sprzedaż pół roku później) skończyło się zyskiem, wynik po roku i po dwóch latach, cenę względem średniej z roku i zmianę z ostatniego miesiąca. „Kandydat” = skrzynia starsza niż 4 lata, od 1 zł, cena nie spadła o więcej niż 10% w 30 dni, sprzedaje się ≥ 20 szt. dziennie. Rekord zim samej skrzyni jest pokazany, ale nie decyduje: w badaniu nie odróżniał lepszych od gorszych, a wiek tak. Dla pozostałych przedmiotów: co najmniej 3 zimy danych i zysk w ≥ 70% z nich.<br>
-        <b>Szybki flip.</b> Kupno zleceniem o grosz nad tymi, które realnie stoją w księdze, sprzedaż po cenie, po której faktycznie idą transakcje, minus prowizja. Kupiony przedmiot można wystawić dopiero po 7 dniach, więc obok jest typowa zmiana ceny w tydzień i to, czy ktokolwiek ostatnio sprzedawał tak tanio. W tym trybie skaner szuka do skutku: idzie po liście od najpopularniejszych, aż znajdzie tyle przedmiotów z oceną „Flip możliwy”, ile wpiszesz w „Ile znaleźć”, skończy się lista albo klikniesz Stop. Puste pole „Ile znaleźć” = bez limitu, szuka do Stopu. Z „tylko opłacalne” na liście zostają same trafienia; po odznaczeniu widać też „ryzykowne”.<br>
-        <b>Skąd te zasady.</b> Badanie 108 przedmiotów z historią do 13 lat (15.11.2026): flipy i łapanie dołków nie przebijały prowizji, a zarabiało trzymanie starych skrzyń kupionych zimą. Nowe przedmioty zwykle mocno tanieją. To historia, nie gwarancja.`)}
+      <details><summary>${L('flip.howDoesItWork')}</summary><div class="note" style="font-size:13px">${L('flip.theScannerTakesTheMost')}
       </div></details>
       <div class="tw" id="s-table"></div>
     </section>`;
@@ -164,7 +156,7 @@ function onClick(e) {
   ({
     analyze,
     stop: () => { task?.cancel(); research.cancelResearch(); },
-    wadd: async () => { const h = el.querySelector('#w-add').value.trim(); if (!h) return; const r = await resolveHash(h); if (!r) return ui.log(L(`Not found on the market: ${h}`, `Nie znalazłem na rynku: ${h}`), 'warn'); toggleWatch(r.hash, 730, true); el.querySelector('#w-add').value = ''; },
+    wadd: async () => { const h = el.querySelector('#w-add').value.trim(); if (!h) return; const r = await resolveHash(h); if (!r) return ui.log(L('flip.notFoundOnTheMarket', { h }), 'warn'); toggleWatch(r.hash, 730, true); el.querySelector('#w-add').value = ''; },
     wscan: () => runMetrics(Object.entries(watch.all()).map(([hash, w]) => ({ hash, appid: w.appid || 730 })), '#w-table', true),
     scan,
     sclear: clearScan,
@@ -176,8 +168,8 @@ function onClick(e) {
 }
 
 function toggleWatch(hash, appid, forceAdd = false) {
-  if (watch.get(hash) && !forceAdd) { watch.del(hash); ui.log(L(`Removed from watchlist: ${hash}`, `Usunięto z obserwowanych: ${hash}`)); }
-  else { watch.set(hash, { appid: +appid, added: Date.now() }); ui.log(L(`Added to watchlist: ${hash}`, `Dodano do obserwowanych: ${hash}`), 'ok'); }
+  if (watch.get(hash) && !forceAdd) { watch.del(hash); ui.log(L('flip.removedFromWatchlist', { hash })); }
+  else { watch.set(hash, { appid: +appid, added: Date.now() }); ui.log(L('flip.addedToWatchlist', { hash }), 'ok'); }
   if (view === 'watch') setView('watch');
   else el.querySelectorAll(`[data-w="${CSS.escape(hash)}"]`).forEach((x) => (x.textContent = watch.get(hash) ? '★' : '☆'));
 }
@@ -207,10 +199,10 @@ async function suggest(text) {
   const box = el.querySelector('#f-sugg');
   if (text.trim().length < 3 || parseQuery(text)) { box.hidden = true; return; }
   box.hidden = false;
-  box.innerHTML = `<div class="sub">${L('searching…', 'szukam…')}</div>`;
+  box.innerHTML = `<div class="sub">${L('flip.searching')}</div>`;
   const res = (await searchNames(text.trim()))?.results || [];
   if (el.querySelector('#f-q').value !== text) return; // typed on meanwhile
-  box.innerHTML = res.length ? res.map((x) => `<div data-pick="${esc(JSON.stringify({ hash: x.hash_name }))}"><img src="https://community.cloudflare.steamstatic.com/economy/image/${esc(x.asset_description?.icon_url || '')}/62fx62f"><span style="color:#${esc(x.asset_description?.name_color || 'c6d4df')}">${esc(x.hash_name || x.name)}</span><span class="p2">${esc(x.sell_price_text || '')}</span></div>`).join('') : `<div class="sub">${L('nothing found', 'nic nie znaleziono')}</div>`;
+  box.innerHTML = res.length ? res.map((x) => `<div data-pick="${esc(JSON.stringify({ hash: x.hash_name }))}"><img src="https://community.cloudflare.steamstatic.com/economy/image/${esc(x.asset_description?.icon_url || '')}/62fx62f"><span style="color:#${esc(x.asset_description?.name_color || 'c6d4df')}">${esc(x.hash_name || x.name)}</span><span class="p2">${esc(x.sell_price_text || '')}</span></div>`).join('') : `<div class="sub">${L('flip.nothingFound')}</div>`;
 }
 
 const parseQuery = (q) => {
@@ -241,46 +233,45 @@ function metricsRow(hash, appid, h, po, st, hist) {
 /** is this item a candidate to buy and hold? Based on its own record + the two things that mattered in the back-test */
 function holdVerdict(r) {
   const hs = r.hs;
-  if (!hs) return { k: 'none', label: L('no history', 'brak historii'), c: 'mut', why: L('Steam returned no price history for this item.', 'Steam nie zwrócił historii cen tego przedmiotu.') };
-  if (hs.ageDays < 365) return { k: 'new', label: L('new item', 'nowy przedmiot'), c: 'bad', why: L('It has been on the market for less than a year. New items usually lose a lot of value, in the research typically −57% in the first 90 days.', 'Jest na rynku krócej niż rok. Nowe przedmioty zwykle mocno tanieją, w badaniu typowo −57% w pierwszych 90 dniach.') };
-  if (r.h?.lowestSell && r.h.lowestSell < 100) return { k: 'cheap', label: L('too cheap', 'za tani'), c: 'bad', why: L('Below 1 zł the minimum fee (0.04 + 0.04 zł) takes much more than 13%.', 'Poniżej 1 zł minimalna prowizja (0,04 + 0,04 zł) zabiera dużo więcej niż 13%.') };
-  let rec = hs.winter ? L(`Winters in profit: ${hs.winter.wins} of ${hs.winter.n}, typically ${sp(hs.winter.med)} after the fee.`, `Zimy na plus: ${hs.winter.wins} z ${hs.winter.n}, typowo ${sp(hs.winter.med)} po prowizji.`) : '';
+  if (!hs) return { k: 'none', label: L('flip.noHistory'), c: 'mut', why: L('flip.steamReturnedNoPriceHistory') };
+  if (hs.ageDays < 365) return { k: 'new', label: L('flip.newItem'), c: 'bad', why: L('flip.itHasBeenOnThe') };
+  if (r.h?.lowestSell && r.h.lowestSell < 100) return { k: 'cheap', label: L('flip.tooCheap'), c: 'bad', why: L('flip.below1ZTheMinimum') };
+  let rec = hs.winter ? L('flip.wintersInProfitOfTypically', { wins: hs.winter.wins, n: hs.winter.n, med: sp(hs.winter.med) }) : '';
   if (isCase(r.hash)) {
     // walk-forward on 36 cases / 161 winters (2026-11-15): age told winners from losers, under 4 years 54% of
     // winters were profitable (typically +13%), older 82% (+39%). The case's own winter record did not: the cases
     // the old "≥3 winters, ≥70% won" gate rejected did no worse than the ones it accepted.
-    const age = (hs.ageDays / 365).toFixed(1);
-    const agePl = age.replace('.', ',');
-    if (hs.ageDays < 4 * 365) return { k: 'young', label: L('too young', 'za młoda'), c: 'mid', why: L(`On the market for ${age} years. Cases younger than 4 years gave a winter profit in 54% of cases (typically +13%), older ones in 82% (typically +39%).`, `Na rynku od ${agePl} roku. Skrzynie młodsze niż 4 lata dawały zimą zysk w 54% przypadków (typowo +13%), starsze w 82% (typowo +39%).`) };
-    rec = L(`The case is ${age} years old, cases older than 4 years gave a winter profit in 82% of cases. ${rec}`, `Skrzynia ma ${agePl} roku, starsze niż 4 lata dawały zimą zysk w 82% przypadków. ${rec}`);
+    const age = dec(hs.ageDays / 365, 1);
+    if (hs.ageDays < 4 * 365) return { k: 'young', label: L('flip.tooYoung'), c: 'mid', why: L('flip.onTheMarketForYears', { age }) };
+    rec = L('flip.theCaseIsYearsOld', { age, rec });
   } else {
-    if (!hs.winter || hs.winter.n < 3) return { k: 'short', label: L('history too short', 'za krótka historia'), c: 'mut', why: L('Less than 3 winters of data, too little to judge anything.', 'Mniej niż 3 zimy danych, za mało, żeby cokolwiek ocenić.') };
-    if (!(hs.winter.win >= 0.7 && hs.winter.med > 0.1)) return { k: 'weak', label: L('weak history', 'słaba historia'), c: 'bad', why: L(`${rec} That's too little to count on a profit.`, `${rec} To za mało, żeby liczyć na zysk.`) };
+    if (!hs.winter || hs.winter.n < 3) return { k: 'short', label: L('flip.historyTooShort'), c: 'mut', why: L('flip.lessThan3WintersOf') };
+    if (!(hs.winter.win >= 0.7 && hs.winter.med > 0.1)) return { k: 'weak', label: L('flip.weakHistory'), c: 'bad', why: L('flip.thatsTooLittleToCount', { rec }) };
   }
-  if (r.vol != null && r.vol < 20) return { k: 'thin', label: L('low volume', 'mały obrót'), c: 'mid', why: L(`${rec} But only ${r.vol} units sell a day, it will be hard to get out.`, `${rec} Ale sprzedaje się tylko ${r.vol} szt. dziennie, trudno będzie wyjść.`) };
-  if (hs.trend30 != null && hs.trend30 < -0.1) return { k: 'wait', label: L('wait, it\'s falling', 'poczekaj, spada'), c: 'mid', why: L(`${rec} But the price fell ${pct(-hs.trend30, 0)} in 30 days. Cases bought during such a fall gave a profit after a year in 57% of cases instead of 75%.`, `${rec} Ale cena spadła o ${pct(-hs.trend30, 0)} w 30 dni. Skrzynie kupowane w trakcie takiego spadku dawały zysk po roku w 57% przypadków zamiast 75%.`) };
-  return { k: 'ok', label: L('candidate', 'kandydat'), c: 'ok', why: L(`${rec} The price isn't dropping sharply and the volume is enough.`, `${rec} Cena nie spada gwałtownie, obrót wystarczy.`) };
+  if (r.vol != null && r.vol < 20) return { k: 'thin', label: L('flip.lowVolume'), c: 'mid', why: L('flip.butOnlyUnitsSellA', { rec, vol: r.vol }) };
+  if (hs.trend30 != null && hs.trend30 < -0.1) return { k: 'wait', label: L('flip.waitItsFalling'), c: 'mid', why: L('flip.butThePriceFellIn', { rec, trend30: pct(-hs.trend30, 0) }) };
+  return { k: 'ok', label: L('flip.candidate'), c: 'ok', why: L('flip.thePriceIsntDroppingSharply', { rec }) };
 }
 
 const MIN_FILL_WEEK = 10; // units that must have traded at or below the order price in 7 days, else the order mostly just sits
 /** short flip (you can resell only after the 7-day lock) */
 function flipVerdict(r) {
   const fr = r.fr, sig = r.hs?.sigmaWeek;
-  if (!fr) return { k: 'none', label: L('No data', 'Brak danych'), c: 'mut', reasons: [L('no order book or price history', 'brak księgi zleceń albo historii cen')] };
+  if (!fr) return { k: 'none', label: L('flip.noData'), c: 'mut', reasons: [L('flip.noOrderBookOrPrice')] };
   const reasons = [];
-  if (fr.profit <= 0) reasons.push(fr.sell24 > fr.sell && net(fr.sell24) > fr.buy ? L(`there's a profit only at today's price ${steam.fmt(fr.sell24)}, at the typical price of the week (${steam.fmt(fr.sell)}) the fee eats it all, and you can sell only after 7 days`, `zysk jest tylko przy dzisiejszej cenie ${steam.fmt(fr.sell24)}; przy typowej z tygodnia (${steam.fmt(fr.sell)}) prowizja zjada wszystko, a sprzedasz dopiero po 7 dniach`) : L('at the price sales actually go at, the fee eats the whole profit', 'po cenie, po której faktycznie idą transakcje, prowizja zjada cały zysk'));
-  if (fr.fill7 === 0) reasons.push(L('in the last 7 days nobody sold as cheap as your order', 'w ostatnich 7 dniach nikt nie sprzedał tak tanio, jak Twoje zlecenie'));
-  if (r.vol != null && r.vol < settings.minVolume) reasons.push(L(`low volume (${r.vol}/24h)`, `mały obrót (${r.vol}/24h)`));
-  if (fr.profit > 0 && fr.roi < settings.minRoi) reasons.push(L(`profit below ${Math.round(settings.minRoi * 100)}%`, `zysk poniżej ${Math.round(settings.minRoi * 100)}%`));
+  if (fr.profit <= 0) reasons.push(fr.sell24 > fr.sell && net(fr.sell24) > fr.buy ? L('flip.theresAProfitOnlyAt', { sell24: steam.fmt(fr.sell24), sell: steam.fmt(fr.sell) }) : L('flip.atThePriceSalesActually'));
+  if (fr.fill7 === 0) reasons.push(L('flip.inTheLast7Days'));
+  if (r.vol != null && r.vol < settings.minVolume) reasons.push(L('flip.lowVolume24h', { vol: r.vol }));
+  if (fr.profit > 0 && fr.roi < settings.minRoi) reasons.push(L('flip.profitBelow', { minRoi: Math.round(settings.minRoi * 100) }));
   if (fr.profit > 0 && !reasons.length) {
-    if (fr.week < MIN_FILL_WEEK) return { k: 'slow', label: L('~ Rarely fills', '~ Rzadko wchodzi'), c: 'mid', reasons: [L(`in the last 7 days only ${fr.week} units sold at your order price or lower (${MIN_FILL_WEEK} needed), the order will mostly just sit`, `w ostatnich 7 dniach po cenie Twojego zlecenia lub niżej sprzedano tylko ${fr.week} szt. (potrzeba ${MIN_FILL_WEEK}), zlecenie będzie głównie stało`)] };
-    if (sig != null && fr.roi < sig) return { k: 'risk', label: L('~ Risky', '~ Ryzykowny'), c: 'mid', reasons: [L(`the profit ${sp(fr.roi, 1)} is smaller than the typical weekly price swing (±${pct(sig, 1)}), and you can sell only after 7 days`, `zysk ${sp(fr.roi, 1)} jest mniejszy niż typowa zmiana ceny w tydzień (±${pct(sig, 1)}), a sprzedasz dopiero po 7 dniach`)] };
-    return { k: 'ok', label: L('✔ Flip possible', '✔ Flip możliwy'), c: 'ok', reasons: [L(`${steam.fmt(fr.profit)}/unit after the fee, remember the 7-day lock`, `${steam.fmt(fr.profit)}/szt. po prowizji; pamiętaj o 7 dniach blokady`)] };
+    if (fr.week < MIN_FILL_WEEK) return { k: 'slow', label: L('flip.rarelyFills'), c: 'mid', reasons: [L('flip.inTheLast7Days2', { week: fr.week, MIN_FILL_WEEK })] };
+    if (sig != null && fr.roi < sig) return { k: 'risk', label: L('flip.risky'), c: 'mid', reasons: [L('flip.theProfitIsSmallerThan', { roi: sp(fr.roi, 1), sig: pct(sig, 1) })] };
+    return { k: 'ok', label: L('flip.flipPossible'), c: 'ok', reasons: [L('flip.unitAfterTheFeeRemember', { profit: steam.fmt(fr.profit) })] };
   }
-  return { k: 'no', label: L('✘ Flip doesn\'t pay', '✘ Flip się nie opłaca'), c: 'bad', reasons };
+  return { k: 'no', label: L('flip.flipDoesntPay'), c: 'bad', reasons };
 }
 
-const winterTitle = (hs) => (hs?.winters?.length ? L('Bought 22-29 November, sold half a year later, after the fee:\n', 'Kupno 22-29 listopada → sprzedaż pół roku później, po prowizji:\n') + hs.winters.map((w) => `${w.y}/${String(w.y + 1).slice(2)}: ${sp(w.r)}`).join('\n') : '');
+const winterTitle = (hs) => (hs?.winters?.length ? L('flip.bought2229NovemberSold') + hs.winters.map((w) => `${w.y}/${String(w.y + 1).slice(2)}: ${sp(w.r)}`).join('\n') : '');
 
 // ---------------------------------------------------------------- single item analysis
 async function analyze() {
@@ -292,17 +283,17 @@ async function analyze() {
   // a name in Polish (or any non-market spelling) → the market_hash_name; known names (from the lists) need no search
   if (!pq && +appid === 730 && !results.has(hash) && !store.get('itemMeta', {})[hash]) {
     const r = await resolveHash(hash);
-    if (!r) { el.querySelector('#f-out').innerHTML = `<div class="empty">${L(`No item “${esc(hash)}” found on the market.`, `Nie znalazłem na rynku przedmiotu „${esc(hash)}”.`)}</div>`; return; }
-    if (r.hash !== hash) { ui.log(`${L('Analysis', 'Analiza')}: ${L(`“${hash}” is`, `„${hash}” to`)} ${r.name}${r.name !== r.hash ? ` (${r.hash})` : ''}${r.guess ? L(', closest match', ', najbliższe dopasowanie') : ''}`); hash = r.hash; el.querySelector('#f-q').value = hash; }
+    if (!r) { el.querySelector('#f-out').innerHTML = `<div class="empty">${L('flip.noItemFoundOnThe', { hash: esc(hash) })}</div>`; return; }
+    if (r.hash !== hash) { ui.log(`${L('flip.analysis')}: ${L('flip.is', { hash })} ${r.name}${r.name !== r.hash ? ` (${r.hash})` : ''}${r.guess ? L('flip.closestMatch') : ''}`); hash = r.hash; el.querySelector('#f-q').value = hash; }
   }
   const mine = parsePrice(el.querySelector('#f-mine').value);
   const out = el.querySelector('#f-out');
-  out.innerHTML = `<div class="empty"><span class="spin"></span>${L('Analysing… (orders, volume, price history)', 'Analizuję… (zlecenia, wolumen, historia cen)')}</div>`;
+  out.innerHTML = `<div class="empty"><span class="spin"></span>${L('flip.analysingOrdersVolumePriceHistory')}</div>`;
   try {
     const [h, po, hist] = await Promise.all([
       prices.hist(appid, hash),
       prices.steamPrice(appid, hash).catch(() => null),
-      steam.priceHistory(appid, hash, { remember: true }).catch((e) => { ui.log(L('Price history: ', 'Historia cen: ') + e.message, 'warn'); return []; }),
+      steam.priceHistory(appid, hash, { remember: true }).catch((e) => { ui.log(L('flip.priceHistory') + e.message, 'warn'); return []; }),
     ]);
     const st = historyStats(hist);
     const row = metricsRow(hash, appid, h, po, st, hist.length ? hist : null);
@@ -318,9 +309,9 @@ async function analyze() {
 
     const sell30 = hist.filter((p) => p.t > Date.now() - 30 * 86400000);
     const chart = ui.lineChart([
-      { points: sell30.map((p) => [p.t, p.price]), color: '#66c0f4', label: L('Sale price', 'Cena transakcji') },
-      ...(fr ? [{ points: [[sell30[0]?.t || Date.now() - 2592000000, fr.bid], [Date.now(), fr.bid]], color: '#a4d007', dash: true, label: L('Buy orders now', 'Zlecenia kupna teraz') }] : []),
-      ...(h.lowestSell ? [{ points: [[sell30[0]?.t || Date.now() - 2592000000, h.lowestSell], [Date.now(), h.lowestSell]], color: '#e5b84c', dash: true, label: L('Lowest listing now', 'Najniższa sprzedaż teraz') }] : []),
+      { points: sell30.map((p) => [p.t, p.price]), color: '#66c0f4', label: L('flip.salePrice') },
+      ...(fr ? [{ points: [[sell30[0]?.t || Date.now() - 2592000000, fr.bid], [Date.now(), fr.bid]], color: '#a4d007', dash: true, label: L('flip.buyOrdersNow') }] : []),
+      ...(h.lowestSell ? [{ points: [[sell30[0]?.t || Date.now() - 2592000000, h.lowestSell], [Date.now(), h.lowestSell]], color: '#e5b84c', dash: true, label: L('flip.lowestListingNow') }] : []),
     ], { fmtY: (x) => steam.fmt(Math.round(x)), bars: sell30.map((p) => [p.t, p.vol]) });
 
     const depth = (g, n = 6) => g.slice(0, n).map(([p, c], i) => `<tr><td>${steam.fmt(p)}</td><td>${c - (i ? g[i - 1][1] : 0)}</td><td class="sub">${c}</td></tr>`).join('');
@@ -331,43 +322,43 @@ async function analyze() {
       <div class="row2" style="align-items:center">
         ${ui.itemCell({ hash, name: m?.name || hash, icon: m?.icon, color: m?.color, appid })}
         <span class="sp" style="flex:1"></span>
-        <button class="b" data-w="${esc(hash)}" data-app="${appid}">${watch.get(hash) ? '★' : '☆'} ${L('Watch', 'Obserwuj')}</button>
-        ${fr ? `<button class="b go" data-bo="${esc(hash)}" data-price="${fr.buy}" data-app="${appid}" title="${L('An order a cent above the ones really waiting in the order book', 'Zlecenie o grosz nad tymi, które realnie stoją w księdze')}">${L('Place buy order', 'Złóż zlecenie kupna')} ${steam.fmt(fr.buy)}</button>` : ''}
+        <button class="b" data-w="${esc(hash)}" data-app="${appid}">${watch.get(hash) ? '★' : '☆'} ${L('flip.watch')}</button>
+        ${fr ? `<button class="b go" data-bo="${esc(hash)}" data-price="${fr.buy}" data-app="${appid}" title="${L('flip.anOrderACentAbove')}">${L('flip.placeBuyOrder')} ${steam.fmt(fr.buy)}</button>` : ''}
       </div>
 
-      <div class="sec-h"><span>${L('Long term', 'Na dłużej')}</span> <span class="chipst ${hv.c}" style="margin-left:8px">${esc(hv.label)}</span></div>
+      <div class="sec-h"><span>${L('flip.longTerm')}</span> <span class="chipst ${hv.c}" style="margin-left:8px">${esc(hv.label)}</span></div>
       <div class="note">${esc(hv.why)}</div>
       ${hs ? `<div class="cards">
-        ${box(L('Winters (Nov to May)', 'Zimy (XI→V)'), hs.winter ? `${hs.winter.wins}/${hs.winter.n} ${L('in profit', 'na plus')}` : '-', hs.winter ? L(`typically ${sp(hs.winter.med)} after the fee`, `typowo ${sp(hs.winter.med)} po prowizji`) : L('history too short', 'za krótka historia'), hs.winter ? cls(hs.winter.med) : '')}
-        ${box(L('After 1 year', 'Po roku'), hs.y1 ? `${pct(hs.y1.win, 0)} ${L('in profit', 'na plus')}` : '-', hs.y1 ? L(`typically ${sp(hs.y1.med)} · ${hs.y1.n} periods`, `typowo ${sp(hs.y1.med)} · ${hs.y1.n} okresów`) : '', hs.y1 ? cls(hs.y1.med) : '')}
-        ${box(L('After 2 years', 'Po 2 latach'), hs.y2 ? `${pct(hs.y2.win, 0)} ${L('in profit', 'na plus')}` : '-', hs.y2 ? L(`typically ${sp(hs.y2.med)} · ${hs.y2.n} periods`, `typowo ${sp(hs.y2.med)} · ${hs.y2.n} okresów`) : '', hs.y2 ? cls(hs.y2.med) : '')}
-        ${box(L('vs 1-year avg', 'vs śr. z roku'), sp(hs.vsYear), L('price now against the 12-month average', 'cena teraz względem średniej z 12 miesięcy'), cls(hs.vsYear))}
-        ${box(L('30 days', '30 dni'), sp(hs.trend30), L('price change over the last month', 'zmiana ceny w ostatnim miesiącu'), cls(hs.trend30))}
+        ${box(L('flip.wintersNovToMay'), hs.winter ? `${hs.winter.wins}/${hs.winter.n} ${L('flip.inProfit')}` : '-', hs.winter ? L('flip.typicallyAfterTheFee', { med: sp(hs.winter.med) }) : L('flip.historyTooShort'), hs.winter ? cls(hs.winter.med) : '')}
+        ${box(L('flip.after1Year'), hs.y1 ? `${pct(hs.y1.win, 0)} ${L('flip.inProfit')}` : '-', hs.y1 ? L('flip.typicallyPeriods', { med: sp(hs.y1.med), n: hs.y1.n }) : '', hs.y1 ? cls(hs.y1.med) : '')}
+        ${box(L('flip.after2Years'), hs.y2 ? `${pct(hs.y2.win, 0)} ${L('flip.inProfit')}` : '-', hs.y2 ? L('flip.typicallyPeriods', { med: sp(hs.y2.med), n: hs.y2.n }) : '', hs.y2 ? cls(hs.y2.med) : '')}
+        ${box(L('flip.vs1YearAvg'), sp(hs.vsYear), L('flip.priceNowAgainstThe12'), cls(hs.vsYear))}
+        ${box(L('flip.30Days'), sp(hs.trend30), L('flip.priceChangeOverTheLast'), cls(hs.trend30))}
       </div>
-      ${hs.winters.length ? `<div class="note" style="padding-top:0">${L('Bought 22-29 November, sold half a year later (after the fee)', 'Kupno 22-29 listopada → sprzedaż pół roku później (po prowizji)')}: ${hs.winters.map((w) => `<span class="tag" style="margin:2px">${w.y}/${String(w.y + 1).slice(2)} <b class="${cls(w.r)}">${sp(w.r)}</b></span>`).join('')}</div>` : ''}` : ''}
+      ${hs.winters.length ? `<div class="note" style="padding-top:0">${L('flip.bought2229NovemberSold2')}: ${hs.winters.map((w) => `<span class="tag" style="margin:2px">${w.y}/${String(w.y + 1).slice(2)} <b class="${cls(w.r)}">${sp(w.r)}</b></span>`).join('')}</div>` : ''}` : ''}
 
-      <div class="sec-h"><span>${L('Quick flip (sold after the 7-day lock)', 'Szybki flip (sprzedaż po 7 dniach blokady)')}</span> <span class="chipst ${fv.c}" style="margin-left:8px">${esc(fv.label)}</span></div>
+      <div class="sec-h"><span>${L('flip.quickFlipSoldAfterThe')}</span> <span class="chipst ${fv.c}" style="margin-left:8px">${esc(fv.label)}</span></div>
       <div class="note">${fv.reasons.map(esc).join(' · ')}</div>
       <div class="cards">
-        ${box(L('Buy (order)', 'Kupno (zlecenie)'), fr ? steam.fmt(fr.buy) : '-', L(`top of the book ${steam.fmt(h.highestBuy)} · ${h.buyCount} orders`, `szczyt księgi: ${steam.fmt(h.highestBuy)} · ${h.buyCount} zleceń`))}
-        ${box(L('Sell (actual sales)', 'Sprzedaż (transakcje)'), fr ? steam.fmt(fr.sell) : '-', `${fr && fr.sell24 > fr.sell ? `<span class="warn">${L(`today ${steam.fmt(fr.sell24)}, I count the typical price of 7 days`, `dziś ${steam.fmt(fr.sell24)}, liczę po typowej z 7 dni`)}</span> · ` : ''}${L(`lowest listing ${steam.fmt(h.lowestSell)} · ${h.sellCount} listings`, `najniższa oferta: ${steam.fmt(h.lowestSell)} · ${h.sellCount} ofert`)}`)}
-        ${box(L('Profit / unit (flip)', 'Zysk / szt. (flip)'), fr ? steam.fmt(fr.profit) : '-', fr ? L(`you get ${steam.fmt(fr.net)} − buy ${steam.fmt(fr.buy)}`, `na rękę ${steam.fmt(fr.net)} − zakup ${steam.fmt(fr.buy)}`) : '', fr ? cls(fr.profit) : '')}
-        ${box('ROI', fr ? sp(fr.roi, 1) : '-', L('after the fee', 'po prowizji'), fr ? cls(fr.roi) : '')}
-        ${box(L('Weekly swing', 'Zmiana tyg.'), hs?.sigmaWeek != null ? `±${pct(hs.sigmaWeek, 1)}` : '-', L('typical price change in 7 days', 'typowa zmiana ceny w 7 dni'))}
-        ${box(L('Fill chance', 'Szansa wejścia'), fr ? `${fr.week} ${L('pcs', 'szt.')}` : '-', fr ? L(`sold in 7 days at your order price or lower (${pct(fr.fill7, 0)} of volume)`, `tyle w 7 dni sprzedano po cenie Twojego zlecenia lub niżej (${pct(fr.fill7, 0)} obrotu)`) : '', fr && fr.week < MIN_FILL_WEEK ? 'warn' : '')}
-        ${box(L('Volume', 'Wolumen'), `${st.vol24 || po?.volume || 0}<span class="sub"> /24h</span>`, L(`${st.vol7} / 7 days`, `${st.vol7} / 7 dni`))}
-        ${box(L('Median 7d · avg 30d', 'Mediana 7d · śr. 30d'), steam.fmt(st.med7), `30d: ${steam.fmt(st.avg30)} · min/max 7d ${steam.fmt(st.min7)}-${steam.fmt(st.max7)}`)}
-        ${box(L('Break-even', 'Próg rentowności'), fr ? steam.fmt(steam.buyerFromReceived(fr.buy)) : '-', L('min. sale price to come out even', 'min. cena sprzedaży, żeby wyjść na zero'))}
+        ${box(L('flip.buyOrder'), fr ? steam.fmt(fr.buy) : '-', L('flip.topOfTheBookOrders', { highestBuy: steam.fmt(h.highestBuy), buyCount: h.buyCount }))}
+        ${box(L('flip.sellActualSales'), fr ? steam.fmt(fr.sell) : '-', `${fr && fr.sell24 > fr.sell ? `<span class="warn">${L('flip.todayICountTheTypical', { sell24: steam.fmt(fr.sell24) })}</span> · ` : ''}${L('flip.lowestListingListings', { lowestSell: steam.fmt(h.lowestSell), sellCount: h.sellCount })}`)}
+        ${box(L('flip.profitUnitFlip'), fr ? steam.fmt(fr.profit) : '-', fr ? L('flip.youGetBuy', { net: steam.fmt(fr.net), buy: steam.fmt(fr.buy) }) : '', fr ? cls(fr.profit) : '')}
+        ${box('ROI', fr ? sp(fr.roi, 1) : '-', L('flip.afterTheFee'), fr ? cls(fr.roi) : '')}
+        ${box(L('flip.weeklySwing'), hs?.sigmaWeek != null ? `±${pct(hs.sigmaWeek, 1)}` : '-', L('flip.typicalPriceChangeIn7'))}
+        ${box(L('flip.fillChance'), fr ? `${fr.week} ${L('flip.pcs')}` : '-', fr ? L('flip.soldIn7DaysAt', { fill7: pct(fr.fill7, 0) }) : '', fr && fr.week < MIN_FILL_WEEK ? 'warn' : '')}
+        ${box(L('flip.volume'), `${st.vol24 || po?.volume || 0}<span class="sub"> /24h</span>`, L('flip.7Days', { vol7: st.vol7 }))}
+        ${box(L('flip.median7dAvg30d'), steam.fmt(st.med7), `30d: ${steam.fmt(st.avg30)} · min/max 7d ${steam.fmt(st.min7)}-${steam.fmt(st.max7)}`)}
+        ${box(L('flip.breakEven'), fr ? steam.fmt(steam.buyerFromReceived(fr.buy)) : '-', L('flip.minSalePriceToCome'))}
       </div>
       <div id="f-plan"></div>
-      ${deal ? `<div class="note" style="font-size:13px">${L(`Your purchase for <b>${steam.fmt(mine)}</b>. Selling now (${steam.fmt(sell)}) you get ${steam.fmt(deal.now.net)}, that's`, `Twój zakup za <b>${steam.fmt(mine)}</b>: sprzedając teraz (${steam.fmt(sell)}) dostaniesz ${steam.fmt(deal.now.net)}, czyli`)} <b class="${deal.now.profit >= 0 ? 'pos' : 'neg'}">${steam.fmt(deal.now.profit)} (${pct(deal.now.roi)})</b>${deal.med ? `${L(', at the 7d median', '; po medianie 7d')} <b class="${deal.med.profit >= 0 ? 'pos' : 'neg'}">${steam.fmt(deal.med.profit)}</b>` : ''}. ${L('To come out even, list for at least', 'Aby wyjść na zero, wystaw za min.')} <b>${steam.fmt(deal.now.breakEven)}</b>.</div>` : ''}
+      ${deal ? `<div class="note" style="font-size:13px">${L('flip.yourPurchaseForSellingNow', { mine: steam.fmt(mine), sell: steam.fmt(sell), net: steam.fmt(deal.now.net) })} <b class="${deal.now.profit >= 0 ? 'pos' : 'neg'}">${steam.fmt(deal.now.profit)} (${pct(deal.now.roi)})</b>${deal.med ? `${L('flip.atThe7dMedian')} <b class="${deal.med.profit >= 0 ? 'pos' : 'neg'}">${steam.fmt(deal.med.profit)}</b>` : ''}. ${L('flip.toComeOutEvenList')} <b>${steam.fmt(deal.now.breakEven)}</b>.</div>` : ''}
       <div style="padding:0 14px">${chart}</div>`;
     renderPlan();
-    const bookHead = `<tr><th>${L('Price', 'Cena')}</th><th>${L('Qty', 'Szt.')}</th><th>${L('Cumul.', 'Narast.')}</th></tr>`;
+    const bookHead = `<tr><th>${L('flip.price')}</th><th>${L('flip.qty')}</th><th>${L('flip.cumul')}</th></tr>`;
     out.insertAdjacentHTML('beforeend', `
       <div class="row2" style="align-items:flex-start">
-        <div><div class="sub">${L('Buy orders', 'Zlecenia kupna')}</div><table style="width:auto">${bookHead}${depth(h.buyGraph)}</table></div>
-        <div><div class="sub">${L('Sell listings', 'Oferty sprzedaży')}</div><table style="width:auto">${bookHead}${depth(h.sellGraph)}</table></div>
+        <div><div class="sub">${L('flip.buyOrders')}</div><table style="width:auto">${bookHead}${depth(h.buyGraph)}</table></div>
+        <div><div class="sub">${L('flip.sellListings')}</div><table style="width:auto">${bookHead}${depth(h.sellGraph)}</table></div>
       </div>`);
   } catch (e) {
     out.innerHTML = `<div class="empty err">${esc(e.message)}</div>`;
@@ -385,30 +376,30 @@ function renderPlan() {
   const p = sell ? buyPlan({ buyGraph: h.buyGraph, sellGraph: h.sellGraph, points: hist, net, sell, from: fr?.buy, qty, minRoi: settings.minRoi }) : null;
   if (!p) { box.innerHTML = ''; return; }
   const n = p.now;
-  const szt = `${qty} ${L('pcs', 'szt.')}`;
+  const szt = `${qty} ${L('flip.pcs')}`;
   const nowTxt = n.short != null
-    ? L(`You can't buy ${szt} right away, the order book shows only ${n.listed} listings.`, `Od ręki nie da się kupić ${szt}: w księdze widać tylko ${n.listed} ofert.`)
-    : L(`<b>Right away</b> ${szt}, set the order at <b>${steam.fmt(n.price)}</b> and you pay ${steam.fmt(n.total)} in total${qty > 1 ? ` (on average ${steam.fmt(Math.round(n.avg))} a unit, each listing at its own price)` : ''}. After the sale`, `<b>Od ręki</b> ${szt}: ustaw zlecenie na <b>${steam.fmt(n.price)}</b>, zapłacisz razem ${steam.fmt(n.total)}${qty > 1 ? ` (średnio ${steam.fmt(Math.round(n.avg))} za sztukę; każda oferta po swojej cenie)` : ''}. Po sprzedaży:`)
-      + ` <b class="${cls(n.profit)}">${steam.fmt(n.profit)} (${sp(n.roi, 1)})</b>.${p.cheap ? ` ${L(`Listings at ${steam.fmt(p.maxRoi)} or cheaper`, `Ofert wystawionych nie drożej niż ${steam.fmt(p.maxRoi)}:`)} <b>${p.cheap}</b>.` : ''}`;
-  const mark = (x) => (x.price === p.maxZero ? L('break-even', 'próg zera') : x.price === p.maxRoi ? L(`highest with profit ≥ ${Math.round(settings.minRoi * 100)}%`, `najwyżej z zyskiem ≥ ${Math.round(settings.minRoi * 100)}%`) : x.price === fr?.buy ? L('just above the orders in the book', 'tuż nad zleceniami w księdze') : '');
+    ? L('flip.youCantBuyRightAway', { szt, listed: n.listed })
+    : L('flip.rightAwaySetTheOrder', { szt, price: steam.fmt(n.price), total: steam.fmt(n.total), qty: qty > 1 ? L('flip.onAverageAUnitEach', { avg: steam.fmt(Math.round(n.avg)) }) : '' })
+      + ` <b class="${cls(n.profit)}">${steam.fmt(n.profit)} (${sp(n.roi, 1)})</b>.${p.cheap ? ` ${L('flip.listingsAtOrCheaper', { maxRoi: steam.fmt(p.maxRoi) })} <b>${p.cheap}</b>.` : ''}`;
+  const mark = (x) => (x.price === p.maxZero ? L('flip.breakEven2') : x.price === p.maxRoi ? L('flip.highestWithProfit', { minRoi: Math.round(settings.minRoi * 100) }) : x.price === fr?.buy ? L('flip.justAboveTheOrdersIn') : '');
   box.innerHTML = `
-    <div class="sec-h"><span>${L('Up to what price to buy', 'Do jakiej ceny kupować')}</span> <span class="sub" style="margin-left:8px">${L(`selling at ${steam.fmt(p.sell)} (you get ${steam.fmt(p.got)})`, `przy sprzedaży po ${steam.fmt(p.sell)} (na rękę ${steam.fmt(p.got)})`)}</span></div>
-    <div class="note">${L(`It pays to buy <b>up to ${steam.fmt(p.maxRoi)}</b> (≥ ${Math.round(settings.minRoi * 100)}% left after the fee), above <b>${steam.fmt(p.maxZero)}</b> you lose.`, `Opłaca się kupować <b>do ${steam.fmt(p.maxRoi)}</b> (zostaje ≥ ${Math.round(settings.minRoi * 100)}% po prowizji); powyżej <b>${steam.fmt(p.maxZero)}</b> tracisz.`)} ${nowTxt}</div>
-    <table style="width:auto;margin:0 14px 10px"><thead><tr><th>${L('Order price', 'Cena zlecenia')}</th><th>${L('Profit / unit', 'Zysk / szt.')}</th><th>${L('Sold this cheap (7 days)', 'Sprzedano tak tanio (7 dni)')}</th><th>${L('Orders ahead of you', 'Zleceń przed Tobą')}</th><th>${L(`${szt} in about`, `${szt} w ok.`)}</th><th></th></tr></thead><tbody>
+    <div class="sec-h"><span>${L('flip.upToWhatPriceTo')}</span> <span class="sub" style="margin-left:8px">${L('flip.sellingAtYouGet', { sell: steam.fmt(p.sell), got: steam.fmt(p.got) })}</span></div>
+    <div class="note">${L('flip.itPaysToBuyUp', { maxRoi: steam.fmt(p.maxRoi), minRoi: Math.round(settings.minRoi * 100), maxZero: steam.fmt(p.maxZero) })} ${nowTxt}</div>
+    <table style="width:auto;margin:0 14px 10px"><thead><tr><th>${L('flip.orderPrice')}</th><th>${L('flip.profitUnit')}</th><th>${L('flip.soldThisCheap7Days')}</th><th>${L('flip.ordersAheadOfYou')}</th><th>${L('flip.inAbout', { szt })}</th><th></th></tr></thead><tbody>
     ${p.ladder.map((x) => `<tr style="${x.price === p.maxRoi ? 'background:rgba(164,208,7,.08)' : ''}">
       <td><b>${steam.fmt(x.price)}</b></td>
       <td class="${cls(x.profit)}">${steam.fmt(x.profit)} <span class="sub">${sp(x.roi, 1)}</span></td>
-      <td>${x.week} ${L('pcs', 'szt.')} <span class="sub">${pct(x.share, 0)} ${L('of volume', 'obrotu')}</span></td>
+      <td>${x.week} ${L('flip.pcs')} <span class="sub">${pct(x.share, 0)} ${L('flip.ofVolume')}</span></td>
       <td>${x.ahead}</td>
-      <td>${x.days == null ? `<span class="neg">${L('nobody sold this cheap', 'nikt tak tanio nie sprzedał')}</span>` : x.days < 1 ? L('less than a day', 'mniej niż dzień') : x.days > 60 ? `<span class="warn">${L('over 2 months', 'ponad 2 miesiące')}</span>` : L(`${Math.ceil(x.days)} days`, `${Math.ceil(x.days)} dni`)}</td>
+      <td>${x.days == null ? `<span class="neg">${L('flip.nobodySoldThisCheap')}</span>` : x.days < 1 ? L('flip.lessThanADay') : x.days > 60 ? `<span class="warn">${L('flip.over2Months')}</span>` : L('flip.days', { days: Math.ceil(x.days) })}</td>
       <td class="sub">${mark(x)}</td></tr>`).join('')}
     </tbody></table>
-    <div class="note" style="padding-top:0">${L('The time is an estimate, how many units sold at this price or cheaper last week, minus the orders waiting ahead of yours. Orders fill most often when the price drops.', 'Czas to szacunek: ile sztuk w ostatnim tygodniu sprzedało się po tej cenie lub taniej, pomniejszone o zlecenia stojące przed Twoim. Zlecenia najczęściej wchodzą wtedy, gdy cena spada.')}</div>`;
+    <div class="note" style="padding-top:0">${L('flip.theTimeIsAnEstimate')}</div>`;
 }
 
 // ---------------------------------------------------------------- batch metrics (watchlist / scanner)
 async function runMetrics(list, target, isWatch, preFilter = null) {
-  if (!list.length) return ui.log(L('No items to check.', 'Brak przedmiotów do sprawdzenia.'), 'warn');
+  if (!list.length) return ui.log(L('flip.noItemsToCheck'), 'warn');
   task = token();
   el.querySelector('[data-a="stop"]').hidden = false;
   let i = 0, lastRender = 0;
@@ -426,7 +417,7 @@ async function runMetrics(list, target, isWatch, preFilter = null) {
       if (Date.now() - lastRender > 400 || i === list.length) { lastRender = Date.now(); isWatch ? renderWatch() : renderScan(); }
     } catch (e) {
       ui.log(`${hash}: ${e.message}`, 'err');
-      if (e.status === 429) { ui.log(L('Steam limit, stopped. Try again in a few minutes.', 'Limit Steam, przerwano. Spróbuj za kilka minut.'), 'warn'); break; }
+      if (e.status === 429) { ui.log(L('flip.steamLimitStoppedTryAgain'), 'warn'); break; }
     }
   }
   ui.progress(0);
@@ -446,17 +437,17 @@ function fixSort(goal) {
 function seasonNote(rows) {
   const m = new Date().getMonth() + 1;
   const txt = [11, 12, 1, 2].includes(m)
-    ? L('<b class="pos">Buying season (November to February).</b> Cases older than a year bought at the end of November and sold at the end of May made a profit after the fee in 10 of 11 years, typically +49%.', '<b class="pos">Sezon zakupów (listopad-luty).</b> Skrzynie starsze niż rok kupione pod koniec listopada i sprzedane pod koniec maja dały zysk po prowizji w 10 z 11 lat, typowo +49%.')
+    ? L('flip.buyingSeasonNovemberToFebruary')
     : m >= 4 && m <= 8
-      ? L('<b class="warn">Selling season (April to August).</b> Cases were historically the most expensive then. Bought in May and sold in November, they typically gave −12%.', '<b class="warn">Sezon sprzedaży (kwiecień-sierpień).</b> Skrzynie były wtedy historycznie najdroższe. Kupione w maju i sprzedane w listopadzie dawały typowo −12%.')
-      : L('<b>In between.</b> Historically it was best to buy cases at the end of November and sell them from April to June.', '<b>Okres przejściowy.</b> Historycznie najlepiej było kupować skrzynie pod koniec listopada, a sprzedawać od kwietnia do czerwca.');
+      ? L('flip.sellingSeasonAprilToAugust')
+      : L('flip.inBetweenHistoricallyItWas');
   const cs = rows.filter((r) => r.hs && r.hs.ageDays >= 365 && / Case$/.test(r.hash));
   const t = medianOf(cs.map((r) => r.hs.trend30).filter((x) => x != null)), y = medianOf(cs.map((r) => r.hs.vsYear).filter((x) => x != null));
   const mk = cs.length >= 3 && t != null
-    ? L(` Old cases in this scan <b class="${cls(t)}">${sp(t)}</b> in 30 days, <b class="${cls(y)}">${sp(y)}</b> against the yearly average.`, ` Stare skrzynie w tym skanie: <b class="${cls(t)}">${sp(t)}</b> w 30 dni, <b class="${cls(y)}">${sp(y)}</b> względem średniej z roku.`)
-      + (t < -0.1 ? L(' <b class="warn">The market is still falling, better wait until it stops.</b>', ' <b class="warn">Rynek jeszcze spada, lepiej poczekać, aż się zatrzyma.</b>') : '')
+    ? L('flip.oldCasesInThisScan', { t: cls(t), t2: sp(t), y: cls(y), y2: sp(y) })
+      + (t < -0.1 ? L('flip.theMarketIsStillFalling') : '')
     : '';
-  return `${txt}${mk} <span class="sub">${L('Numbers from research on 108 items (up to 13 years of history, 15.11.2026). This is history, not a guarantee.', 'Liczby z badania 108 przedmiotów (do 13 lat historii, 15.11.2026). To historia, nie gwarancja.')}</span>`;
+  return `${txt}${mk} <span class="sub">${L('flip.numbersFromResearchOn108')}</span>`;
 }
 
 let scanSet = new Set();
@@ -471,7 +462,7 @@ function clearScan() {
   findState = null;
   saveRows(true);
   renderScan();
-  ui.log(L('Scanner: list cleared.', 'Skaner: lista wyczyszczona.'));
+  ui.log(L('flip.scannerListCleared'));
 }
 
 /** the "Ukryte (N)" switch and, when open, the hidden items with a restore button each */
@@ -479,10 +470,10 @@ function hiddenNote() {
   const all = Object.keys(hidden.all());
   if (!all.length) return '';
   const meta = store.get('itemMeta', {});
-  const btn = `<button class="b s" data-a="shidden" title="${L('Items you hid with the ✕ button, the scanner neither shows nor checks them', 'Przedmioty, które ukryłeś przyciskiem ✕, skaner ich nie pokazuje i nie sprawdza')}">${showHidden ? '▾' : '▸'} ${L('Hidden', 'Ukryte')} (${all.length})</button>`;
+  const btn = `<button class="b s" data-a="shidden" title="${L('flip.itemsYouHidWithThe')}">${showHidden ? '▾' : '▸'} ${L('flip.hidden')} (${all.length})</button>`;
   if (!showHidden) return `${btn}<br>`;
-  return `${btn} <button class="b s" data-a="unhideall">${L('restore all', 'przywróć wszystkie')}</button>
-    <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${all.map((h) => `<span class="chipst mut" style="display:inline-flex;align-items:center;gap:4px">${esc(meta[h]?.name || h)}<button class="b s" data-unhide="${esc(h)}" title="${L('Restore to the scanner', 'Przywróć do skanera')}" style="padding:0 5px;line-height:1.4">↺</button></span>`).join('')}</div>`;
+  return `${btn} <button class="b s" data-a="unhideall">${L('flip.restoreAll')}</button>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0">${all.map((h) => `<span class="chipst mut" style="display:inline-flex;align-items:center;gap:4px">${esc(meta[h]?.name || h)}<button class="b s" data-unhide="${esc(h)}" title="${L('flip.restoreToTheScanner')}" style="padding:0 5px;line-height:1.4">↺</button></span>`).join('')}</div>`;
 }
 
 function renderScan() {
@@ -496,7 +487,7 @@ function renderScan() {
   if (goal === 'hold') {
     const ok = (r) => holdVerdict(r).k === 'ok';
     const wait = rows.filter((r) => holdVerdict(r).k === 'wait').length;
-    renderTable('#s-table', rows, false, `${hiddenNote()}${ageNote(rows)}${seasonNote(rows)}<br>${L(`<b>${rows.filter(ok).length}</b> of ${rows.length} are candidates${wait ? `, ${wait} have a good history but are still falling` : ''}.`, `<b>${rows.filter(ok).length}</b> z ${rows.length} to kandydaci${wait ? `, ${wait} ma dobrą historię, ale jeszcze spada` : ''}.`)}`, ok, 'hold');
+    renderTable('#s-table', rows, false, `${hiddenNote()}${ageNote(rows)}${seasonNote(rows)}<br>${L('flip.ofAreCandidates', { ok: rows.filter(ok).length, rows: rows.length, wait: wait ? L('flip.haveAGoodHistoryBut', { wait }) : '' })}`, ok, 'hold');
     return;
   }
   const ok = (r) => flipVerdict(r).k === 'ok';
@@ -505,23 +496,17 @@ function renderScan() {
   // (not "hidden": that name is the ✕ list used above, a local one would hide it and break this function as soon as a row exists)
   const notOk = onlyOk ? rows.filter((r) => !ok(r)).length : 0;
   const FIND_STATE = {
-    run: `<span class="acc"><span class="spin"></span>${L('still searching…', 'szukam dalej…')}</span>`,
-    stop: `<span class="ok">${L('done', 'gotowe')}</span>`,
-    end: L('end of the list, there are no more items in this range', 'koniec listy, więcej przedmiotów w tym przedziale nie ma'),
-    cancel: L('stopped, “Scan” resumes', 'zatrzymano, „Skanuj” wznowi'),
-    stall: `<span class="warn">${L('Steam stopped returning the list (it isn\'t its end), “Scan” in a few minutes resumes', 'Steam przestał zwracać listę (to nie jej koniec), „Skanuj” za kilka minut wznowi')}</span>`,
-    limit: `<span class="warn">${L('Steam is limiting requests, try again in a few minutes', 'Steam ogranicza zapytania, spróbuj za kilka minut')}</span>`,
-    error: `<span class="err">${L('error', 'błąd')}</span>`,
+    run: `<span class="acc"><span class="spin"></span>${L('flip.stillSearching')}</span>`,
+    stop: `<span class="ok">${L('flip.done')}</span>`,
+    end: L('flip.endOfTheListThere'),
+    cancel: L('flip.stoppedScanResumes'),
+    stall: `<span class="warn">${L('flip.steamStoppedReturningTheList')}</span>`,
+    limit: `<span class="warn">${L('flip.steamIsLimitingRequestsTry')}</span>`,
+    error: `<span class="err">${L('flip.error')}</span>`,
   };
-  const progress = fd ? L(
-    `Found <b>${fd.found}</b>${fd.want === Infinity ? '' : ` of ${fd.want}`} · checked ${fd.checked}${fd.walk?.total ? ` (position ${fd.walk.pos} of ${fd.walk.total} on Steam's list for this category)` : ''}${fd.risky ? ` · ${fd.risky} risky (${onlyOk ? 'hidden, untick “profitable only”' : 'on the list, greyed out'})` : ''}${fd.skipped ? ` · ${fd.skipped} skipped (checked recently)` : ''}${fd.failed ? ` · ${fd.failed} without data` : ''}`,
-    `Znaleziono <b>${fd.found}</b>${fd.want === Infinity ? '' : ` z ${fd.want}`} · sprawdzono ${fd.checked}${fd.walk?.total ? ` (pozycja ${fd.walk.pos} z ${fd.walk.total} na liście Steama dla tej kategorii)` : ''}${fd.risky ? ` · ${fd.risky} ryzykownych (${onlyOk ? 'ukryte, odznacz „tylko opłacalne”' : 'na liście, wyszarzone'})` : ''}${fd.skipped ? ` · ${fd.skipped} pominiętych (sprawdzone niedawno)` : ''}${fd.failed ? ` · ${fd.failed} bez danych` : ''}`,
-  ) + ` · ${FIND_STATE[fd.state]}<br>` : '';
-  const empty = fd ? (fd.state === 'run' ? L('Nothing passed so far, still searching…', 'Na razie nic nie przeszło, szukam dalej…') : notOk ? L('No item got the “Flip possible” verdict. Untick “profitable only” to see the risky ones.', 'Żaden przedmiot nie dostał oceny „Flip możliwy”. Odznacz „tylko opłacalne”, żeby zobaczyć ryzykowne.') : L('No checked item passed. Lower Min. ROI or Min. sales, widen the prices or change the category.', 'Żaden sprawdzony przedmiot nie przeszedł. Obniż Min. ROI albo Min. sprzedaży, poszerz ceny lub zmień kategorię.')) : L('Set the filters and click “Scan”.', 'Ustaw filtry i kliknij „Skanuj”.');
-  const rule = L(
-    `An item passes with a profit ≥ ${Math.round(minRoi * 100)}% when sold at the lower of two prices (today's and the typical one of 7 days), bigger than the typical weekly price swing, with at least ${MIN_FILL_WEEK} units sold at its order price within a week and ≥ ${minVol} sales a day. You can sell a bought item only after 7 days, and the typical weekly price swing is a few percent, in the research such a flip almost never came out in profit.`,
-    `Przechodzi przedmiot z zyskiem ≥ ${Math.round(minRoi * 100)}% przy sprzedaży po niższej z dwóch cen (dzisiejszej i typowej z 7 dni), większym niż typowa zmiana ceny w tydzień, po którego cenie zlecenia sprzedano w tygodniu co najmniej ${MIN_FILL_WEEK} szt. i który sprzedaje się ≥ ${minVol} razy na dobę. Kupiony przedmiot sprzedasz dopiero po 7 dniach, a typowa zmiana ceny w tydzień to kilka procent, w badaniu taki flip prawie nigdy nie wychodził na plus.`,
-  );
+  const progress = fd ? L('flip.foundChecked', { found: fd.found, checked: fd.checked, want: fd.want === Infinity ? '' : L('flip.of', { want: fd.want }), total: fd.walk?.total ? L('flip.positionOfOnSteamsList', { pos: fd.walk.pos, total: fd.walk.total }) : '', risky: fd.risky ? L('flip.risky2', { risky: fd.risky, onlyOk: onlyOk ? L('flip.hiddenUntickProfitableOnly') : L('flip.onTheListGreyedOut') }) : '', skipped: fd.skipped ? L('flip.skippedCheckedRecently', { skipped: fd.skipped }) : '', failed: fd.failed ? L('flip.withoutData', { failed: fd.failed }) : '' }) + ` · ${FIND_STATE[fd.state]}<br>` : '';
+  const empty = fd ? (fd.state === 'run' ? L('flip.nothingPassedSoFarStill') : notOk ? L('flip.noItemGotTheFlip') : L('flip.noCheckedItemPassedLower')) : L('flip.setTheFiltersAndClick');
+  const rule = L('flip.anItemPassesWithA', { minRoi: Math.round(minRoi * 100), MIN_FILL_WEEK, minVol });
   renderTable('#s-table', onlyOk ? rows.filter(ok) : rows, false, `${hiddenNote()}${ageNote(rows)}${progress}${rule}`, ok, 'flip', empty);
 }
 function renderWatch() {
@@ -530,7 +515,7 @@ function renderWatch() {
   renderTable('#w-table', [...results.values()].filter((r) => watch.get(r.hash)), true, '', goal === 'hold' ? (r) => holdVerdict(r).k === 'ok' : null, goal);
 }
 
-function renderTable(target, rows, isWatch, header = '', good = null, goal = 'flip', empty = L('Set the filters and click “Scan”.', 'Ustaw filtry i kliknij „Skanuj”.')) {
+function renderTable(target, rows, isWatch, header = '', good = null, goal = 'flip', empty = L('flip.setTheFiltersAndClick')) {
   const hold = goal === 'hold';
   const sorted = sort.apply(rows, {
     name: (r) => r.hash, sell: (r) => (hold ? r.h?.lowestSell : r.fr?.sell), vol: (r) => r.vol,
@@ -542,15 +527,15 @@ function renderTable(target, rows, isWatch, header = '', good = null, goal = 'fl
   const th = (k, t) => `<th data-sort="${k}">${t}${sort.arrow(k)}</th>`;
   const meta = store.get('itemMeta', {});
   const head = hold
-    ? `${th('name', L('Item', 'Przedmiot'))}${th('hold', L('Verdict', 'Ocena'))}${th('sell', L('Price now', 'Cena teraz'))}${th('winter', L('Winters (Nov to May)', 'Zimy (XI→V)'))}${th('y1', L('After 1 year', 'Po roku'))}${th('y2', L('After 2 years', 'Po 2 latach'))}${th('vsyear', L('vs 1-year avg', 'vs śr. z roku'))}${th('trend', L('30 days', '30 dni'))}${th('vol', L('Volume 24h', 'Wolumen 24h'))}<th></th>`
-    : `${th('name', L('Item', 'Przedmiot'))}${th('verdict', L('Verdict', 'Ocena'))}${th('profit', L('Profit/unit', 'Zysk/szt.'))}${th('roi', 'ROI')}${th('buy', L('Buy (order)', 'Kupno (zlecenie)'))}${th('sell', L('Sell (actual sales)', 'Sprzedaż (transakcje)'))}${th('sigma', L('Weekly swing', 'Zmiana tyg.'))}${th('fill', L('Fill chance', 'Szansa wejścia'))}${th('vol', L('Volume 24h', 'Wolumen 24h'))}<th></th>`;
+    ? `${th('name', L('flip.item'))}${th('hold', L('flip.verdict'))}${th('sell', L('flip.priceNow'))}${th('winter', L('flip.wintersNovToMay'))}${th('y1', L('flip.after1Year'))}${th('y2', L('flip.after2Years'))}${th('vsyear', L('flip.vs1YearAvg'))}${th('trend', L('flip.30Days'))}${th('vol', L('flip.volume24h'))}<th></th>`
+    : `${th('name', L('flip.item'))}${th('verdict', L('flip.verdict'))}${th('profit', L('flip.profitUnit2'))}${th('roi', 'ROI')}${th('buy', L('flip.buyOrder'))}${th('sell', L('flip.sellActualSales'))}${th('sigma', L('flip.weeklySwing'))}${th('fill', L('flip.fillChance'))}${th('vol', L('flip.volume24h'))}<th></th>`;
   const cols = 10;
   const volCell = (r) => `<td>${r.vol == null ? '<span class="sub">?</span>' : r.vol}</td>`;
   const rec = (x) => (x ? `<b>${pct(x.win, 0)}</b> <span class="${cls(x.med)}">${sp(x.med)}</span>` : '<span class="sub">-</span>');
-  const actions = (r) => `<td style="white-space:nowrap"><button class="b s" data-an="${esc(r.hash)}" data-app="${r.appid}">${L('Analysis', 'Analiza')}</button>
-        <button class="b s" data-w="${esc(r.hash)}" data-app="${r.appid}" title="${L('Watch', 'Obserwuj')}">${watch.get(r.hash) ? '★' : '☆'}</button>
-        ${r.fr ? `<button class="b s" data-bo="${esc(r.hash)}" data-price="${r.fr.buy}" data-app="${r.appid}" title="${L(`Place a buy order for ${steam.fmt(r.fr.buy)} (a cent above the orders really waiting in the book)`, `Złóż zlecenie kupna za ${steam.fmt(r.fr.buy)} (o grosz nad zleceniami, które realnie stoją w księdze)`)}">${L('+ order', '+ zlecenie')}</button>` : ''}
-        ${isWatch ? '' : `<button class="b s" data-hide="${esc(r.hash)}" data-app="${r.appid}" title="${L('Hide it, the scanner won\'t show or check it (restore it under “Hidden” above the table)', 'Ukryj, skaner nie będzie go pokazywał ani sprawdzał (przywrócisz w „Ukryte” nad tabelą)')}">✕</button>`}</td>`;
+  const actions = (r) => `<td style="white-space:nowrap"><button class="b s" data-an="${esc(r.hash)}" data-app="${r.appid}">${L('flip.analysis')}</button>
+        <button class="b s" data-w="${esc(r.hash)}" data-app="${r.appid}" title="${L('flip.watch')}">${watch.get(r.hash) ? '★' : '☆'}</button>
+        ${r.fr ? `<button class="b s" data-bo="${esc(r.hash)}" data-price="${r.fr.buy}" data-app="${r.appid}" title="${L('flip.placeABuyOrderFor', { buy: steam.fmt(r.fr.buy) })}">${L('flip.order')}</button>` : ''}
+        ${isWatch ? '' : `<button class="b s" data-hide="${esc(r.hash)}" data-app="${r.appid}" title="${L('flip.hideItTheScannerWont')}">✕</button>`}</td>`;
   el.querySelector(target).innerHTML = (header ? `<div class="note">${header}</div>` : '') + `<table><thead><tr>${head}</tr></thead><tbody>${sorted.length ? sorted.map((r) => {
       const m = meta[r.hash] || {};
       const ok = good ? good(r) : true;
@@ -569,12 +554,12 @@ function renderTable(target, rows, isWatch, header = '', good = null, goal = 'fl
         body = `${name}<td><span class="chipst ${v.c}" title="${esc(v.reasons.join(' · '))}">${esc(v.label)}</span></td>
           <td class="${fr ? cls(fr.profit) : ''}"><b>${fr ? steam.fmt(fr.profit) : '-'}</b></td><td class="${fr ? cls(fr.roi) : ''}">${fr ? sp(fr.roi, 1) : '-'}</td>
           <td>${fr ? steam.fmt(fr.buy) : '-'}</td>
-          <td${fr && fr.sell24 > fr.sell ? ` title="${L(`Today sales go at ${steam.fmt(fr.sell24)}, but I count the lower, typical price of 7 days, you can sell only after the lock.`, `Dziś transakcje idą po ${steam.fmt(fr.sell24)}, ale liczę po niższej, typowej cenie z 7 dni, sprzedasz dopiero po blokadzie.`)}"` : ''}>${fr ? `${steam.fmt(fr.sell)}<div class="sub">${L('you get', 'na rękę')} ${steam.fmt(fr.net)}${fr.sell24 > fr.sell ? ` · ${L('today', 'dziś')} ${steam.fmt(fr.sell24)}` : ''}</div>` : '-'}</td>
+          <td${fr && fr.sell24 > fr.sell ? ` title="${L('flip.todaySalesGoAtBut', { sell24: steam.fmt(fr.sell24) })}"` : ''}>${fr ? `${steam.fmt(fr.sell)}<div class="sub">${L('flip.youGet')} ${steam.fmt(fr.net)}${fr.sell24 > fr.sell ? ` · ${L('flip.today')} ${steam.fmt(fr.sell24)}` : ''}</div>` : '-'}</td>
           <td class="${fr && sig != null && fr.roi > 0 && fr.roi < sig ? 'warn' : ''}">${sig != null ? '±' + pct(sig, 1) : '-'}</td>
-          <td class="${fr && fr.week === 0 ? 'neg' : fr && fr.week < MIN_FILL_WEEK ? 'warn' : ''}">${fr ? `${fr.week} ${L('pcs', 'szt.')}<div class="sub">${pct(fr.fill7, 0)} ${L('of volume', 'obrotu')}</div>` : '-'}</td>${volCell(r)}`;
+          <td class="${fr && fr.week === 0 ? 'neg' : fr && fr.week < MIN_FILL_WEEK ? 'warn' : ''}">${fr ? `${fr.week} ${L('flip.pcs')}<div class="sub">${pct(fr.fill7, 0)} ${L('flip.ofVolume')}</div>` : '-'}</td>${volCell(r)}`;
       }
       return `<tr style="${good && !ok ? 'opacity:.55' : ''}">${body}${actions(r)}</tr>`;
-    }).join('') : `<tr><td colspan="${cols}" class="empty">${isWatch ? (Object.keys(watch.all()).length ? `${L(`You watch ${Object.keys(watch.all()).length}, click “Scan watchlist” to work them out`, `Obserwujesz ${Object.keys(watch.all()).length}, kliknij „Skanuj obserwowane”, żeby je policzyć`)}: ${Object.keys(watch.all()).slice(0, 8).map(esc).join(', ')}${Object.keys(watch.all()).length > 8 ? '…' : ''}` : L('Add items to the watchlist (☆) and click “Scan watchlist”.', 'Dodaj przedmioty do obserwowanych (☆) i kliknij „Skanuj obserwowane”.')) : esc(empty)}</td></tr>`}</tbody></table>`;
+    }).join('') : `<tr><td colspan="${cols}" class="empty">${isWatch ? (Object.keys(watch.all()).length ? `${L('flip.youWatchClickScanWatchlist', { watch: Object.keys(watch.all()).length })}: ${Object.keys(watch.all()).slice(0, 8).map(esc).join(', ')}${Object.keys(watch.all()).length > 8 ? '…' : ''}` : L('flip.addItemsToTheWatchlist')) : esc(empty)}</td></tr>`}</tbody></table>`;
 }
 
 /**
@@ -593,7 +578,7 @@ async function eachCandidate({ cat, nameOk, q, min, max, minListings, fresh }, f
     const path = `/market/search/render/?norender=1&appid=730&l=${steam.uiLanguage()}&start=${start}&count=100&search_descriptions=0&sort_column=popular&sort_dir=desc&query=${encodeURIComponent(q)}${cat ? `&category_730_Type[]=${cat}` : ''}`;
     return disk.cached('q|' + path, fresh ? 0 : disk.ttl(), () => steam.schedule('search', async () => {
       const r = await fetch(steam.ORIGIN + path, { credentials: 'include' });
-      if (r.status === 429) throw new steam.HttpError(429, L('Steam: too many requests (429)', 'Steam: za dużo zapytań (429)'));
+      if (r.status === 429) throw new steam.HttpError(429, L('flip.steamTooManyRequests429'));
       if (!r.ok) return null;
       try { return disk.slimSearch(await r.json()); } catch { return null; }
     }), (d) => d?.results?.length > 0);
@@ -611,7 +596,7 @@ async function eachCandidate({ cat, nameOk, q, min, max, minListings, fresh }, f
       if (start === 0 && empties >= 1) return 'end'; // really nothing matches the search
       if (empties >= WAIT.length) return 'stall';
       const secs = WAIT[empties++];
-      if (start > 0) ui.log(L(`Scanner: Steam returned an empty page at position ${start}${info.total ? ` of ${info.total}` : ''}, retrying in ${secs} s…`, `Skaner: Steam zwrócił pustą stronę na pozycji ${start}${info.total ? ` z ${info.total}` : ''}, ponawiam za ${secs} s…`), 'warn');
+      if (start > 0) ui.log(L('flip.scannerSteamReturnedAnEmpty', { start, secs, total: info.total ? L('flip.of2', { total: info.total }) : '' }), 'warn');
       for (let i = 0; i < secs && !task.cancelled && !info.stop?.(); i++) await sleep(1000);
       continue;
     }
@@ -691,7 +676,7 @@ const ageNote = (rows) => {
   const oldest = rows.length ? Math.min(...rows.map((r) => r.at)) : 0;
   if (!oldest || scanning || Date.now() - oldest < 60000) return '';
   const hm = (t) => new Date(t).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
-  return `<span class="sub">${L(`Results from ${hm(oldest)}, I keep them for 30 minutes after the check (until ${hm(oldest + FRESH)}), also across a page reload. After that “Scan” downloads new ones.`, `Wyniki z ${hm(oldest)}, pamiętam je 30 minut od sprawdzenia (do ${hm(oldest + FRESH)}), także po odświeżeniu strony. Potem „Skanuj” pobierze nowe.`)}</span><br>`;
+  return `<span class="sub">${L('flip.resultsFromIKeepThem', { oldest: hm(oldest), oldest2: hm(oldest + FRESH) })}</span><br>`;
 };
 async function scan() {
   if (scanning) return;
@@ -715,27 +700,27 @@ async function scan() {
     if (goalNow() === 'flip') await scanFind(filters);
     else {
       const n = Math.max(1, Math.min(300, +el.querySelector('#s-n').value || 40));
-      ui.log(L('Scanner: downloading the list of popular items…', 'Skaner: pobieram listę popularnych przedmiotów…'));
+      ui.log(L('flip.scannerDownloadingTheListOf'));
       // a new scan starts from an empty list, the previous one (e.g. another category) doesn't hang around
       findState = null;
       scanSet = new Set();
       renderScan();
       const list = [];
       const end = await eachCandidate(filters, (c) => { if (!hidden.get(c.hash)) list.push(c); return list.length < n; });
-      if (end === 'stall') ui.log(L('Scanner: Steam stopped returning the list, checking what I managed to download.', 'Skaner: Steam przestał zwracać listę, sprawdzam to, co zdążyłem pobrać.'), 'warn');
-      if (end === 'cancel') ui.log(L('Scanner stopped.', 'Skaner przerwany.'), 'warn');
+      if (end === 'stall') ui.log(L('flip.scannerSteamStoppedReturningThe'), 'warn');
+      if (end === 'cancel') ui.log(L('flip.scannerStopped'), 'warn');
       else {
         findState = null;
         scanSet = new Set(list.map((c) => c.hash));
-        ui.log(L(`Scanner: checking ${list.length} items in the range (~${Math.max(1, Math.ceil(list.length / 60))} min).`, `Skaner: sprawdzam ${list.length} przedmiotów z przedziału (~${Math.max(1, Math.ceil(list.length / 60))} min).`));
+        ui.log(L('flip.scannerCheckingItemsInThe', { list: list.length, Math: Math.max(1, Math.ceil(list.length / 60)) }));
         renderScan();
         await runMetrics(list, '#s-table', false);
         renderScan();
-        ui.log(L('Scanner finished.', 'Skaner zakończony.'), 'ok');
+        ui.log(L('flip.scannerFinished'), 'ok');
       }
     }
   } catch (e) {
-    ui.log(L('Scanner: ', 'Skaner: ') + e.message, 'err');
+    ui.log(L('flip.scanner') + e.message, 'err');
   }
   scanning = false;
   saveRows(true);
@@ -754,14 +739,14 @@ async function scanFind(filters) {
   const raw = el.querySelector('#s-find').value.trim();
   const want = +raw > 0 ? Math.floor(+raw) : Infinity;
   store.set('flipFind', want === Infinity ? '' : String(want));
-  const of = want === Infinity ? '' : ` ${L('of', 'z')} ${want}`;
+  const of = want === Infinity ? '' : ` ${L('flip.of3')} ${want}`;
   const useSeen = el.querySelector('#s-skip').checked;
   store.set('flipSkipSeen', useSeen);
   scanSet = new Set();
   const st = (findState = { want, checked: 0, found: 0, risky: 0, failed: 0, quick: 0, skipped: 0, state: 'run', walk: {} });
   st.walk.stop = () => st.found >= want;
   renderScan(); // also stores Min. ROI / Min. sprzedaży from the form (the verdict reads them)
-  ui.log(want === Infinity ? L('Scanner: searching for “Flip possible” items with no limit, until the end of the list or until you click Stop.', 'Skaner: szukam przedmiotów z oceną „Flip możliwy” bez limitu, do końca listy albo do kliknięcia Stop.') : L(`Scanner: searching for ${want} “Flip possible” items until found (Stop ends it).`, `Skaner: szukam ${want} przedmiotów z oceną „Flip możliwy”, do skutku (Stop przerywa).`));
+  ui.log(want === Infinity ? L('flip.scannerSearchingForFlipPossible') : L('flip.scannerSearchingForFlipPossible2', { want }));
   const seen = loadSeen();
   let lastRender = 0, dirty = 0, limit = null;
   const draw = (force) => { if (force || Date.now() - lastRender > 1000) { lastRender = Date.now(); renderScan(); } };
@@ -770,7 +755,7 @@ async function scanFind(filters) {
     if (findState !== st) return; // the list was cleared while this item was still being checked
     st.checked++;
     const k = flipVerdict(row).k;
-    if (k === 'ok') { st.found++; scanSet.add(hash); ui.log(L(`Scanner: found ${hash} (${st.found}${want === Infinity ? '' : '/' + want}).`, `Skaner: znaleziono ${hash} (${st.found}${want === Infinity ? '' : '/' + want}).`), 'ok'); }
+    if (k === 'ok') { st.found++; scanSet.add(hash); ui.log(L('flip.scannerFound', { hash, found: st.found, want: want === Infinity ? '' : '/' + want }), 'ok'); }
     else if (k === 'risk') { st.risky++; scanSet.add(hash); }
     if (k === 'ok' || k === 'risk') saveRows();
     else remember(hash, { k: 'no', r: settings.minRoi, v: settings.minVolume });
@@ -830,14 +815,14 @@ async function scanFind(filters) {
   if (limit) end = 'limit';
   saveSeen(seen);
   st.state = end;
-  const where = st.walk.total ? L(` Steam's list for this category, position ${st.walk.pos} of ${st.walk.total}.`, ` Lista Steama dla tej kategorii: pozycja ${st.walk.pos} z ${st.walk.total}.`) : '';
+  const where = st.walk.total ? L('flip.steamsListForThisCategory', { pos: st.walk.pos, total: st.walk.total }) : '';
   renderScan();
-  const sum = L(`checked ${st.checked}, found ${st.found}${of}`, `sprawdzono ${st.checked}, znaleziono ${st.found}${of}`);
-  if (end === 'stop') ui.log(L(`Scanner finished, ${sum}.`, `Skaner zakończony: ${sum}.`), 'ok');
-  else if (end === 'end') ui.log(L(`Scanner: end of the list, ${sum}.${where} Widen the price range or change the category.`, `Skaner: koniec listy, ${sum}.${where} Poszerz przedział cen albo zmień kategorię.`), st.found ? 'ok' : 'warn');
-  else if (end === 'stall') ui.log(L(`Scanner: Steam stopped returning the item list, ${sum}.${where} It isn't the end of the list, click “Scan” in a few minutes, checked items won't be downloaded again.`, `Skaner: Steam przestał zwracać listę przedmiotów, ${sum}.${where} To nie koniec listy: kliknij „Skanuj” za kilka minut, sprawdzone przedmioty nie będą pobierane drugi raz.`), 'warn');
-  else if (end === 'limit') ui.log(L(`Scanner: Steam is limiting requests, ${sum}. Click “Scan” in a few minutes, checked items won't be downloaded again.`, `Skaner: Steam ogranicza zapytania, ${sum}. Kliknij „Skanuj” za kilka minut, sprawdzone przedmioty nie będą pobierane drugi raz.`), 'warn');
-  else ui.log(L(`Scanner stopped, ${sum}. “Scan” resumes where it left off.`, `Skaner zatrzymany: ${sum}. „Skanuj” wznowi od miejsca przerwania.`), want === Infinity ? 'ok' : 'warn');
+  const sum = L('flip.checkedFound', { checked: st.checked, found: st.found, of });
+  if (end === 'stop') ui.log(L('flip.scannerFinished2', { sum }), 'ok');
+  else if (end === 'end') ui.log(L('flip.scannerEndOfTheList', { sum, where }), st.found ? 'ok' : 'warn');
+  else if (end === 'stall') ui.log(L('flip.scannerSteamStoppedReturningThe2', { sum, where }), 'warn');
+  else if (end === 'limit') ui.log(L('flip.scannerSteamIsLimitingRequests', { sum }), 'warn');
+  else ui.log(L('flip.scannerStoppedScanResumesWhere', { sum }), want === Infinity ? 'ok' : 'warn');
 }
 
 
@@ -849,5 +834,5 @@ async function exportResearch() {
   if (scanning) return;
   const shown = [...new Set([...el.querySelectorAll('section[data-s]:not([hidden]) [data-an], section[data-s]:not([hidden]) #f-out [data-w]')].map((b) => b.dataset.an || b.dataset.w).filter(Boolean))];
   const list = (shown.length ? shown : [...new Set(RESEARCH_ITEMS)]).map((hash) => ({ hash, appid: 730 }));
-  await research.exportResearch(list, shown.length ? L('shown on the list right now', 'widocznych teraz na liście') : L('from the fixed sample of popular ones (the list is empty)', 'ze stałej próbki popularnych (na liście nic nie ma)'), { onBusy: (b) => (el.querySelector('[data-a="stop"]').hidden = !b) });
+  await research.exportResearch(list, shown.length ? L('flip.shownOnTheListRight') : L('flip.fromTheFixedSampleOf'), { onBusy: (b) => (el.querySelector('[data-a="stop"]').hidden = !b) });
 }

@@ -15,7 +15,7 @@ import { L } from '../core/i18n.js';
 
 // Valve's published odds (per opening)
 const ODDS = { mil: 0.7992, res: 0.1598, cla: 0.032, cov: 0.0064, gold: 0.0026 };
-const TIER_NAME = { mil: L('Mil-Spec (blue)', 'Mil-Spec (niebieskie)'), res: L('Restricted (purple)', 'Restricted (fioletowe)'), cla: L('Classified (pink)', 'Classified (różowe)'), cov: L('Covert (red)', 'Covert (czerwone)'), gold: L('★ knife / gloves', '★ nóż / rękawice') };
+const TIER_NAME = { mil: L('cases.milSpecBlue'), res: L('cases.restrictedPurple'), cla: L('cases.classifiedPink'), cov: L('cases.covertRed'), gold: L('cases.knifeGloves') };
 const TIER_COLOR = { mil: '4b69ff', res: '8847ff', cla: 'd32ce6', cov: 'eb4b4b', gold: 'caab05' };
 // typical wear split for a skin with the full 0-1 float range; renormalised over the wears that exist on the market
 const WEAR_P = { 'Factory New': 0.03, 'Minimal Wear': 0.24, 'Field-Tested': 0.33, 'Well-Worn': 0.24, 'Battle-Scarred': 0.16 };
@@ -23,7 +23,7 @@ const ST_P = 0.1;
 // capsules: the same rarity ladder without the knife tier, the weapon-case weights, renormalised over the rarities a
 // capsule has (data sites list e.g. 80,68 / 16,10 / 3,22% for one without gold, exactly that); no key needed
 const CAP_W = { mil: 79.92, res: 15.98, cla: 3.2, cov: 0.64 };
-const CAP_NAME = { mil: L('High Grade (normal)', 'High Grade (zwykłe)'), res: L('Remarkable (holo / glitter / embroidered)', 'Remarkable (holo / glitter / haft)'), cla: 'Exotic (foil / holo)', cov: L('Extraordinary (gold)', 'Extraordinary (złote)') };
+const CAP_NAME = { mil: L('cases.highGradeNormal'), res: L('cases.remarkableHoloGlitterEmbroidered'), cla: 'Exotic (foil / holo)', cov: L('cases.extraordinaryGold') };
 const kindSel = () => el?.querySelector('#k-kind')?.value || 'case';
 const TTL = 6 * 3600000; // case list (case prices)
 const EV_TTL = 24 * 3600000; // drop prices change slowly → a computed case stays valid for a day
@@ -39,7 +39,7 @@ let open = null; // hash of the expanded case
 // search pages are reused for a few minutes (Ustawienia → pamięć danych rynku), empty answers never
 const search = (params) => disk.cached(`q|/market/search/render/?norender=1&appid=730&l=english&${params}`, disk.ttl(), () => steam.schedule('search', async () => {
   const r = await fetch(`${steam.ORIGIN}/market/search/render/?norender=1&appid=730&l=english&${params}`, { credentials: 'include' });
-  if (r.status === 429) throw new steam.HttpError(429, L('Steam: too many requests (429)', 'Steam: za dużo zapytań (429)'));
+  if (r.status === 429) throw new steam.HttpError(429, L('cases.steamTooManyRequests429'));
   if (!r.ok) throw new steam.HttpError(r.status);
   return disk.slimSearch(await r.json());
 }), (d) => d?.results?.length > 0);
@@ -146,7 +146,7 @@ function commonEvent(names) {
 
 async function computeCapsule(c, def) {
   const rate = usdRate || store.get('caseList', {}).usdRate;
-  if (!rate) throw new Error(L('no USD rate', 'brak kursu USD'));
+  if (!rate) throw new Error(L('cases.noUsdRate'));
   const pre = def.kind === 'Patch' ? 'Patch | ' : 'Sticker | ';
   const found = new Map(def.items.map(([n]) => [pre + n, null]));
   // prices: one search for the event's stickers (shared by its capsules), then exact searches for what it missed
@@ -178,7 +178,7 @@ async function computeCapsule(c, def) {
     for (const s of per) outcomes.push({ p: odds[t] / per.length, value: s.ev, hash: s.hash, tier: t });
     tiers[t] = { p: odds[t], unpriced, skins: per.sort((a, b) => b.ev - a.ev).map((x) => ({ base: x.base, color: x.color, ev: x.ev, n: x.n, t: null })), ev: per.reduce((s, x) => s + x.ev, 0) / per.length };
   }
-  if (!Object.keys(tiers).length) throw new Error(L('couldn\'t find sticker prices for this capsule', 'nie znalazłem cen naklejek z tej kapsuły'));
+  if (!Object.keys(tiers).length) throw new Error(L('cases.couldntFindStickerPricesFor'));
   const casePrice = Math.round(c.priceUsd * rate);
   const cost = casePrice;
   const covered = Object.keys(tiers).reduce((s, k) => s + odds[k], 0);
@@ -194,10 +194,10 @@ async function computeCapsule(c, def) {
 
 async function computeCase(c, keyCost) {
   const rate = usdRate || store.get('caseList', {}).usdRate;
-  if (!rate) throw new Error(L('no USD rate', 'brak kursu USD'));
-  const db = await casedb.load().catch((e) => { ui.log(L('Cases: ', 'Skrzynie: ') + e.message, 'warn'); return null; });
+  if (!rate) throw new Error(L('cases.noUsdRate'));
+  const db = await casedb.load().catch((e) => { ui.log(L('cases.cases') + e.message, 'warn'); return null; });
   const def = db?.cases[c.hash];
-  if (!def && !c.set) throw new Error(L('case contents not found', 'nie znaleziono zawartości skrzyni'));
+  if (!def && !c.set) throw new Error(L('cases.caseContentsNotFound'));
   // prices: the case's collection (all its skins, often the knives too) …
   const found = c.set ? await searchCached(`category_730_ItemSet%5B%5D=tag_${c.set}`, 1500) : [];
   const variantsOf = new Map(); // base name (no ★/StatTrak/wear) -> variants
@@ -262,7 +262,7 @@ async function computeCase(c, keyCost) {
     }
     tiers[tier] = { p, unpriced, skins: per.sort((a, b) => b.ev - a.ev).map((x) => ({ base: x.base, color: x.color, ev: x.ev, n: x.n && { ev: x.n.ev }, t: x.t && { ev: x.t.ev } })), ev: per.reduce((s, x) => s + x.ev, 0) / per.length };
   }
-  if (!Object.keys(tiers).length) throw new Error(L(`contents not recognised (${found.length} search results)`, `nie rozpoznano zawartości (${found.length} pozycji z wyszukiwarki)`));
+  if (!Object.keys(tiers).length) throw new Error(L('cases.contentsNotRecognisedSearchResults', { found: found.length }));
   const casePrice = Math.round(c.priceUsd * rate);
   const cost = casePrice + keyCost;
   const covered = Object.keys(tiers).reduce((s, k) => s + ODDS[k], 0);
@@ -281,9 +281,9 @@ async function computeCase(c, keyCost) {
 // ---------------------------------------------------------------- key price
 function keyCost() {
   const near = sh.nearestKeyPrice(Date.now(), 'PLN');
-  if (near && Date.now() - near.t < 400 * 86400000) return { price: near.price, src: L(`like your last key (${new Date(near.t).toLocaleDateString()})`, `jak Twój ostatni klucz (${new Date(near.t).toLocaleDateString()})`) };
+  if (near && Date.now() - near.t < 400 * 86400000) return { price: near.price, src: L('cases.likeYourLastKey', { t: new Date(near.t).toLocaleDateString() }) };
   const rate = usdRate || store.get('caseList', {}).usdRate;
-  return { price: rate ? Math.round(249 * rate) : 0, src: L('2.49 USD at the exchange rate', '2,49 USD po kursie') };
+  return { price: rate ? Math.round(249 * rate) : 0, src: L('cases.249UsdAtThe') };
 }
 
 // ---------------------------------------------------------------- UI
@@ -293,30 +293,18 @@ export function mount(root) {
   if (saved) { list = saved.list || []; usdRate = saved.usdRate || null; }
   root.innerHTML = `
     <div class="bar">
-      <button class="b g" data-a="scan">⟳ ${L(`Recalculate cases`, `Przelicz skrzynie`)}</button>
+      <button class="b g" data-a="scan">⟳ ${L('cases.recalculateCases')}</button>
       <button class="b" data-a="stop" hidden>■ Stop</button>
-      <select id="k-kind" title="${L(`What to show and recalculate`, `Co pokazać i przeliczyć`)}"><option value="case">${L(`Cases`, `Skrzynie`)}</option><option value="cap">${L(`Sticker capsules`, `Kapsuły z naklejkami`)}</option><option value="all">${L(`Cases and capsules`, `Skrzynie i kapsuły`)}</option></select>
-      <label class="tgl" title="${L(`Skips cases and capsules with fewer than 100 listings on the market. They are hard to buy and their prices can't be trusted`, `Pomija skrzynie i kapsuły, które mają mniej niż 100 ofert na rynku: trudno je kupić, a ich ceny są niewiarygodne`)}"><input type="checkbox" id="k-liq" checked><span class="tr"></span>${L(`Hide rarely sold (&lt;100 listings)`, `Ukryj rzadko sprzedawane (&lt;100 ofert)`)}</label>
-      <label class="tgl" title="${L(`Count every case and capsule as if you already had it, so the opening cost is the key plus what selling it would bring you (after the fee) instead of the market price. You can change single ones with the "I have it" box in the row.`, `Licz każdą skrzynię i kapsułę tak, jakbyś już ją miał(a): koszt otwarcia = klucz + to, co dostałbyś za jej sprzedaż (po prowizji), a nie cena z rynku. Pojedyncze możesz potem poprawić polem „mam ją” w wierszu.`)}"><input type="checkbox" id="k-ownall" ${store.get('caseOwnAll', false) ? 'checked' : ''}><span class="tr"></span>${L(`I already have them all (not buying)`, `Wszystkie już mam (nie kupuję)`)}</label>
+      <select id="k-kind" title="${L('cases.whatToShowAndRecalculate')}"><option value="case">${L('cases.cases2')}</option><option value="cap">${L('cases.stickerCapsules')}</option><option value="all">${L('cases.casesAndCapsules')}</option></select>
+      <label class="tgl" title="${L('cases.skipsCasesAndCapsulesWith')}"><input type="checkbox" id="k-liq" checked><span class="tr"></span>${L('cases.hideRarelySold100Listings')}</label>
+      <label class="tgl" title="${L('cases.countEveryCaseAndCapsule')}"><input type="checkbox" id="k-ownall" ${store.get('caseOwnAll', false) ? 'checked' : ''}><span class="tr"></span>${L('cases.iAlreadyHaveThemAll')}</label>
       <span class="sp"></span><span class="sub" id="k-info"></span>
     </div>
     <div class="cards" id="k-cards"></div>
-    <details class="note"><summary>${L('How is this calculated?', 'Jak to liczę?')}</summary>${L(`
-      <b>EV</b> is the average value of a drop after the fee, the sum over rarities of chance × average price of the skins of that rarity.<br>
-      Valve's odds are blue 79.92%, purple 15.98%, pink 3.20%, red 0.64% and knife/gloves 0.26%. StatTrak™ 10%.<br>
-      Case contents and float ranges come from the game files (the ByMykel/CSGO-API set). The wear is worked out from the skin's float range (e.g. a Doppler drops as FN about 96% of the time).<br>
-      <b>Loss per opening</b> is cost − EV, what you lose on average per opening (in the long run, a single drop can be worth much more or less). The table is sorted from the smallest loss.<br>
-      <b>Capsules</b> need no key, so the cost is the capsule price. Sticker rarities are High Grade (normal), Remarkable (holo / glitter / embroidered), Exotic (foil / holo) and Extraordinary (gold), with the same odds as cases (79.92 / 15.98 / 3.20 / 0.64) spread over the rarities the capsule has (that's how capsule data sites give it, Valve doesn't publish them separately). Contents come from the game files (ByMykel), prices from the Steam market.<br>
-      Prices are the lowest listing on the Steam market (single expensive drops often sell a bit cheaper in practice, so EV is rather slightly too high). Cost is case + key. For a case marked "I have it" (ticked by itself when it's in your inventory, once the Inventory tab has loaded) the cost is the key plus what selling that case would bring you (after the fee). "Chance to break even" is how often a drop is worth as much as the opening costs.`, `
-      <b>EV</b> = średnia wartość dropu na rękę (po prowizji): suma po rzadkościach szansa × średnia cena skinów tej rzadkości.<br>
-      Szanse Valve: niebieskie 79,92%, fioletowe 15,98%, różowe 3,20%, czerwone 0,64%, nóż/rękawice 0,26%. StatTrak™ 10%.<br>
-      Zawartość skrzyń i zakresy floatu, z plików gry (zbiór ByMykel/CSGO-API). Stan zużycia liczony z zakresu floatu skina (np. Doppler wypada w ~96% jako FN).<br>
-      <b>Strata na otwarciu</b> = koszt − EV: tyle średnio tracisz przy jednym otwarciu (na długą metę, pojedynczy drop może dać dużo więcej albo mniej). Tabela jest ułożona od najmniejszej straty.<br>
-      <b>Kapsuły</b>: bez klucza, koszt = cena kapsuły. Rzadkości naklejek: High Grade (zwykłe), Remarkable (holo / glitter / haft), Exotic (foil / holo), Extraordinary (złote), szanse jak w skrzyniach (79,92 / 15,98 / 3,20 / 0,64), przeliczone na rzadkości, które kapsuła ma (tak podają serwisy z danymi o kapsułach; Valve nie publikuje ich osobno). Zawartość, z plików gry (ByMykel), ceny, z rynku Steam.<br>
-      Ceny: najniższa oferta na rynku Steam (pojedyncze drogie dropy bywają w praktyce sprzedawane trochę taniej, więc EV jest raczej lekko zawyżone). Koszt = skrzynia + klucz. Przy skrzyni oznaczonej „mam ją” (zaznacza się sama, gdy jest w Twoim ekwipunku, po wczytaniu zakładki Ekwipunek) koszt = klucz + to, co dostałbyś za sprzedaż tej skrzyni (po prowizji). „Szansa na zwrot” = jak często drop jest wart tyle, ile kosztuje otwarcie.`)}</details>
+    <details class="note"><summary>${L('cases.howIsThisCalculated')}</summary>${L('cases.evIsTheAverageValue')}</details>
     <table id="k-tbl"><thead><tr>
-      <th data-sort="name">${L(`Case`, `Skrzynia`)}</th><th data-sort="res" title="${L('The average result of one opening, EV − cost, so what an opening costs you on average. Smallest loss first.', 'Średni wynik jednego otwarcia: EV − koszt, tyle średnio płacisz za otwarcie. Od najmniejszej straty.')}">${L('Loss per opening', 'Strata na otwarciu')}</th><th data-sort="cost">${L('Opening cost', 'Koszt otwarcia')}</th><th data-sort="ev">EV</th>
-      <th data-sort="pOk">${L('Chance to break even', 'Szansa na zwrot')}</th><th data-sort="best">${L('Best drop', 'Najlepszy drop')}</th><th data-sort="case">${L('Case price', 'Cena skrzyni')}</th><th data-sort="listings">${L('Listings', 'Ofert')}</th><th></th>
+      <th data-sort="name">${L('cases.case')}</th><th data-sort="res" title="${L('cases.theAverageResultOfOne')}">${L('cases.lossPerOpening')}</th><th data-sort="cost">${L('cases.openingCost')}</th><th data-sort="ev">EV</th>
+      <th data-sort="pOk">${L('cases.chanceToBreakEven')}</th><th data-sort="best">${L('cases.bestDrop')}</th><th data-sort="case">${L('cases.casePrice')}</th><th data-sort="listings">${L('cases.listings')}</th><th></th>
     </tr></thead><tbody></tbody></table>`;
   root.addEventListener('click', (e) => {
     const th = e.target.closest('th[data-sort]');
@@ -369,7 +357,7 @@ async function scan(only) {
   el.querySelector('[data-a="stop"]').hidden = false;
   try {
     if (!list.length || list.some((c) => !c.kind) || Date.now() - (store.get('caseList', {}).at || 0) > TTL) {
-      ui.log(L('Cases: loading the case list…', 'Skrzynie: pobieram listę skrzyń…'));
+      ui.log(L('cases.casesLoadingTheCaseList'));
       await loadCases();
       recalcKey();
     }
@@ -384,22 +372,22 @@ async function scan(only) {
     if (!only) { const keep = Object.fromEntries(Object.entries(cache.all()).filter(([h]) => { const c = list.find((x) => x.hash === h); return c && !want(c); })); cache.replace(keep); qCache.replace({}); render(); }
     const stale = (c) => { const r = cache.get(c.hash); return !r || r.v !== 4 || Date.now() - r.at > EV_TTL; };
     const todo = list.filter((c) => (only ? only.includes(c.hash) : want(c) && (!liq || c.listings >= 100) && stale(c)) && (c.kind === 'capsule' ? db?.caps?.[c.hash] : c.set || db?.cases[c.hash]));
-    ui.log(L(`Cases: calculating ${todo.length} ${kind === 'cap' ? 'capsules' : kind === 'all' ? 'cases and capsules' : 'cases'} (key ${steam.fmt(k.price)}, ${k.src})…`, `Skrzynie: liczę ${todo.length} ${kind === 'cap' ? 'kapsuł' : kind === 'all' ? 'skrzyń i kapsuł' : 'skrzyń'} (klucz ${steam.fmt(k.price)}, ${k.src})…`));
+    ui.log(L('cases.casesCalculatingKey', { todo: todo.length, price: steam.fmt(k.price), src: k.src, kind: kind === 'cap' ? L('cases.capsules') : kind === 'all' ? L('cases.casesAndCapsules2') : L('cases.cases3') }));
     let i = 0;
     const tStart = Date.now();
     for (const c of todo) {
       if (task.cancelled) break;
       ui.progress(i++, todo.length);
       const left = i > 1 ? Math.round(((Date.now() - tStart) / (i - 1)) * (todo.length - i + 1) / 60000) : null;
-      el.querySelector('#k-info').textContent = L(`calculating ${c.name} (${i}/${todo.length})${left != null ? ` · about ${left || '<1'} min left` : ''}, results show up as they come, you can use the rest meanwhile`, `liczę ${c.name} (${i}/${todo.length})${left != null ? ` · zostało ok. ${left || '<1'} min` : ''}, wyniki pojawiają się na bieżąco, możesz w tym czasie korzystać z reszty`);
-      try { await (c.kind === 'capsule' ? computeCapsule(c, db.caps[c.hash]) : computeCase(c, k.price)); } catch (e) { ui.log(L(`Cases: ${c.name}, ${e.message}`, `Skrzynie: ${c.name}, ${e.message}`), 'warn'); }
+      el.querySelector('#k-info').textContent = L('cases.calculatingResultsShowUpAs', { name: c.name, i, todo: todo.length, left: left != null ? L('cases.aboutMinLeft', { left: left || '<1' }) : '' });
+      try { await (c.kind === 'capsule' ? computeCapsule(c, db.caps[c.hash]) : computeCase(c, k.price)); } catch (e) { ui.log(L('cases.cases4', { name: c.name, message: e.message }), 'warn'); }
       render();
     }
     const miss = list.filter((c) => c.kind !== 'capsule' && !c.set && !db?.cases[c.hash]); // capsules need no collection; a case with known contents is computed anyway
     if (miss.length) console.warn('[Flipster] skrzynie bez rozpoznanej kolekcji (pominięte)', miss.map((c) => c.hash));
-    ui.log(L('Cases: done.', 'Skrzynie: gotowe.'), 'ok');
+    ui.log(L('cases.casesDone'), 'ok');
   } catch (e) {
-    ui.log(L('Cases: ', 'Skrzynie: ') + e.message, 'err');
+    ui.log(L('cases.cases') + e.message, 'err');
   }
   ui.progress(0);
   task = null;
@@ -433,7 +421,7 @@ function render() {
   const rows = list.filter((c) => (kind === 'all' || (kind === 'cap') === (c.kind === 'capsule')) && (!liq || c.listings >= 100)).map((c) => ({ c, r: cache.get(c.hash) })).filter((x) => x.r || !fullScan);
   const done = rows.filter((x) => x.r);
   el.querySelector('#k-info').textContent = task ? el.querySelector('#k-info').textContent
-    : list.length ? L(`${done.length}/${rows.length} cases calculated · key ${steam.fmt(k.price)} (${k.src})${done.length ? ` · data from ${timeAgo(Math.min(...done.map((x) => x.r.at)))}` : ''}`, `${done.length}/${rows.length} skrzyń policzonych · klucz ${steam.fmt(k.price)} (${k.src})${done.length ? ` · dane sprzed ${timeAgo(Math.min(...done.map((x) => x.r.at)))}` : ''}`) : L('Click "Recalculate cases"', 'Kliknij „Przelicz skrzynie”');
+    : list.length ? L('cases.casesCalculatedKey', { done: done.length, rows: rows.length, price: steam.fmt(k.price), src: k.src, done2: done.length ? L('cases.dataFrom', { done: timeAgo(Math.min(...done.map((x) => x.r.at))) }) : '' }) : L('cases.clickRecalculateCases');
   const leastZl = [...done].sort((a, b) => resOf(b.r) - resOf(a.r))[0];
   const leastPct = [...done].sort((a, b) => b.r.ev / costOf(b.r) - a.r.ev / costOf(a.r))[0];
   const safest = [...done].sort((a, b) => pOkOf(b.r) - pOkOf(a.r))[0];
@@ -441,28 +429,28 @@ function render() {
   const lossCls = (r) => (resOf(r) >= 0 ? 'pos' : 'neg');
   const nameLine = (x) => `<div style="color:#fff;font-size:13px;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(x.c.name)}">${esc(x.c.name)}</div>`;
   el.querySelector('#k-cards').innerHTML = done.length ? `
-    <div class="card" style="border-color:var(--acc);grid-column:span 2" title="${L('What one opening of this case costs you on average, the least of all calculated', 'Tyle średnio płacisz za jedno otwarcie tej skrzyni, najmniej ze wszystkich policzonych')}"><div class="k">${L('Smallest loss per opening', 'Najmniejsza strata na otwarciu')}</div><div class="v ${lossCls(leastZl.r)}" style="font-size:26px;font-weight:700">${lossVal(leastZl.r)}</div>${nameLine(leastZl)}<div class="sub">${L('opening cost', 'koszt otwarcia')} ${steam.fmt(costOf(leastZl.r))} · ${L('returns on average', 'wraca średnio')} ${pct(leastZl.r.ev / costOf(leastZl.r), 0)}</div></div>
-    <div class="card" title="${L('This case returns the biggest part of its cost, which matters when you have a fixed budget', 'Z tej skrzyni wraca największa część kosztu, liczy się, gdy masz stały budżet')}"><div class="k">${L('Returns the most (%)', 'Najwięcej wraca (%)')}</div><div class="v">${pct(leastPct.r.ev / costOf(leastPct.r), 0)}</div>${nameLine(leastPct)}<div class="sub"><span class="${lossCls(leastPct.r)}">${lossVal(leastPct.r)}</span> ${L('per opening · cost', 'na otwarciu · koszt')} ${steam.fmt(costOf(leastPct.r))}</div></div>
-    <div class="card" title="${L('How often a drop is worth at least what the opening costs', 'Jak często drop jest wart co najmniej tyle, ile kosztuje otwarcie')}"><div class="k">${L('Best chance to break even', 'Największa szansa na zwrot')}</div><div class="v">${pct(pOkOf(safest.r), 1)}</div>${nameLine(safest)}<div class="sub">${L(`of openings give a drop worth`, `otwarć daje drop wart`)} ≥ ${steam.fmt(costOf(safest.r))}</div></div>` : '';
+    <div class="card" style="border-color:var(--acc);grid-column:span 2" title="${L('cases.whatOneOpeningOfThis')}"><div class="k">${L('cases.smallestLossPerOpening')}</div><div class="v ${lossCls(leastZl.r)}" style="font-size:26px;font-weight:700">${lossVal(leastZl.r)}</div>${nameLine(leastZl)}<div class="sub">${L('cases.openingCost2')} ${steam.fmt(costOf(leastZl.r))} · ${L('cases.returnsOnAverage')} ${pct(leastZl.r.ev / costOf(leastZl.r), 0)}</div></div>
+    <div class="card" title="${L('cases.thisCaseReturnsTheBiggest')}"><div class="k">${L('cases.returnsTheMost')}</div><div class="v">${pct(leastPct.r.ev / costOf(leastPct.r), 0)}</div>${nameLine(leastPct)}<div class="sub"><span class="${lossCls(leastPct.r)}">${lossVal(leastPct.r)}</span> ${L('cases.perOpeningCost')} ${steam.fmt(costOf(leastPct.r))}</div></div>
+    <div class="card" title="${L('cases.howOftenADropIs')}"><div class="k">${L('cases.bestChanceToBreakEven')}</div><div class="v">${pct(pOkOf(safest.r), 1)}</div>${nameLine(safest)}<div class="sub">${L('cases.ofOpeningsGiveADrop')} ≥ ${steam.fmt(costOf(safest.r))}</div></div>` : '';
   const sorted = sort.apply(rows, {
     name: (x) => x.c.name, case: (x) => x.r?.casePrice ?? x.c.priceUsd, cost: (x) => (x.r ? costOf(x.r) : null), ev: (x) => x.r?.ev, res: (x) => (x.r ? resOf(x.r) : null),
     pOk: (x) => (x.r ? pOkOf(x.r) : null), best: (x) => x.r?.best?.value, listings: (x) => x.c.listings,
   });
   el.querySelector('#k-tbl tbody').innerHTML = sorted.map(({ c, r }) => {
     const main = `<tr data-hash="${esc(c.hash)}" style="cursor:pointer">
-      <td>${ui.itemCell({ hash: c.hash, name: c.name, icon: c.icon, color: c.color, appid: 730, sub: c.set || c.kind === 'capsule' || r ? '' : L('<span class="warn" title="I don\'t know the contents of this case, so I don\'t calculate it">collection not recognised</span>', '<span class="warn" title="Nie znam zawartości tej skrzyni, więc jej nie liczę">nie rozpoznano kolekcji</span>') })}</td>
-      <td class="${r ? (resOf(r) >= 0 ? 'pos' : 'neg') : ''}">${r ? `<b style="font-size:15px">${resOf(r) >= 0 ? '+' : '−'}${steam.fmt(Math.round(Math.abs(resOf(r))))}</b><div class="sub">${L('returns', 'wraca')} ${pct(r.ev / costOf(r), 0)} ${L('of the cost', 'kosztu')}</div>` : '<span class="sub">…</span>'}</td>
-      <td>${r ? `${steam.fmt(costOf(r))}<div class="sub">${r.kind === 'capsule' ? (owns(c.hash) ? L('capsule after the fee, no key', 'kapsuła po prowizji, bez klucza') : L('no key', 'bez klucza')) : owns(c.hash) ? L(`key ${steam.fmt(r.keyCost)} + case after the fee`, `klucz ${steam.fmt(r.keyCost)} + skrzynia po prowizji`) : L(`+ key ${steam.fmt(r.keyCost)}`, `+ klucz ${steam.fmt(r.keyCost)}`)}</div><label class="sub" style="display:inline-flex;gap:4px;align-items:center;cursor:pointer;margin-top:2px" title="${L(`You have this case, so an opening costs the key plus what selling it would bring you (after the fee), not its market price`, `Masz tę skrzynię: otwarcie kosztuje klucz + to, co dostałbyś za jej sprzedaż (po prowizji), a nie jej cenę z rynku`)}"><input type="checkbox" data-own="${esc(c.hash)}" ${owns(c.hash) ? 'checked' : ''}> ${L('I have it', 'mam ją')}${ownedCount(c.hash) ? ` (${ownedCount(c.hash)} ${L('in inventory', 'w ekwipunku')})` : ''}</label>` : ''}</td>
-      <td>${r ? steam.fmt(Math.round(r.ev)) + (r.covered < 0.999 || r.v !== 4 ? ` <span class="warn" title="${r.v !== 4 ? L('Calculated the old way, click "Recalculate cases"', 'Policzone starą metodą, kliknij „Przelicz skrzynie”') : L(`No prices for some rarities (${pct(1 - r.covered, 2)} of the odds), EV is too low`, `Brak cen dla części rzadkości (${pct(1 - r.covered, 2)} szans), EV zaniżone`)}">!</span>` : '') : ''}</td>
+      <td>${ui.itemCell({ hash: c.hash, name: c.name, icon: c.icon, color: c.color, appid: 730, sub: c.set || c.kind === 'capsule' || r ? '' : L('cases.collectionNotRecognised') })}</td>
+      <td class="${r ? (resOf(r) >= 0 ? 'pos' : 'neg') : ''}">${r ? `<b style="font-size:15px">${resOf(r) >= 0 ? '+' : '−'}${steam.fmt(Math.round(Math.abs(resOf(r))))}</b><div class="sub">${L('cases.returns')} ${pct(r.ev / costOf(r), 0)} ${L('cases.ofTheCost')}</div>` : '<span class="sub">…</span>'}</td>
+      <td>${r ? `${steam.fmt(costOf(r))}<div class="sub">${r.kind === 'capsule' ? (owns(c.hash) ? L('cases.capsuleAfterTheFeeNo') : L('cases.noKey')) : owns(c.hash) ? L('cases.keyCaseAfterTheFee', { keyCost: steam.fmt(r.keyCost) }) : L('cases.key', { keyCost: steam.fmt(r.keyCost) })}</div><label class="sub" style="display:inline-flex;gap:4px;align-items:center;cursor:pointer;margin-top:2px" title="${L('cases.youHaveThisCaseSo')}"><input type="checkbox" data-own="${esc(c.hash)}" ${owns(c.hash) ? 'checked' : ''}> ${L('cases.iHaveIt')}${ownedCount(c.hash) ? ` (${ownedCount(c.hash)} ${L('cases.inInventory')})` : ''}</label>` : ''}</td>
+      <td>${r ? steam.fmt(Math.round(r.ev)) + (r.covered < 0.999 || r.v !== 4 ? ` <span class="warn" title="${r.v !== 4 ? L('cases.calculatedTheOldWayClick') : L('cases.noPricesForSomeRarities', { covered: pct(1 - r.covered, 2) })}">!</span>` : '') : ''}</td>
       <td>${r ? pct(pOkOf(r), 1) : ''}</td>
       <td>${r?.best ? `<span class="sub">${esc(r.best.hash)}</span><div>${steam.fmt(r.best.value)}</div>` : ''}</td>
       <td>${r ? steam.fmt(r.casePrice) : ''}</td>
       <td>${c.listings ?? ''}</td>
-      <td style="text-align:right;width:1%">${(!r || r.v !== 4) ? `<button class="b" data-a="one" data-hash="${esc(c.hash)}" title="${L('Calculate only this case', 'Policz tylko tę skrzynię')}" style="white-space:nowrap">⟳ ${L('calculate', 'policz')}</button>` : ''}</td></tr>`;
+      <td style="text-align:right;width:1%">${(!r || r.v !== 4) ? `<button class="b" data-a="one" data-hash="${esc(c.hash)}" title="${L('cases.calculateOnlyThisCase')}" style="white-space:nowrap">⟳ ${L('cases.calculate')}</button>` : ''}</td></tr>`;
     if (open !== c.hash || !r) return main;
     const det = Object.entries(r.tiers).map(([t, x]) => `
-      <div style="margin:6px 0 2px"><b style="color:#${TIER_COLOR[t]}">${(r.kind === 'capsule' ? CAP_NAME : TIER_NAME)[t]}</b> <span class="sub">${L('chance', 'szansa')} ${pct((r.odds || ODDS)[t], 2)} · ${L('average', 'średnio')} ${steam.fmt(Math.round(x.ev))} · ${L('share of EV', 'wkład w EV')} ${steam.fmt(Math.round((r.odds || ODDS)[t] * x.ev))}</span></div>
-      ${x.skins.slice(0, t === 'gold' && !allGold.has(c.hash) ? 12 : 999).map((s) => `<span class="tag" style="margin:2px" title="${esc(r.kind === 'capsule' ? L(`you get after selling: ${steam.fmt(Math.round(s.ev))}`, `na rękę po sprzedaży: ${steam.fmt(Math.round(s.ev))}`) : L(`normal: ${s.n ? steam.fmt(Math.round(s.n.ev)) : '-'} · StatTrak™: ${s.t ? steam.fmt(Math.round(s.t.ev)) : '-'} (after the fee, averaged over wear)`, `zwykły: ${s.n ? steam.fmt(Math.round(s.n.ev)) : '-'} · StatTrak™: ${s.t ? steam.fmt(Math.round(s.t.ev)) : '-'} (na rękę, średnio po stanach)`))}"><span style="color:#${esc(t === 'gold' ? TIER_COLOR.gold : s.color || TIER_COLOR[t])}">${esc(s.base)}</span> ${steam.fmt(Math.round(s.ev))}</span>`).join('')}${t === 'gold' && x.skins.length > 12 ? ` <button class="b" data-a="more" data-hash="${esc(c.hash)}" style="padding:2px 8px">${allGold.has(c.hash) ? L('collapse', 'zwiń') : L(`+${x.skins.length - 12} more`, `+${x.skins.length - 12} więcej`)}</button>` : ''}`).join('');
+      <div style="margin:6px 0 2px"><b style="color:#${TIER_COLOR[t]}">${(r.kind === 'capsule' ? CAP_NAME : TIER_NAME)[t]}</b> <span class="sub">${L('cases.chance')} ${pct((r.odds || ODDS)[t], 2)} · ${L('cases.average')} ${steam.fmt(Math.round(x.ev))} · ${L('cases.shareOfEv')} ${steam.fmt(Math.round((r.odds || ODDS)[t] * x.ev))}</span></div>
+      ${x.skins.slice(0, t === 'gold' && !allGold.has(c.hash) ? 12 : 999).map((s) => `<span class="tag" style="margin:2px" title="${esc(r.kind === 'capsule' ? L('cases.youGetAfterSelling', { ev: steam.fmt(Math.round(s.ev)) }) : L('cases.normalStattrakAfterTheFee', { n: s.n ? steam.fmt(Math.round(s.n.ev)) : '-', t: s.t ? steam.fmt(Math.round(s.t.ev)) : '-' }))}"><span style="color:#${esc(t === 'gold' ? TIER_COLOR.gold : s.color || TIER_COLOR[t])}">${esc(s.base)}</span> ${steam.fmt(Math.round(s.ev))}</span>`).join('')}${t === 'gold' && x.skins.length > 12 ? ` <button class="b" data-a="more" data-hash="${esc(c.hash)}" style="padding:2px 8px">${allGold.has(c.hash) ? L('cases.collapse') : L('cases.more', { skins: x.skins.length - 12 })}</button>` : ''}`).join('');
     return main + `<tr><td colspan="9" style="background:rgba(0,0,0,.15)">${det}</td></tr>`;
-  }).join('') || L('<tr><td colspan="9" class="empty">Click "Recalculate cases". Calculating all cases takes about 10-30 min and results show up as they come. They are saved, so after reloading the page there\'s no need to start over.</td></tr>', '<tr><td colspan="9" class="empty">Kliknij „Przelicz skrzynie”. Policzenie wszystkich skrzyń trwa ok. 10-30 min, wyniki pojawiają się na bieżąco. Zostają zapisane, więc po odświeżeniu strony nie trzeba liczyć od nowa.</td></tr>');
+  }).join('') || L('cases.clickRecalculateCasesCalculatingAll');
 }

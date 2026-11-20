@@ -12,12 +12,12 @@ const URL0 = 'https://store.steampowered.com/account/history/?l=english';
 
 function gmReq(opts) {
   return new Promise((resolve, reject) => {
-    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('GM_xmlhttpRequest unavailable', 'GM_xmlhttpRequest niedostępne')));
+    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('storehist.gmXmlhttprequestUnavailable')));
     GM_xmlhttpRequest({
       timeout: 30000,
       ...opts,
       onload: (r) => (r.status >= 400 ? reject(new steam.HttpError(r.status)) : resolve(r)),
-      onerror: () => reject(new Error(L('Network error', 'Błąd sieci'))),
+      onerror: () => reject(new Error(L('storehist.networkError'))),
       ontimeout: () => reject(new Error('Timeout')),
     });
   });
@@ -56,7 +56,7 @@ export function parseRows(html) {
 export async function sync({ onProgress = () => {} } = {}) {
   const r = await gmReq({ method: 'GET', url: URL0 });
   const html = r.responseText;
-  if (!/wallet_history_table|wallet_table_row/.test(html)) throw new Error(L('I can\'t see the purchase history, log in on store.steampowered.com in this browser', 'Nie widzę historii zakupów, zaloguj się na store.steampowered.com w tej przeglądarce'));
+  if (!/wallet_history_table|wallet_table_row/.test(html)) throw new Error(L('storehist.iCantSeeThePurchase'));
   const sessionid = html.match(/g_sessionID\s*=\s*"([^"]+)"/)?.[1];
   let rows = parseRows(html.match(/<tbody[^>]*>([\s\S]*?)<\/tbody>/)?.[1] || html);
   let cursor = (() => { try { return JSON.parse(html.match(/g_historyCursor\s*=\s*(\{[^;]*\})/)?.[1] || 'null'); } catch { return null; } })();
@@ -179,11 +179,11 @@ export async function ensure(onDone) {
   if (Date.now() - syncedAt() < 3600000) return;
   try {
     const rows = await sync();
-    ui.log(L(`Steam purchase history: ${rows.length} entries (${rows.filter(isCS).length} CS2 purchases).`, `Historia zakupów Steam: ${rows.length} pozycji (${rows.filter(isCS).length} zakupów w CS2).`), 'ok');
+    ui.log(L('storehist.steamPurchaseHistoryEntriesCs2', { rows: rows.length, isCS: rows.filter(isCS).length }), 'ok');
     onDone?.();
   } catch (e) {
     store.set(KEY, { ...store.get(KEY, { rows: [] }), at: Date.now() - 3000000 }); // retry in ~10 min
     mem = null;
-    ui.log(L('Steam purchase history: ', 'Historia zakupów Steam: ') + e.message, 'warn');
+    ui.log(L('storehist.steamPurchaseHistory') + e.message, 'warn');
   }
 }

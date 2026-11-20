@@ -2,8 +2,8 @@ import { L } from './i18n.js';
 // Picking a market sample for the research export (features/research.js exportMarketSample): what kind of item a
 // market name is, its price band, and an even spread over kind × band. Pure, tested in test/analysis.test.js.
 export const KINDS = {
-  skin: L('skins', 'skiny'), knife: L('knives and gloves', 'noże i rękawice'), container: L('cases, capsules, terminals', 'skrzynie, kapsuły, terminale'),
-  sticker: L('stickers', 'naklejki'), other: L('other', 'reszta'),
+  skin: L('sample.skins'), knife: L('sample.knivesAndGloves'), container: L('sample.casesCapsulesTerminals'),
+  sticker: L('sample.stickers'), other: L('sample.other'),
 };
 export const BANDS = [25, 100, 500, 2500, 10000]; // USD cents (Steam's search answers in USD): < 0,25 $, < 1 $, < 5 $, < 25 $, < 100 $, more
 const WEARS = /\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)$/;

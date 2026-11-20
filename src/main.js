@@ -24,12 +24,12 @@ function main() {
   let market = null;
   ui.tab({
     id: 'market',
-    title: L('Market', 'Rynek'),
+    title: L('main.market'),
     mount(root) {
       root.innerHTML = `
         <div class="htabs" style="margin-top:0">
-          <button data-mt="sell">${L(`My listings`, `Moje oferty`)} <span class="cnt"></span></button>
-          <button data-mt="buy">${L(`Buy orders`, `Zlecenia kupna`)} <span class="cnt"></span></button>
+          <button data-mt="sell">${L('main.myListings')} <span class="cnt"></span></button>
+          <button data-mt="buy">${L('main.buyOrders')} <span class="cnt"></span></button>
         </div>
         <div data-sec="sell"></div><div data-sec="buy"></div>`;
       const showSub = (t) => {
@@ -45,11 +45,11 @@ function main() {
     },
     show(sub) { if (sub) market?.showSub(sub); listings.show(); buyorders.show(); },
   });
-  ui.tab({ id: 'inv', title: L('Inventory', 'Ekwipunek'), mount: inventory.mount, show: inventory.show });
-  ui.tab({ id: 'hist', title: L('History', 'Historia'), mount: history.mount, show: history.show });
-  ui.tab({ id: 'flip', title: L('Deals', 'Okazje'), mount: flip.mount, show: flip.show });
-  ui.tab({ id: 'cases', title: L('Worth opening?', 'Czy warto otwierać?'), mount: cases.mount, show: cases.show });
-  ui.tab({ id: 'set', title: L('Settings', 'Ustawienia'), icon: '⚙', mount: settingsTab.mount });
+  ui.tab({ id: 'inv', title: L('main.inventory'), mount: inventory.mount, show: inventory.show });
+  ui.tab({ id: 'hist', title: L('main.history'), mount: history.mount, show: history.show });
+  ui.tab({ id: 'flip', title: L('main.deals'), mount: flip.mount, show: flip.show });
+  ui.tab({ id: 'cases', title: L('main.worthOpening'), mount: cases.mount, show: cases.show });
+  ui.tab({ id: 'set', title: L('main.settings'), icon: '⚙', mount: settingsTab.mount });
 
   flip.setBuyOrderOpener((hash, price, appid) => {
     ui.open('market');
@@ -59,7 +59,7 @@ function main() {
 
   steam.bus.on('ratelimit', (lane, ms) => ui.log(`Steam ogranicza zapytania (${lane}), czekam ${Math.round(ms / 1000)} s…`, 'warn'));
 
-  steam.ensureLogin().then((ok) => { if (!ok) ui.log(L('You don\'t seem to be logged in. Most features need you to be logged in on steamcommunity.com.', 'Nie wykryto zalogowania, większość funkcji wymaga zalogowania na steamcommunity.com.'), 'warn'); });
+  steam.ensureLogin().then((ok) => { if (!ok) ui.log(L('main.youDontSeemToBe'), 'warn'); });
 
   const refreshFab = () => {
     const on = (settings.autoRelist || settings.autoBuy) && isLeader();

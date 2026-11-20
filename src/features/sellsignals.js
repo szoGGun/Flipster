@@ -126,11 +126,11 @@ export function signals(it, lowest) {
   const out = [];
   const net = steam.receivedFromBuyer(lowest);
   if (lowest > 0 && 1 - net / lowest >= 0.4) {
-    out.push({ k: 'hold', label: L('hold', 'trzymaj'), cls: 'mut', title: L(`The fee eats ${Math.round((1 - net / lowest) * 100)}% of the price. The buyer pays ${steam.fmt(lowest)} and you get ${steam.fmt(net)}. Better keep it or use it in a trade-up contract.`, `Prowizja zjada ${Math.round((1 - net / lowest) * 100)}% ceny: kupujący płaci ${steam.fmt(lowest)}, Ty dostajesz ${steam.fmt(net)}. Lepiej zostawić albo użyć w kontrakcie.`) });
+    out.push({ k: 'hold', label: L('sellsignals.hold'), cls: 'mut', title: L('sellsignals.theFeeEatsOfThe', { net: Math.round((1 - net / lowest) * 100), lowest: steam.fmt(lowest), net2: steam.fmt(net) }) });
     return out;
   }
   const cost = costOf(it.hash);
-  if (cost && net >= cost * (1 + th)) out.push({ k: 'profit', label: L(`in profit +${Math.round((net / cost - 1) * 100)}%`, `z zyskiem +${Math.round((net / cost - 1) * 100)}%`), cls: 'pos', title: L(`You bought it for ${steam.fmt(Math.round(cost))}, today you'd get ${steam.fmt(net)}.`, `Kupiłeś za ${steam.fmt(Math.round(cost))}, dziś dostaniesz na rękę ${steam.fmt(net)}.`) });
+  if (cost && net >= cost * (1 + th)) out.push({ k: 'profit', label: L('sellsignals.inProfit', { net: Math.round((net / cost - 1) * 100) }), cls: 'pos', title: L('sellsignals.youBoughtItForToday', { cost: steam.fmt(Math.round(cost)), net: steam.fmt(net) }) });
   const h = hist.get(it.hash);
   if (h?.d?.length >= 5) {
     const now = Date.now();
@@ -144,15 +144,15 @@ export function signals(it, lowest) {
     const a7 = avg(h.d.filter((r) => r[0] >= now - 7 * DAY));
     const prev = avg(h.d.filter((r) => r[0] < now - 7 * DAY && r[0] >= now - 28 * DAY));
     if (base && recent && recentVol >= 3 && recent >= base * (1 + th) && lowest >= base * (1 + th)) {
-      out.push({ k: 'high', label: L('pricey now', 'drogo teraz'), cls: 'warn', title: L(`Over the last 2 days it sold for ${steam.fmt(Math.round(recent))} on average (${recentVol} units), ${Math.round((recent / base - 1) * 100)}% more than earlier this month (${steam.fmt(Math.round(base))}). The cheapest listing is ${steam.fmt(lowest)}. A good moment, before the price goes back to normal.`, `Przez ostatnie 2 dni sprzedaje się średnio po ${steam.fmt(Math.round(recent))} (${recentVol} szt.), o ${Math.round((recent / base - 1) * 100)}% drożej niż wcześniej w tym miesiącu (${steam.fmt(Math.round(base))}). Najtańsza oferta: ${steam.fmt(lowest)}. Dobry moment, zanim cena wróci do normy.`) });
+      out.push({ k: 'high', label: L('sellsignals.priceyNow'), cls: 'warn', title: L('sellsignals.overTheLast2Days', { recent: steam.fmt(Math.round(recent)), recentVol, recent2: Math.round((recent / base - 1) * 100), base: steam.fmt(Math.round(base)), lowest: steam.fmt(lowest) }) });
     }
-    if (a7 && prev && a7 <= prev * (1 - th)) out.push({ k: 'fall', label: L('price falling', 'cena spada'), cls: 'err', title: L(`Last week's average (${steam.fmt(Math.round(a7))}) is ${Math.round((1 - a7 / prev) * 100)}% lower than in the 3 weeks before (${steam.fmt(Math.round(prev))}).`, `Średnia z ostatniego tygodnia (${steam.fmt(Math.round(a7))}) jest o ${Math.round((1 - a7 / prev) * 100)}% niższa niż z 3 tygodni wcześniej (${steam.fmt(Math.round(prev))}).`) });
+    if (a7 && prev && a7 <= prev * (1 - th)) out.push({ k: 'fall', label: L('sellsignals.priceFalling'), cls: 'err', title: L('sellsignals.lastWeeksAverageIsLower', { a7: steam.fmt(Math.round(a7)), a72: Math.round((1 - a7 / prev) * 100), prev: steam.fmt(Math.round(prev)) }) });
   }
   // the last half year against the market (markettrend.js), as information only: a chip when this item did something
   // clearly different from the market (≥ 20 points), the numbers for every item in trendNote
   const tr = trendOf(it);
   if (tr?.ref && Math.abs(tr.t - tr.m) >= 0.2) {
-    out.push({ k: tr.t < tr.m ? 'tdown' : 'tup', label: `${tr.t < 0 ? '↘' : '↗'} ${pctTxt(tr.t)} ${L('in', 'w')} ${tr.span} (${tr.ref.label} ${pctTxt(tr.m)})`, cls: 'mut', title: `${trendNote(it)}\n${L('This only tells what already happened. On 650 market items such moves predicted neither more of the same nor a turn.', 'To tylko informacja o tym, co już się stało: na 650 przedmiotach z rynku takie ruchy nie zapowiadały ani ciągu dalszego, ani odwrotu.')}` });
+    out.push({ k: tr.t < tr.m ? 'tdown' : 'tup', label: `${tr.t < 0 ? '↘' : '↗'} ${pctTxt(tr.t)} ${L('sellsignals.in')} ${tr.span} (${tr.ref.label} ${pctTxt(tr.m)})`, cls: 'mut', title: `${trendNote(it)}\n${L('sellsignals.thisOnlyTellsWhatAlready')}` });
   }
   return out;
 }
@@ -164,8 +164,8 @@ function trendOf(it) {
   const rt = hist.get(it.hash)?.rt;
   if (!rt) return null;
   const ref = String(it.appid || 730) === '730' ? mt.refFor(it.hash, it.type || '') : null;
-  if (rt.t6 != null) return { t: rt.t6, m: ref?.t6 ?? null, span: L('half a year', 'pół roku'), rt, ref: ref?.t6 != null ? ref : null };
-  if (rt.t3 != null) return { t: rt.t3, m: ref?.t3 ?? null, span: L('3 months', '3 mies.'), rt, ref: ref?.t3 != null ? ref : null };
+  if (rt.t6 != null) return { t: rt.t6, m: ref?.t6 ?? null, span: L('sellsignals.halfAYear'), rt, ref: ref?.t6 != null ? ref : null };
+  if (rt.t3 != null) return { t: rt.t3, m: ref?.t3 ?? null, span: L('sellsignals.3Months'), rt, ref: ref?.t3 != null ? ref : null };
   return null;
 }
 /** "Pół roku temu 127,20 zł, 3 miesiące temu 114,92 zł, teraz 88,02 zł (−31%). Rynek skinów w tym czasie: −33% (…)" or '' */
@@ -173,12 +173,10 @@ export function trendNote(it) {
   const tr = trendOf(it);
   if (!tr) return '';
   const f = (c) => (c ? steam.fmt(Math.round(c)) : '-');
-  const own = L(`Monthly median sale price: half a year ago ${f(tr.rt.m6)}, 3 months ago ${f(tr.rt.m3)}, now ${f(tr.rt.now)} (${pctTxt(tr.t)} in ${tr.span}).`,
-    `Mediana sprzedaży z miesiąca: pół roku temu ${f(tr.rt.m6)}, 3 miesiące temu ${f(tr.rt.m3)}, teraz ${f(tr.rt.now)} (${pctTxt(tr.t)} w ${tr.span}).`);
+  const own = L('sellsignals.monthlyMedianSalePriceHalf', { m6: f(tr.rt.m6), m3: f(tr.rt.m3), now: f(tr.rt.now), t: pctTxt(tr.t), span: tr.span });
   if (!tr.ref) return own;
-  const who = tr.ref.whole ? L('The whole market', 'Cały rynek') : tr.ref.label.replace(/^./, (c) => c.toUpperCase());
-  return `${own}\n` + L(`${who} of CS2 over that time: ${pctTxt(tr.m)} (median of ${tr.ref.n} popular items, checked ${new Date(tr.ref.at).toLocaleDateString()}).`,
-    `${who} CS2 w tym czasie: ${pctTxt(tr.m)} (mediana z ${tr.ref.n} popularnych przedmiotów, sprawdzone ${new Date(tr.ref.at).toLocaleDateString()}).`);
+  const who = tr.ref.whole ? L('sellsignals.theWholeMarket') : tr.ref.label.replace(/^./, (c) => c.toUpperCase());
+  return `${own}\n` + L('sellsignals.ofCs2OverThatTime', { who, m: pctTxt(tr.m), n: tr.ref.n, at: new Date(tr.ref.at).toLocaleDateString() });
 }
 
 /** whether the price history needed for the trend signals is: 'wait' (not fetched yet), 'none' (Steam has none), 'ok' */

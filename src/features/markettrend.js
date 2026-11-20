@@ -12,7 +12,7 @@ import { L } from '../core/i18n.js';
 
 const KEY = 'marketTrend';
 const WEEK = 7 * 86400000;
-const KIND_LABEL = { skin: L('skin market', 'rynek skinów'), container: L('case market', 'rynek skrzyń'), sticker: L('sticker market', 'rynek naklejek') };
+const KIND_LABEL = { skin: L('markettrend.skinMarket'), container: L('markettrend.caseMarket'), sticker: L('markettrend.stickerMarket') };
 const med = (a) => { const s = a.filter((x) => x != null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
 
 export const get = () => store.get(KEY, null);
@@ -23,7 +23,7 @@ export function refFor(hash, type = '') {
   if (!m?.all) return null;
   const k = kindOf(hash, type);
   const own = m.byKind?.[k];
-  return own?.n >= 15 && KIND_LABEL[k] ? { ...own, label: KIND_LABEL[k], at: m.at } : { ...m.all, label: L('market', 'rynek'), whole: true, at: m.at };
+  return own?.n >= 15 && KIND_LABEL[k] ? { ...own, label: KIND_LABEL[k], at: m.at } : { ...m.all, label: L('markettrend.market'), whole: true, at: m.at };
 }
 
 let running = false;

@@ -109,11 +109,11 @@ async function fetchPage(cursor, app = 730) {
   if (cursor) url += `&cursor%5Btime%5D=${cursor.time}&cursor%5Btime_frac%5D=${cursor.time_frac}&cursor%5Bs%5D=${cursor.s}`;
   const d = await steam.schedule('inv', async () => {
     const r = await fetch(url, { credentials: 'include' });
-    if (r.status === 429) throw new steam.HttpError(429, L('Steam: too many requests (429)', 'Steam: za dużo zapytań (429)'));
+    if (r.status === 429) throw new steam.HttpError(429, L('invhistory.steamTooManyRequests429'));
     if (!r.ok) throw new steam.HttpError(r.status);
     return r.json();
   });
-  if (!d || d.success === false) throw new Error(d?.error || L('Steam returned no inventory history (log in)', 'Steam nie zwrócił historii ekwipunku (zaloguj się)'));
+  if (!d || d.success === false) throw new Error(d?.error || L('invhistory.steamReturnedNoInventoryHistory'));
   return d;
 }
 
@@ -196,7 +196,7 @@ export async function checkOwner(href, hash) {
   ownerCache.set(key, { state: 'checking' });
   try {
     const id = await steamIdOf(href);
-    if (!id) throw new Error(L('profile not recognised', 'nie rozpoznano profilu'));
+    if (!id) throw new Error(L('invhistory.profileNotRecognised'));
     const inv = await steam.inventory(id, 730, 2, { maxAgeMin: 60 });
     const n = inv.filter((i) => i.hash === hash).length;
     ownerCache.set(key, { state: n ? 'has' : 'no', n, at: Date.now() });

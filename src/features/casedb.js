@@ -11,11 +11,11 @@ const RARITY_TIER = { rarity_rare_weapon: 'mil', rarity_mythical_weapon: 'res', 
 
 function getJSON(url) {
   return new Promise((resolve, reject) => {
-    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('GM_xmlhttpRequest unavailable', 'GM_xmlhttpRequest niedostępne')));
+    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('casedb.gmXmlhttprequestUnavailable')));
     GM_xmlhttpRequest({
       method: 'GET', url, timeout: 90000,
-      onload: (r) => { if (r.status >= 400) return reject(new Error(`HTTP ${r.status}`)); try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('bad response', 'zła odpowiedź'))); } },
-      onerror: () => reject(new Error(L('network error (add @connect raw.githubusercontent.com to the script header)', 'błąd sieci (dodaj @connect raw.githubusercontent.com w nagłówku skryptu)'))),
+      onload: (r) => { if (r.status >= 400) return reject(new Error(`HTTP ${r.status}`)); try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('casedb.badResponse'))); } },
+      onerror: () => reject(new Error(L('casedb.networkErrorAddConnectRaw'))),
       ontimeout: () => reject(new Error('timeout')),
     });
   });
@@ -55,7 +55,7 @@ export async function load() {
     return mem;
   } catch (e) {
     if (saved) return (mem = saved); // old data is still good
-    throw new Error(L('case contents data: ', 'dane o zawartości skrzyń: ') + e.message);
+    throw new Error(L('casedb.caseContentsData') + e.message);
   }
 }
 

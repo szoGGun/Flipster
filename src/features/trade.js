@@ -27,7 +27,7 @@ export async function init() {
   box = document.createElement('div');
   box.id = 'stt-trade';
   box.style.cssText = 'position:fixed;right:16px;top:90px;z-index:99980;width:300px;background:#171d25;border:1px solid #2a475e;border-radius:6px;padding:10px 12px;font:13px "Motiva Sans",Arial,sans-serif;color:#c6d4df;box-shadow:0 4px 18px #000a';
-  box.innerHTML = L('<b style="color:#fff">Trade analysis</b><div id="stt-tr-body" style="margin-top:6px">Loading inventories…</div>', '<b style="color:#fff">Analiza wymiany</b><div id="stt-tr-body" style="margin-top:6px">Ładowanie ekwipunków…</div>');
+  box.innerHTML = L('trade.tradeAnalysisLoadingInventories');
   document.body.appendChild(box);
 
   // context 2 + 16 (CS2 keeps trade-protected items there; they can be traded too); yours from the last 10 minutes'
@@ -36,7 +36,7 @@ export async function init() {
     const mine = sid === steam.ctx().steamId;
     for (const c of [2, 16]) {
       try { (await steam.inventory(sid, 730, c, { maxAgeMin: mine ? 10 : 0 })).forEach((i) => inv.set(i.assetid, { ...i, owner: sid })); }
-      catch (e) { if (c === 2) ui.log(`${mine ? L('Your inventory', 'Ekwipunek Twój') : L('Partner\'s inventory', 'Ekwipunek partnera')}: ${e.message}`, 'warn'); }
+      catch (e) { if (c === 2) ui.log(`${mine ? L('trade.yourInventory') : L('trade.partnersInventory')}: ${e.message}`, 'warn'); }
     }
   };
   await Promise.all([load(steam.ctx().steamId), partner ? load(partner) : null]);
@@ -74,17 +74,17 @@ function render(mine, theirs, loading) {
   const bad = a.steamV > 0 && diff < -a.steamV * 0.03;
   const list = (l) => l.slice(0, 12).map((it) => {
     const v = valueOf(it);
-    return `<div style="display:flex;justify-content:space-between;gap:6px;font-size:12px"><span style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#${esc(it.color || 'c6d4df')}" title="${esc(it.hash || '?')}">${esc(it.name || L('unknown item', 'nieznany przedmiot'))}${it.nameTag ? ` <i style="color:#e5b84c" title="Name tag">„${esc(it.nameTag)}”</i>` : ''}${it.float != null ? ` <span style="color:#9bd">${it.float.toFixed(4)}</span>` : ''}${it.stickers?.length ? ` <span style="color:#e5b84c">✦${it.stickers.length}</span>` : ''}</span><span>${steam.fmt(v.steam)}</span></div>`;
-  }).join('') + (l.length > 12 ? `<div style="font-size:11px;color:#8f98a0">+${l.length - 12} ${L(`more`, `więcej`)}</div>` : '');
+    return `<div style="display:flex;justify-content:space-between;gap:6px;font-size:12px"><span style="overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:#${esc(it.color || 'c6d4df')}" title="${esc(it.hash || '?')}">${esc(it.name || L('trade.unknownItem'))}${it.nameTag ? ` <i style="color:#e5b84c" title="Name tag">„${esc(it.nameTag)}”</i>` : ''}${it.float != null ? ` <span style="color:#9bd">${it.float.toFixed(4)}</span>` : ''}${it.stickers?.length ? ` <span style="color:#e5b84c">✦${it.stickers.length}</span>` : ''}</span><span>${steam.fmt(v.steam)}</span></div>`;
+  }).join('') + (l.length > 12 ? `<div style="font-size:11px;color:#8f98a0">+${l.length - 12} ${L('trade.more')}</div>` : '');
   box.querySelector('#stt-tr-body').innerHTML = `
-    <div style="color:#8f98a0;font-size:11px;margin-top:4px">${L(`YOU GIVE`, `DAJESZ`)} (${a.n})</div>${list(mine)}
+    <div style="color:#8f98a0;font-size:11px;margin-top:4px">${L('trade.youGive')} (${a.n})</div>${list(mine)}
     <div style="text-align:right"><b>${steam.fmt(a.steamV)}</b></div>
-    <div style="color:#8f98a0;font-size:11px;margin-top:6px">${L(`YOU GET`, `DOSTAJESZ`)} (${b.n})</div>${list(theirs)}
+    <div style="color:#8f98a0;font-size:11px;margin-top:6px">${L('trade.youGet')} (${b.n})</div>${list(theirs)}
     <div style="text-align:right"><b>${steam.fmt(b.steamV)}</b></div>
     <hr style="border:0;border-top:1px solid #2a475e;margin:8px 0">
-    <div style="display:flex;justify-content:space-between"><span>${L(`Balance (Steam)`, `Bilans (Steam)`)}</span><b style="color:${diff >= 0 ? '#a4d007' : '#ff6b6b'}">${diff >= 0 ? '+' : ''}${steam.fmt(diff)}${a.steamV ? ` (${pct(diff / a.steamV)})` : ''}</b></div>
-    ${bad ? L('<div style="margin-top:6px;padding:6px;background:#5a1d1d;border-radius:4px;color:#fff">⚠ You give more than you get!</div>', '<div style="margin-top:6px;padding:6px;background:#5a1d1d;border-radius:4px;color:#fff">⚠ Dajesz więcej, niż dostajesz!</div>') : ''}
-    ${a.unknown + b.unknown ? `<div style="color:#e5b84c;font-size:11px;margin-top:4px">${a.unknown + b.unknown} ${L(`items not recognised (private inventory or another game)`, `przedmiotów nierozpoznanych (prywatny ekwipunek / inna gra)`)}</div>` : ''}
-    ${a.noPrice + b.noPrice ? `<div style="color:#8f98a0;font-size:11px">${loading ? L(`loading prices (${loading})…`, `pobieram ceny (${loading})…`) : L(`${a.noPrice + b.noPrice} without a Steam price`, `${a.noPrice + b.noPrice} bez ceny Steam`)}</div>` : ''}
-    <div style="color:#8f98a0;font-size:11px;margin-top:4px">${L(`Prices are the lowest Steam listing. Stickers and float aren't included, check them yourself.`, `Ceny: najniższa oferta Steam. Naklejki i float nie są wliczone, sprawdź je ręcznie.`)}</div>`;
+    <div style="display:flex;justify-content:space-between"><span>${L('trade.balanceSteam')}</span><b style="color:${diff >= 0 ? '#a4d007' : '#ff6b6b'}">${diff >= 0 ? '+' : ''}${steam.fmt(diff)}${a.steamV ? ` (${pct(diff / a.steamV)})` : ''}</b></div>
+    ${bad ? L('trade.youGiveMoreThanYou') : ''}
+    ${a.unknown + b.unknown ? `<div style="color:#e5b84c;font-size:11px;margin-top:4px">${a.unknown + b.unknown} ${L('trade.itemsNotRecognisedPrivateInventory')}</div>` : ''}
+    ${a.noPrice + b.noPrice ? `<div style="color:#8f98a0;font-size:11px">${loading ? L('trade.loadingPrices', { loading }) : L('trade.withoutASteamPrice', { noPrice: a.noPrice + b.noPrice })}</div>` : ''}
+    <div style="color:#8f98a0;font-size:11px;margin-top:4px">${L('trade.pricesAreTheLowestSteam')}</div>`;
 }

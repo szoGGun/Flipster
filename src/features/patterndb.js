@@ -11,11 +11,11 @@ const WEEK = 7 * 86400000;
 
 function getJSON(url) {
   return new Promise((resolve, reject) => {
-    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('GM_xmlhttpRequest unavailable', 'GM_xmlhttpRequest niedostępne')));
+    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('patterndb.gmXmlhttprequestUnavailable')));
     GM_xmlhttpRequest({
       method: 'GET', url, timeout: 60000,
-      onload: (r) => { if (r.status >= 400) return reject(new Error(`HTTP ${r.status}`)); try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('bad response', 'zła odpowiedź'))); } },
-      onerror: () => reject(new Error(L('network error', 'błąd sieci'))),
+      onload: (r) => { if (r.status >= 400) return reject(new Error(`HTTP ${r.status}`)); try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('patterndb.badResponse'))); } },
+      onerror: () => reject(new Error(L('patterndb.networkError'))),
       ontimeout: () => reject(new Error('timeout')),
     });
   });
