@@ -14,6 +14,20 @@ const banner = readFileSync('src/meta.txt', 'utf8').replace('__VERSION__', pkg.v
 const fileUrl = pathToFileURL(resolve('dist/flipster.user.js')).href;
 writeFileSync('dist/flipster-dev.user.js', banner.replace('// ==/UserScript==', `// @require      ${fileUrl}\n// ==/UserScript==`) + '\n// kod ładuje się z pliku powyżej (@require) – nie edytuj tutaj\n');
 
+// beta loader for testers: same short shape as the dev loader, but it @require's the built file committed on main
+// (the pre-commit hook in .githooks rebuilds and stages it). Tampermonkey re-installs the loader only when its
+// @version (the semver in package.json) rises, so the hook refuses a header or icon change without a version bump.
+const betaBase = 'https://raw.githubusercontent.com/szoGGun/Flipster/main/dist';
+{
+  const loader = banner.replace('// ==/UserScript==', [
+      `// @require      ${betaBase}/flipster.user.js`,
+      `// @updateURL    ${betaBase}/flipster-beta.user.js`,
+      `// @downloadURL  ${betaBase}/flipster-beta.user.js`,
+      '// ==/UserScript==',
+    ].join('\n'));
+  writeFileSync('dist/flipster-beta.user.js', loader + '\n// kod ładuje się z pliku powyżej (@require), nie edytuj tutaj\n');
+}
+
 const BUILD = new Date().toLocaleString('pl-PL');
 const opts = {
   entryPoints: ['src/main.js'],

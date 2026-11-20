@@ -1,0 +1,14 @@
+#!/bin/sh
+# beta testers' Tampermonkey re-installs the loader only when @version rises, so a header or icon change
+# (new @connect/@grant, new icon) must come with a semver bump in package.json
+if ! git diff --cached --quiet HEAD -- src/meta.txt src/assets/logo; then
+  old=$(git show HEAD:package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+  new=$(git show :package.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")
+  if [ "$old" = "$new" ]; then
+    echo "pre-commit: src/meta.txt or the icons changed, bump the version in package.json (now $new)" >&2
+    exit 1
+  fi
+fi
+# rebuild before every commit so the committed dist/ (what beta testers load) always matches src/
+npm run build --silent || exit 1
+git add dist/flipster.user.js dist/flipster-beta.user.js

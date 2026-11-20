@@ -1,5 +1,5 @@
 node_modules/
-# build output (npm run build); the dev loader in it also holds a local file path
-dist/
+# the dev loader holds a local file path; dist/flipster.user.js and dist/flipster-beta.user.js are committed for beta testers
+dist/flipster-dev.user.js
 # local backups made before big changes (git history replaces them)
 .backup/

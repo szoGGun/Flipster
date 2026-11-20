@@ -9,7 +9,17 @@
 
 A Tampermonkey userscript for trading on the Steam Community Market, mostly CS2 items. It runs in your browser on your own Steam session, with no server, no login and no subscription.
 
-> **Note:** this is a vibe-coded hobby project, built for fun and for my own needs. It comes with no guarantees. Use it at your own risk and check what it does before you trust it with your Steam account.
+> [!WARNING]
+> ## ⚠️ Vibe-coded beta, use at your own risk
+>
+> Flipster is a **vibe-coded hobby project in beta**, built for fun and for my own needs. Most of the code was written with AI and it has not been reviewed or tested the way real software is.
+>
+> - **There are no guarantees of any kind.** It may have bugs, show wrong prices or values, or stop working whenever Steam changes something.
+> - **It acts on your real Steam account.** It can create and cancel sell listings and buy orders. A bug can cost you real money or items.
+> - **You use it entirely on your own responsibility.** I'm not responsible for any losses, mistakes, trade holds, restrictions or bans on your account.
+> - Steam doesn't endorse this script, and automating actions on the Community Market may go against the Steam Subscriber Agreement.
+>
+> Check what it does before you trust it, and watch what it does on your account, especially the automations. If you're not comfortable with that, don't install it.
 
 ## What it does
 
@@ -27,9 +37,11 @@ The interface is in English or Polish. By default it follows your browser langua
 
 ## Installation
 
-1. Chrome with the **Tampermonkey** extension. Open `chrome://extensions`, click Details on Tampermonkey and turn on **Allow user scripts** and **Allow access to file URLs**.
-2. `npm install` and `npm run build`.
-3. In Tampermonkey create a new script and paste the contents of `dist/flipster-dev.user.js`. It's a small loader that reads the built `dist/flipster.user.js` from disk, so after every `npm run build` you only reload the page.
+Flipster is in beta. The beta is simply the current `main` branch, there are no separate releases yet. Every push goes straight to testers, so a broken change can reach you before it gets fixed. By installing it you accept the warning at the top of this page.
+
+1. Chrome with the **Tampermonkey** extension. Open `chrome://extensions`, click Details on Tampermonkey and turn on **Allow user scripts**.
+2. Open [flipster-beta.user.js](https://raw.githubusercontent.com/szoGGun/Flipster/main/dist/flipster-beta.user.js) and click **Install**. It's a small loader that pulls the built script from this repo.
+3. In the Tampermonkey settings switch Config mode to **Advanced** and set **Externals, Update interval** to **Always**. Every page reload then picks up the latest code from `main`. GitHub can take a few minutes to serve a fresh push.
 4. Go to steamcommunity.com and click the **Flipster** button in the bottom left corner.
 
 ## Good to know
@@ -42,9 +54,17 @@ The interface is in English or Polish. By default it follows your browser langua
 
 ```
 npm install
-npm run build     # builds dist/flipster.user.js and the loader dist/flipster-dev.user.js
+npm run build     # builds dist/flipster.user.js and both loaders
 npm test          # logic tests (fees, prices, sell chance, FIFO, patterns)
 npm run smoke     # the whole script in headless Chrome against a mocked Steam
 ```
 
+To run your local build, also turn on **Allow access to file URLs** for Tampermonkey and paste `dist/flipster-dev.user.js` into a new script instead of installing the beta loader. It reads `dist/flipster.user.js` from disk, so after every `npm run build` you only reload the page. It holds a local file path, so it stays out of git.
+
+`dist/flipster.user.js` and `dist/flipster-beta.user.js` are committed, because that's what beta testers load. Turn on the hook once with `git config core.hooksPath .githooks`. It rebuilds and stages both files before every commit.
+
 The logo in its different versions is in `src/assets/logo`.
+
+### Versioning
+
+Flipster follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html), and the version lives in `package.json`. Code changes reach testers on their next page reload without a new version. A change to `src/meta.txt` (for example a new `@connect` or `@grant`) or to the icons needs a version bump, because Tampermonkey re-installs the loader only when its version rises. The pre-commit hook refuses such a commit until the version goes up.
