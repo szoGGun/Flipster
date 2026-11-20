@@ -1,0 +1,16 @@
+{
+  "name": "flipster",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "test": "node --test test/analysis.test.js",
+    "smoke": "npm run build && node test/smoke.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2",
+    "puppeteer-core": "^23.11.1"
+  }
+}

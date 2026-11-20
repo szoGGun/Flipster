@@ -1,0 +1,1447 @@
+import * as ui from '../core/ui.js';
+import * as steam from '../core/steam.js';
+import * as prices from '../core/prices.js';
+import * as store from '../core/store.js';
+import { token } from '../core/jobs.js';
+import { fifoPnL, parseMyHistoryHtml } from '../core/analysis.js';
+import { esc, pct, toInput, timeAgo, parsePrice, matchSearch, lockUntil, displayName, downloadText } from '../core/util.js';
+import * as ih from './invhistory.js';
+import * as sh from './storehist.js';
+import { focusItem } from './inventory.js';
+
+let el;
+let task;
+let period = 0; // days, 0 = whole history (remembered in GM 'histPeriod')
+const sort = ui.sorter('result');
+const txSort = ui.sorter('t');
+let view = store.get('histView', 'tx'); // 'tx' = list of transactions, 'item' = grouped per item
+const PER_PAGE = 50;
+const pages = { tx: 0, ih: 0, cs: 0 };
+/** rows of the current page (page clamped to the list) */
+function pageOf(key, list) {
+  const n = Math.max(1, Math.ceil(list.length / PER_PAGE));
+  pages[key] = Math.min(pages[key], n - 1);
+  return list.slice(pages[key] * PER_PAGE, (pages[key] + 1) * PER_PAGE);
+}
+/** pager under a table: « ‹ 1 2 … 9 › » */
+function renderPager(key, total) {
+  const box = el.querySelector('#' + key + '-pg');
+  if (!box) return;
+  const n = Math.ceil(total / PER_PAGE);
+  if (n <= 1) { box.innerHTML = ''; return; }
+  const p = pages[key];
+  const nums = [...new Set([0, 1, p - 2, p - 1, p, p + 1, p + 2, n - 2, n - 1])].filter((i) => i >= 0 && i < n).sort((a, b) => a - b);
+  let html = `<button class="b" data-pg="${key}" data-to="${p - 1}" ${p ? '' : 'disabled'}>‹</button>`;
+  nums.forEach((i, j) => {
+    if (j && i - nums[j - 1] > 1) html += '<span class="sub">…</span>';
+    html += `<button class="b ${i === p ? 'on' : ''}" data-pg="${key}" data-to="${i}">${i + 1}</button>`;
+  });
+  html += `<button class="b" data-pg="${key}" data-to="${p + 1}" ${p < n - 1 ? '' : 'disabled'}>›</button>`;
+  html += `<span class="sub" style="margin-left:8px">${p * PER_PAGE + 1}-${Math.min(total, (p + 1) * PER_PAGE)} z ${total}</span>`;
+  box.innerHTML = html;
+}
+// three sub-tabs: Transakcje / Otwarte skrzynie / Historia ekwipunku
+function applyTab() {
+  const t = store.get('histTab', 'tx');
+  for (const b of el.querySelectorAll('[data-ht]')) b.classList.toggle('on', b.dataset.ht === t);
+  for (const b of el.querySelectorAll('.sec-b[data-sec]')) b.hidden = b.dataset.sec !== t;
+}
+const meta = store.bucket('itemMeta'); // hash -> {name, icon, color, appid}
+
+const PAGE = 100;
+const TRADES_FMT = 4; // bump to force one full re-sync of the saved market trades
+
+// ---------------------------------------------------------------- dates for the HTML history (no year in it)
+// 1) exact times: the old JSON history (frozen in 2023) has time_event for every trade → key listingid_purchaseid
+// 2) newer trades: purchase ids grow with time → interpolate id → time between known points
+//    (last JSON trade … newest HTML row ≈ now) and pick the year closest to that estimate
+async function loadAnchors() {
+  const cached = store.get('histAnchors', null);
+  if (cached) return cached;
+  const exact = {};
+  const pts = [];
+  for (let start = 0, total = Infinity; start < total; start += 500) {
+    const d = await steam.myHistoryPage(start, 500);
+    if (!d.success) break;
+    total = d.total_count || 0;
+    const evs = d.events || [];
+    for (const ev of evs) {
+      if (!ev.purchaseid || ev.purchaseid === '0') continue;
+      const t = (ev.time_event || 0) * 1000;
+      exact[`${ev.listingid}_${ev.purchaseid}`] = t;
+      pts.push([Number(ev.purchaseid), t]);
+    }
+    if (!evs.length) break;
+  }
+  pts.sort((a, b) => a[0] - b[0]);
+  const a = { exact, pts };
+  store.set('histAnchors', a);
+  return a;
+}
+
+function makeDateOf(anchors, top) {
+  const pts = [...anchors.pts];
+  if (top) pts.push(top); // [newest purchase id, ≈ now]
+  pts.sort((a, b) => a[0] - b[0]);
+  const approx = (pid) => {
+    if (pts.length < 2) return null;
+    let i = pts.findIndex((p) => p[0] >= pid);
+    if (i === -1) i = pts.length - 1;
+    if (i === 0) i = 1;
+    const [x0, t0] = pts[i - 1], [x1, t1] = pts[i];
+    return x1 === x0 ? t0 : t0 + ((pid - x0) / (x1 - x0)) * (t1 - t0);
+  };
+  return ({ listingid, purchaseid, month, day, guess }) => {
+    const ex = anchors.exact[`${listingid}_${purchaseid}`];
+    if (ex) return ex;
+    const est = approx(Number(purchaseid));
+    if (est == null) return guess;
+    const y0 = new Date(est).getFullYear();
+    let best = guess, bestD = Infinity;
+    for (const y of [y0 - 1, y0, y0 + 1]) {
+      const t = new Date(y, month, day, 12, 0).getTime();
+      if (t > Date.now() + 86400000) continue;
+      const dd = Math.abs(t - est);
+      if (dd < bestD) { bestD = dd; best = t; }
+    }
+    return best;
+  };
+}
+const loadTrades = () => store.get('trades', {});
+const saveTrades = (t) => store.set('trades', t);
+
+// ---------------------------------------------------------------- currency conversion
+// Old trades can be in another currency (e.g. EUR/USD before PLN existed on Steam). Steam history gives
+// the currency of each trade; we convert to the wallet currency at a rate derived from Steam's own prices
+// (same item priced in both currencies), cached for 24 h. Historical rates aren't available → "≈".
+const CUR_NAME = { 1: 'USD', 2: 'GBP', 3: 'EUR', 5: 'RUB', 6: 'PLN', 7: 'BRL', 17: 'TRY', 18: 'UAH', 20: 'CAD', 21: 'AUD', 23: 'CNY' };
+const FX_ITEM = [440, 'Mann Co. Supply Crate Key'];
+const fx = store.bucket('fx'); // cur -> {r, at}
+const fxLoading = new Set();
+function rateFor(cur) {
+  const w = steam.wallet().currency;
+  if (!cur || cur === w) return 1;
+  const c = fx.get(String(cur));
+  if (c && Date.now() - c.at < 86400000) return c.r;
+  if (!fxLoading.has(cur)) {
+    fxLoading.add(cur);
+    Promise.all([steam.priceOverview(FX_ITEM[0], FX_ITEM[1], cur), steam.priceOverview(FX_ITEM[0], FX_ITEM[1], w)])
+      .then(([a, b]) => {
+        const r = (b.median || b.lowest) / (a.median || a.lowest);
+        if (isFinite(r) && r > 0) { fx.set(String(cur), { r, at: Date.now() }); ui.log(`Kurs ${CUR_NAME[cur] || cur} → ${CUR_NAME[w] || w}: ${r.toFixed(3)} (wg cen Steama)`); render(); }
+      })
+      .catch((e) => ui.log(`Nie udało się ustalić kursu waluty ${CUR_NAME[cur] || cur}: ${e.message}`, 'warn'))
+      .finally(() => fxLoading.delete(cur));
+  }
+  return c ? c.r : null; // stale rate is better than nothing
+}
+// Historical rates: Steam doesn't publish the rates it used, so we use the NBP (National Bank of Poland)
+// mid rate from the day of each trade, free, no key, daily since 2002. Cross rates via PLN.
+const nbp = store.bucket('nbp'); // code -> { 'YYYY-MM-DD': mid }
+const day = (ts) => new Date(ts).toISOString().slice(0, 10);
+function nbpMid(code, ts) {
+  if (code === 'PLN') return 1;
+  const m = nbp.get(code);
+  if (!m) return null;
+  for (let i = 0; i < 10; i++) { // weekends/holidays → last published rate before
+    const v = m[day(ts - i * 86400000)];
+    if (v) return v;
+  }
+  return null;
+}
+let nbpBusy = false;
+const nbpTried = new Set(); // code|day already requested (avoid refetch loops when NBP has no data)
+async function ensureNbp(trades) {
+  if (nbpBusy) return;
+  const w = steam.wallet().currency;
+  const need = new Map(); // code -> [ts]
+  for (const t of trades) {
+    if (!t.cur || t.cur === w) continue;
+    for (const code of [CUR_NAME[t.cur], CUR_NAME[w]]) {
+      if (!code || code === 'PLN' || nbpMid(code, t.t) != null || nbpTried.has(code + '|' + day(t.t))) continue;
+      nbpTried.add(code + '|' + day(t.t));
+      (need.get(code) || need.set(code, []).get(code)).push(t.t);
+    }
+  }
+  if (!need.size) return;
+  nbpBusy = true;
+  try {
+    for (const [code, tss] of need) {
+      tss.sort((a, b) => a - b);
+      // NBP allows max 93 days per request → windows starting 10 days before the first needed date
+      let i = 0;
+      while (i < tss.length) {
+        const from = tss[i] - 10 * 86400000;
+        const to = Math.min(from + 92 * 86400000, Date.now());
+        const url = `https://api.nbp.pl/api/exchangerates/rates/a/${code.toLowerCase()}/${day(from)}/${day(to)}/?format=json`;
+        try {
+          const d = await steam.schedule('ext', () => steam.gmJSON(url));
+          const m = nbp.get(code) || {};
+          for (const r of d.rates || []) m[r.effectiveDate] = r.mid;
+          nbp.set(code, m);
+        } catch (e) { console.warn('[Flipster] NBP', code, e.message); }
+        while (i < tss.length && tss[i] <= to) i++;
+      }
+    }
+    ui.log('Historia: pobrano historyczne kursy walut z NBP.', 'ok');
+  } finally { nbpBusy = false; }
+  render();
+}
+/** rate converting `cur` → wallet currency on the day `ts`: NBP historical, else today's Steam-derived rate */
+function histRate(cur, ts) {
+  const w = steam.wallet().currency;
+  if (!cur || cur === w) return { r: 1 };
+  const a = nbpMid(CUR_NAME[cur], ts), b = nbpMid(CUR_NAME[w], ts);
+  if (a && b) return { r: a / b, src: 'nbp' };
+  const now = rateFor(cur);
+  return now == null ? { r: null } : { r: now, src: 'now' };
+}
+
+// ---------------------------------------------------------------- trades from inventory history (estimated prices)
+// Steam stopped adding new trades to /market/myhistory (newest entry is from 2023). Inventory history still
+// records market purchases/sales, but without a price → we estimate it from the item's market price history
+// (volume-weighted price of sales around that moment) and mark it "≈ szac.".
+const est = store.bucket('estPrices'); // `${hash}|${hourBucket}` -> cents (buyer price)
+const estLoading = new Set();
+const estTried = new Set();
+// items Steam has no price history for (unsealed graffiti, items that were never on the market…) answer
+// HTTP 500, remember them for a week instead of asking again on every render
+const estFail = store.bucket('estFail'); // hash -> time of the failure
+// earlier builds asked about Steam Community items under the game's appid and marked them as failed → retry once
+if (!store.get('estFailMig1', false)) { for (const h of Object.keys(estFail.all())) if (/^\d+-/.test(h)) estFail.del(h); store.set('estFailMig1', true); }
+const noMarket = (hash) => /^Graffiti \|/.test(hash) || Date.now() - (estFail.get(hash) || 0) < 7 * 86400000;
+function estimate(appid, hash, ts) {
+  // "63380-Lenin" (a Sniper Elite V2 trading card), "730-:csgoct:" (a CS:GO emoticon): Steam Community items,
+  // they sell on the market under app 753 ("Steam"), not under the game
+  if (/^\d+-/.test(hash)) appid = '753';
+  const k = `${hash}|${Math.floor(ts / 3600000)}`;
+  const v = est.get(k);
+  if (v != null) return v;
+  if (noMarket(hash)) return null;
+  if (!estLoading.has(hash) && !estTried.has(k)) {
+    estLoading.add(hash);
+    steam.priceHistory(appid, hash).then((pts) => {
+      for (const kk of Object.keys(est.all())) if (kk.startsWith(hash + '|')) estTried.add(kk);
+      // every requested moment of this item: volume-weighted price within ±12 h (widen to ±3 days if needed)
+      for (const t of pendingEst.get(hash) || []) {
+        let win = pts.filter((p) => Math.abs(p.t - t) <= 12 * 3600000);
+        if (!win.length) win = pts.filter((p) => Math.abs(p.t - t) <= 3 * 86400000);
+        const vol = win.reduce((s, p) => s + (p.vol || 1), 0);
+        const kk = `${hash}|${Math.floor(t / 3600000)}`;
+        estTried.add(kk);
+        if (vol) est.set(kk, Math.round(win.reduce((s, p) => s + p.price * (p.vol || 1), 0) / vol));
+      }
+      render();
+      renderInv();
+      originsMemo = null;
+      steam.bus.emit('estimated');
+    }).catch((e) => { if (e.status === 500 || e.status === 400 || /brak historii/i.test(e.message)) estFail.set(hash, Date.now()); else console.warn('[Flipster] szacowanie ceny', hash, e.message); (pendingEst.get(hash) || []).forEach((t) => estTried.add(`${hash}|${Math.floor(t / 3600000)}`)); })
+      .finally(() => estLoading.delete(hash));
+  }
+  (pendingEst.get(hash) || pendingEst.set(hash, new Set()).get(hash)).add(ts);
+  return null;
+}
+const pendingEst = new Map();
+
+/**
+ * Market rows with their exact time. Steam's market history gives only a date (rows kept at 12:00); the inventory
+ * history lists the same purchases and sales with the minute. Per item, side and day the market rows take the
+ * earliest inventory-history times in order (the market history has the older ones; identical rows, so which copy
+ * gets which minute doesn't matter). Rows that already have a real time are left as they are. Copies, not the saved rows.
+ */
+function marketTimed() {
+  // the row id is the key of the saved object, not a field of the row
+  const market = Object.entries(loadTrades()).map(([key, t]) => ({ ...t, key }));
+  const day = (t) => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+  const noon = (t) => { const d = new Date(t); return d.getHours() === 12 && !d.getMinutes() && !d.getSeconds() && !d.getMilliseconds(); };
+  const times = new Map(); // side|item|day -> inventory-history times
+  for (const e of ih.all()) {
+    if (e.kind !== 'rynek') continue;
+    const buy = /purchased/i.test(e.desc), sell = /sold/i.test(e.desc);
+    if (!buy && !sell) continue;
+    for (const it of buy ? e.plus : e.minus) if (it.hash) { const k = `${buy ? 'buy' : 'sell'}|${it.hash}|${day(e.t)}`; (times.get(k) || times.set(k, []).get(k)).push(e.t); }
+  }
+  const rows = new Map();
+  for (const t of market) if (noon(t.t)) { const k = `${t.type}|${t.hash}|${day(t.t)}`; (rows.get(k) || rows.set(k, []).get(k)).push(t); }
+  const exact = new Map(); // market row key -> time
+  for (const [k, rs] of rows) {
+    const ts = (times.get(k) || []).sort((a, b) => a - b);
+    if (!ts.length) continue;
+    rs.sort((a, b) => String(a.key).localeCompare(String(b.key), undefined, { numeric: true })); // row ids grow with time
+    rs.forEach((r, i) => { if (i < ts.length) exact.set(r.key, ts[i]); });
+  }
+  for (const t of market) if (exact.has(t.key)) t.t = exact.get(t.key);
+  return market;
+}
+
+/** market buys/sells from inventory history that are newer than the (stale) market history */
+function invHistoryTrades(marketTrades) {
+  // Steam's market history has only a date per row (kept at 12:00), the inventory history the exact time: a purchase
+  // at 21:45 is NOT newer than the market history just because 21:45 > 12:00. Per item, side and day, the first N
+  // inventory-history events are the N rows the market history already has, only the rest are added (estimated).
+  const day = (t) => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+  const newestMarket = marketTrades.reduce((m, t) => Math.max(m, t.t), 0);
+  const newestDay = newestMarket ? day(newestMarket) : null;
+  const have = new Map();
+  for (const t of marketTrades) { const k = `${t.type}|${t.hash}|${day(t.t)}`; have.set(k, (have.get(k) || 0) + (t.amount || 1)); }
+  // the market history fetched after an event has that event (with its real price): only later ones can be missing.
+  // Without a sync time (data from older versions): per day, as before.
+  const syncedAt = store.get('tradesSyncedAt', 0);
+  const cand = [];
+  for (const e of ih.all()) {
+    if (e.kind !== 'rynek') continue;
+    if (syncedAt ? e.t <= syncedAt : e.t <= newestMarket + 60000 && day(e.t) !== newestDay) continue; // the market history has them
+    const buy = /purchased/i.test(e.desc);
+    const sell = /sold/i.test(e.desc);
+    if (!buy && !sell) continue;
+    (buy ? e.plus : e.minus).forEach((it, i) => {
+      if (!it.hash) return;
+      if (!meta.get(it.hash) && it.icon) meta.set(it.hash, { name: it.name, icon: it.icon, color: it.color, appid: '730' });
+      cand.push({ key: `ih|${e.id}|${i}`, t: e.t, type: buy ? 'buy' : 'sell', hash: it.hash, appid: '730', amount: 1, price: null, cur: null, estimated: true });
+    });
+  }
+  cand.sort((a, b) => a.t - b.t);
+  if (syncedAt) return cand;
+  const used = new Map();
+  return cand.filter((c) => { const k = `${c.type}|${c.hash}|${day(c.t)}`; const u = used.get(k) || 0; used.set(k, u + 1); return u >= (have.get(k) || 0); });
+}
+
+/** trades with prices converted to the wallet currency; unconvertible ones are skipped (counted) */
+function converted(list) {
+  const out = [];
+  let pending = 0;
+  if (list.some((t) => t.cur && t.cur !== steam.wallet().currency)) ensureNbp(list);
+  for (const t of list) {
+    if (t.estimated) {
+      const p = estimate(t.appid, t.hash, t.t);
+      if (p == null) { pending++; continue; }
+      // buy: what the buyer paid; sell: what the seller received (after fees)
+      out.push({ ...t, price: t.type === 'buy' ? p : steam.receivedFromBuyer(p) });
+      continue;
+    }
+    const { r, src } = histRate(t.cur, t.t);
+    if (r == null) { pending++; continue; }
+    out.push(r === 1 ? t : { ...t, price: Math.round(t.price * r), fx: t.cur, fxSrc: src, orig: t.price });
+  }
+  return { list: out, pending };
+}
+
+/** inventory cache entries of the logged-in account (one per app/context) */
+function myInvCaches() {
+  const me = steam.ctx().steamId;
+  const cache = store.get('invcache', {});
+  return Object.keys(cache).filter((k) => k.startsWith(me + '|')).map((k) => cache[k]);
+}
+/** your inventory items from the cache (all contexts) */
+const ownedItems = () => myInvCaches().flatMap((c) => c.items || []);
+/**
+ * When a trade-protected copy arrived: protection ends 7 days later, rounded up to the full hour (a terminal traded
+ * in at 23:46 is protected until 00:00 a week later, one bought at 01:24 until 02:00) → the middle of that hour.
+ */
+const arrivedAt = (until) => until - 7 * 86400000 - 30 * 60000;
+/** everything the history views are computed from, as one file (for checking the calculations together) */
+function exportHistory() {
+  const iso = (t) => (t ? new Date(t).toISOString() : null);
+  const timed = new Map(marketTimed().map((t) => [t.key, t.t]));
+  const market = Object.entries(loadTrades()).map(([key, t]) => ({ key, ...t, iso: iso(t.t), tExact: timed.get(key) !== t.t ? timed.get(key) : undefined }));
+  const item = (i) => i.hash || i.name;
+  const inv = ih.all().map((e) => ({ id: e.id, t: e.t, iso: iso(e.t), desc: e.desc, kind: e.kind, partner: e.partner?.name || null, minus: (e.minus || []).map(item), plus: (e.plus || []).map(item) }));
+  let opens = [];
+  try {
+    opens = caseOpenings().rows.map((r) => ({ t: r.e.t, iso: iso(r.e.t), id: r.e.id, unseal: r.e.unseal || null, terminal: !!r.terminal, case: r.caseIt?.hash || r.caseIt?.name || null, caseSrc: r.caseSrc, caseCost: r.caseCost, key: r.keyIt?.hash || null, keyCost: r.keyCost, paid: r.paid ?? null, drops: r.drops.map((d) => d.hash || d.name), cost: r.cost, value: r.value }));
+  } catch (e) { opens = [{ error: e.message }]; }
+  const owned = ownedItems().map((it) => ({ assetid: it.assetid, contextid: it.contextid, hash: it.hash, lock: it.lock || null, marketable: !!it.marketable, amount: it.amount || 1 }));
+  const data = {
+    exported: iso(Date.now()), tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    marketSyncedAt: iso(store.get('tradesSyncedAt', 0)), invHistorySyncedAt: iso(ih.syncedAt()), invHistoryComplete: ih.isComplete(),
+    counts: { market: market.length, invHistory: inv.length, caseOpenings: opens.length, owned: owned.length },
+    market, invHistory: inv, caseOpenings: opens, owned,
+  };
+  downloadText(`flipster-historia-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 1), 'application/json');
+  ui.log(`Historia: zapisano dane do analizy (${market.length} transakcji, ${inv.length} zdarzeń ekwipunku, ${opens.length} otwarć, ${owned.length} przedmiotów).`, 'ok');
+}
+/** how many of each item I actually own now (hash → count); null when the inventory was never loaded */
+function ownedNow() {
+  const caches = myInvCaches();
+  if (!caches.length) return null;
+  const m = new Map();
+  for (const c of caches) for (const it of c.items || []) m.set(it.hash, (m.get(it.hash) || 0) + (it.amount || 1));
+  return m;
+}
+/** of the copies I own, how many came another way than a market purchase (trade, drop, case…), per item */
+function ownedNotBought() {
+  const m = new Map();
+  let origins;
+  try { origins = itemOrigins(); } catch { return m; }
+  for (const it of ownedItems()) {
+    const o = origins.get(it.assetid);
+    if (o && o.src !== 'kupiony') m.set(it.hash, (m.get(it.hash) || 0) + (it.amount || 1));
+  }
+  return m;
+}
+
+export function mount(root) {
+  el = root;
+  root.innerHTML = `
+    <style>
+      #stt .sec-b .bar{position:static}
+      #stt .sec-b th{top:var(--bar-h,0px)}
+      #stt .pg{display:flex;gap:4px;align-items:center;justify-content:center;padding:8px 14px;flex-wrap:wrap}
+      #stt .pg:empty{display:none}
+      #stt .pg button{min-width:30px}
+    </style>
+    <div class="bar">
+      <button class="b" data-a="sync">⟳ Synchronizuj historię</button>
+      <button class="b" data-a="full" title="Pobiera całą historię od nowa">Pełna synchronizacja</button>
+      <button class="b" data-a="dump" title="Zapisuje do pliku całą zapisaną historię (rynek, historia ekwipunku, otwarte skrzynie) i listę tego, co masz w ekwipunku, do wspólnego sprawdzenia, czy Flipster dobrze to liczy. Bez Twojego SteamID i linków do profili.">⬇ Dane do analizy</button>
+      <select id="h-per"><option value="7">7 dni</option><option value="30">30 dni</option><option value="90">90 dni</option><option value="365">rok</option><option value="0">cała historia</option></select>
+      <label class="tgl" title="Łączy takie same transakcje z jednego dnia (ten sam przedmiot, rodzaj, cena i stan) w jeden wiersz ×N; pojedynczy wiersz rozwiniesz, klikając ×N"><input type="checkbox" id="h-grp" ${store.get('histGroup', true) ? 'checked' : ''}><span class="tr"></span>Grupuj identyczne</label>
+      <span class="sp"></span>
+      <span class="sub" id="h-info"></span>
+      <button class="b" data-a="stop" hidden>■ Stop</button>
+    </div>
+    <div class="htabs">
+      <button data-ht="tx" id="tx-h">Transakcje <span class="cnt"></span></button>
+      <button data-ht="cs" id="cs-h">Otwarte skrzynie <span class="cnt"></span></button>
+      <button data-ht="ih" id="ih-h">Historia ekwipunku <span class="cnt"></span></button>
+    </div>
+    <div class="sec-b" data-sec="tx">
+    <div class="bar">
+      <select id="h-view" title="Każda transakcja osobno albo zsumowane dla każdego przedmiotu"><option value="tx">każda transakcja</option><option value="item">suma na przedmiot</option></select>
+      <input type="search" id="h-q" placeholder="Filtruj przedmiot…" style="width:180px">
+      <span class="sp"></span>
+      <button class="b" data-a="chart" title="Pokaż / ukryj wykres zysku z flipów">📈 Wykres</button>
+    </div>
+    <div class="cards" id="h-cards" style="grid-template-columns:repeat(auto-fill,minmax(max(200px,calc(33.33% - 10px)),1fr))"></div>
+    <div id="h-chart" style="padding:0 14px"></div>
+    <div class="note">Zysk liczony metodą FIFO: każda sprzedaż jest parowana z najstarszym niesprzedanym zakupem tego samego przedmiotu. Kwoty sprzedaży są już po prowizji Steama. Sprzedaże bez zakupu na rynku (dropy, skrzynki, wymiany) są liczone osobno jako „przychód bez kosztu”.</div>
+    <table id="h-tbl"><thead></thead><tbody></tbody></table>
+    <div class="pg" id="tx-pg"></div>
+    </div>
+    <div class="sec-b" data-sec="cs">
+    <div class="bar" style="position:relative">
+      <button class="b" data-a="storehist" title="Pobiera Historię zakupów Steam (store.steampowered.com/account/history), stąd ceny kluczy i zakupów w terminalu">⟳ Historia zakupów</button>
+      <span class="sp"></span><span class="sub" id="cs-info"></span>
+    </div>
+    <div class="cards" id="cs-cards"></div>
+    <div id="cs-list"></div>
+    <div class="pg" id="cs-pg"></div>
+    </div>
+    <div class="sec-b" data-sec="ih">
+    <div class="bar" style="position:relative">
+      <button class="b" data-a="ihsync">⟳ Synchronizuj</button>
+      <button class="b" data-a="ihfull" title="Pobiera całą historię ekwipunku od nowa (może potrwać kilka minut)">Pełna synchronizacja</button>
+      <select id="ih-kind"><option value="">wszystkie zdarzenia</option><option value="wymiana">wymiany</option><option value="rynek">rynek</option><option value="skrzynia">skrzynie</option><option value="kontrakt">kontrakty</option><option value="naklejka">naklejki</option><option value="otrzymane">otrzymane / dropy</option><option value="inne">inne</option></select>
+      <input type="search" id="ih-q" placeholder="Szukaj: przedmiot, gracz…" style="width:200px">
+      <span class="sp"></span><span class="sub" id="ih-info"></span>
+    </div>
+    <div class="note">Wszystko, co działo się z przedmiotami CS2: wymiany (z kim i co za co), rynek, otwarte skrzynie, kontrakty, dropy. Okres jak w filtrze u góry. <span class="neg">−</span> oddane, <span class="pos">+</span> otrzymane.</div>
+    <div id="ih-list"></div>
+    <div class="pg" id="ih-pg"></div>
+    </div>
+`;
+  root.addEventListener('click', (e) => {
+    const iv = e.target.closest('[data-inv]');
+    if (iv) { e.preventDefault(); ui.show('inv'); focusItem(iv.dataset.inv, { appid: +iv.dataset.app || 730, cost: iv.dataset.cost ? +iv.dataset.cost : null, t: iv.dataset.t ? +iv.dataset.t : null }); return; }
+    const tg = e.target.closest('[data-txg]');
+    if (tg) { e.preventDefault(); const k = tg.dataset.txg; txOpen.has(k) ? txOpen.delete(k) : txOpen.add(k); render(true); return; }
+    const ob = e.target.closest('[data-owner]');
+    if (ob) {
+      ih.checkOwner(ob.dataset.owner, ob.dataset.hash).then(() => { render(); renderInv(); });
+      render(); renderInv();
+      return;
+    }
+    const pg = e.target.closest('[data-pg]');
+    if (pg) {
+      pages[pg.dataset.pg] = Math.max(0, +pg.dataset.to);
+      ({ tx: () => render(true), ih: () => renderInv(true), cs: renderCases })[pg.dataset.pg]();
+      el.querySelector('#' + pg.dataset.pg + '-h')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      return;
+    }
+    const ht = e.target.closest('[data-ht]');
+    if (ht) { store.set('histTab', ht.dataset.ht); applyTab(); return; }
+    const th = e.target.closest('th[data-sort]');
+    if (th) { if (!th.closest('#h-tbl')) return; (view === 'tx' ? txSort : sort).click(th.dataset.sort); render(true); return; }
+    const a = e.target.closest('button')?.dataset.a;
+    ({ dump: exportHistory, sync: () => sync(false), full: () => sync(true), stop: () => task?.cancel(), chart: () => { store.set('histChart', !store.get('histChart', false)); if (chartZoom) { chartZoom = null; render(true); } else drawChart(); }, chartreset: () => { chartZoom = null; pages.tx = 0; render(true); }, ihsync: () => syncInv(false), ihfull: () => syncInv(true), storehist: syncStore })[a]?.();
+  });
+  period = store.get('histPeriod', 0);
+  root.querySelector('#h-per').value = String(period);
+  root.querySelector('#h-per').onchange = (e) => { chartZoom = null; period = +e.target.value; store.set('histPeriod', period); pages.tx = pages.ih = pages.cs = 0; render(); renderInv(); };
+  let qT = 0;
+  root.querySelector('#h-q').oninput = () => { clearTimeout(qT); qT = setTimeout(() => { pages.tx = 0; render(true); }, 150); };
+  applyTab();
+  // table headers stick right under the (sticky) top bar while scrolling
+  const topBar = root.querySelector(':scope > .bar');
+  if (topBar && window.ResizeObserver) new ResizeObserver(() => root.style.setProperty('--bar-h', topBar.offsetHeight + 'px')).observe(topBar);
+  root.querySelector('#h-view').value = view;
+  root.querySelector('#h-grp').onchange = (e) => { store.set('histGroup', e.target.checked); pages.tx = 0; render(true); };
+  root.querySelector('#h-view').onchange = (e) => { view = e.target.value; store.set('histView', view); pages.tx = 0; render(); };
+  root.querySelector('#ih-kind').onchange = () => { pages.ih = 0; renderInv(true); };
+  root.addEventListener('change', (e) => {
+    const inp = e.target.closest?.('[data-termpaid]');
+    if (!inp) return;
+    const m = store.get('termPaid', {});
+    const v = parsePrice(inp.value);
+    if (isNaN(v)) delete m[inp.dataset.termpaid]; else m[inp.dataset.termpaid] = v;
+    store.set('termPaid', m);
+    render(); renderInv();
+  });
+  let iqT = 0;
+  root.querySelector('#ih-q').oninput = () => { clearTimeout(iqT); iqT = setTimeout(() => { pages.ih = 0; renderInv(true); }, 150); };
+  if (ih.all().length && store.get('invhistFmt', 1) < 2) { store.set('invhistFmt', 2); setTimeout(() => syncInv(true), 3000); }
+  else if (!ih.isComplete() || Date.now() - ih.syncedAt() > 3600000) setTimeout(() => syncInv(false), 3000);
+  store.del('keyPrice'); // leftover of the removed manual key price setting
+  setTimeout(() => sh.ensure(() => { render(); renderInv(); }), 4000);
+  render();
+  // trades saved by older versions (no currency; fmt 4: wrong years on trades newer than 2023) → one full re-sync
+  const trades = Object.values(loadTrades());
+  if (trades.length && store.get('tradesFmt', 1) < TRADES_FMT) {
+    ui.log('Historia: poprawiam daty transakcji, jednorazowo pobieram całą historię rynku od nowa…', 'warn');
+    sync(true);
+    return;
+  }
+  const last = store.get('tradesSyncedAt', 0);
+  if (Date.now() - last > 3600000) sync(false);
+}
+
+export const show = () => { render(); renderInv(); };
+
+async function sync(full) {
+  if (!(await steam.ensureLogin())) return ui.log('Zaloguj się.', 'err');
+  task = token();
+  el.querySelector('[data-a="stop"]').hidden = false;
+  const saved = loadTrades();
+  const trades = full ? {} : saved;
+  // a full sync that didn't reach the end (stopped, rate limit) must not throw away what was saved before
+  const keep = () => saveTrades(full ? { ...saved, ...trades } : trades);
+  const wasEmpty = !Object.keys(saved).length;
+  let start = 0, total = Infinity, added = 0;
+  let dateOf = null;
+  try {
+    const anchors = await loadAnchors();
+    while (start < total && !task.cancelled) {
+      const d = await steam.myHistoryHtmlPage(start, PAGE);
+      if (!d.success) throw new Error('Steam nie zwrócił historii');
+      total = d.total_count || 0;
+      const parse = (h) => new DOMParser().parseFromString(h, 'text/html');
+      if (!dateOf) {
+        // upper anchor for interpolating the dates of newer trades: the newest trade's purchase id and its day
+        // (the newest row is the one whose year is certain: the latest such day that isn't in the future)
+        const top = parseMyHistoryHtml(d, parse, new Date()).find((t) => /^\d+_\d+/.test(t.key) && t.t);
+        const topId = top ? Number(top.key.split('_')[1]) : 0;
+        dateOf = makeDateOf(anchors, topId ? [topId, Math.min(top.t, Date.now())] : null);
+      }
+      const page = parseMyHistoryHtml(d, parse, new Date(), dateOf);
+      if (start === 0) {
+        const newest = [...page].sort((a, b) => b.t - a.t)[0];
+        if (newest) ui.log(`Historia: najnowsza transakcja na rynku, ${new Date(newest.t).toLocaleString()} ${newest.type === 'buy' ? 'kupno' : 'sprzedaż'} ${newest.hash}`);
+      }
+      let fresh = 0;
+      for (const t of page) {
+        if (!trades[t.key]) { fresh++; added++; }
+        // sells: Steam shows the buyer price → store what landed in the wallet (after fees)
+        const price = t.priceIsBuyer ? steam.receivedFromBuyer(t.price) : t.price;
+        const fl = t.float ?? (t.assetid ? steam.recallProps({ assetid: t.assetid, float: null }).float : null);
+        trades[t.key] = { t: t.t, type: t.type, hash: t.hash, appid: t.appid, amount: t.amount, price, cur: t.cur ?? null, pending: t.pending || undefined, float: fl ?? undefined };
+        if (!meta.get(t.hash) && t.icon) meta.set(t.hash, { name: t.name, icon: t.icon, color: t.color, appid: t.appid });
+      }
+      const evs = (d.results_html || '').includes('history_row_') ? 1 : 0;
+      ui.progress(Math.min(start + PAGE, total), total);
+      el.querySelector('#h-info').textContent = `pobrano ${Math.min(start + PAGE, total)}/${total} zdarzeń`;
+      // incremental: stop when a whole page had nothing new
+      if (!full && page.length && !fresh) break;
+      if (!evs) break;
+      start += PAGE;
+      if (start % 1000 === 0) keep();
+    }
+    if (task.cancelled) {
+      keep();
+      ui.log('Historia: przerwano, zapisałem to, co zdążyłem pobrać.', 'warn');
+    } else {
+      saveTrades(trades);
+      store.set('tradesSyncedAt', Date.now());
+      if (full || wasEmpty) store.set('tradesFmt', TRADES_FMT);
+      ui.log(`Historia: +${added} nowych transakcji (razem ${Object.keys(trades).length}).`, 'ok');
+    }
+  } catch (e) {
+    keep();
+    ui.log('Historia: ' + e.message, 'err');
+  }
+  ui.progress(0);
+  el.querySelector('[data-a="stop"]').hidden = true;
+  render();
+}
+
+// heavy part (trades + inventory history + FX + FIFO) cached between keystrokes of the search box;
+// every other render recomputes it
+let memo = null;
+const matchQ = (q) => {
+  const hit = new Map();
+  return (hash) => {
+    if (!q) return true;
+    if (!hit.has(hash)) hit.set(hash, matchSearch(`${hash} ${meta.get(hash)?.name || ''}`, q));
+    return hit.get(hash);
+  };
+};
+function compute(fast = false) {
+  if (!fast || !memo) memo = computeAll();
+  const q = el.querySelector('#h-q').value.trim().toLowerCase();
+  if (!q) return memo;
+  const ok = matchQ(q);
+  const res = { ...memo.res, items: memo.res.items.filter((it) => ok(it.hash)), realized: memo.res.realized.filter((r) => ok(r.hash)) };
+  return { ...memo, res, all: memo.all.filter((t) => ok(t.hash)) };
+}
+/** average cost of the copies you still hold, per item (FIFO over your market history), used by the inventory */
+export function heldCosts() {
+  const { res } = memo && Date.now() - (memo.at || 0) < 60000 ? memo : computeAll();
+  const m = new Map();
+  for (const it of res.items) if (it.holdQty > 0 && it.holdCost > 0) m.set(it.hash, it.holdCost / it.holdQty);
+  return m;
+}
+function computeAll() {
+  const market = marketTimed();
+  const all = [...market, ...invHistoryTrades(market)];
+  const { list: conv, pending } = converted(all);
+  // FIFO over full history so lots bought before the period are matched correctly; filter realized by period
+  const res = fifoPnL(conv);
+  // items bought on the market but no longer owned (traded away, sold off-market) aren't "held"
+  const owned = ownedNow();
+  // a copy that came in a trade or as a drop doesn't keep a purchase "in the inventory" (4 bought terminals opened,
+  // the one you have was traded in)
+  const notBought = owned ? ownedNotBought() : new Map();
+  for (const it of res.items) {
+    if (!it.holdQty || !owned) continue;
+    const have = Math.min(it.holdQty, Math.max(0, (owned.get(it.hash) || 0) - (notBought.get(it.hash) || 0)));
+    if (have < it.holdQty) {
+      it.goneQty = it.holdQty - have;
+      it.holdCost = Math.round((it.holdCost * have) / it.holdQty);
+      it.holdQty = have;
+    }
+  }
+  const since = period ? Date.now() - period * 86400000 : 0;
+  const fxHashes = new Set(conv.filter((t) => t.fx).map((t) => t.hash));
+  const estHashes = new Set(conv.filter((t) => t.estimated).map((t) => t.hash));
+  return { at: Date.now(), res, since, all: conv, pending, owned, fxHashes, estHashes };
+}
+
+function render(fast = false) {
+  if (!el) return;
+  const { res, all, pending, owned, fxHashes, estHashes } = compute(fast);
+  const periodSince = period ? Date.now() - period * 86400000 : 0;
+  // range selected on the chart narrows the cards + table too
+  const since = chartZoom ? Math.max(periodSince, chartZoom[0]) : periodSince;
+  const until = chartZoom ? chartZoom[1] : Infinity;
+  const inR = (t) => t >= since && t <= until;
+  const realizedP = res.realized.filter((r) => inR(r.t));
+  const inP = all.filter((t) => inR(t.t));
+  const spent = inP.filter((t) => t.type === 'buy').reduce((s, t) => s + t.price * t.amount, 0);
+  const recv = inP.filter((t) => t.type === 'sell').reduce((s, t) => s + t.price * t.amount, 0);
+  const pnl = realizedP.reduce((s, r) => s + r.pnl, 0);
+  const wins = realizedP.filter((r) => r.pnl > 0).length;
+  // unrealized result of the copies still held: today's net price minus what they cost
+  for (const it of res.items) {
+    if (!it.holdQty) continue;
+    const p = prices.cached(it.appid || meta.get(it.hash)?.appid || 730, it.hash)?.lowest;
+    it.unreal = p ? steam.receivedFromBuyer(p) * it.holdQty - it.holdCost : null;
+  }
+  const n = Object.keys(loadTrades()).length;
+  el.querySelector('#h-info').textContent = n
+    ? `${n} transakcji w bazie${pending ? ` · ${pending} czeka na kurs/szacowaną cenę` : ''}${owned ? '' : ' · otwórz Ekwipunek, żeby zweryfikować „trzymasz”'}`
+    : 'Brak danych, kliknij Synchronizuj';
+  // drops from cases/capsules that were sold in the period: cost of the opening vs what the sale brought
+  const dropInfo = new Map(); // hash -> {n, cost, value, cases:Set, unknown}
+  const dropTx = new Map(); // hash|saleT -> {case, cost|null, value}
+  if (!fast || !memo.co) memo.co = caseOpenings();
+  for (const r of memo.co.rows) {
+    const share = r.drops.length ? 1 / r.drops.length : 1;
+    for (const d of r.drops) {
+      if (d.kind !== 'sold' || !inR(d.saleT) || !d.hash) continue;
+      const x = dropInfo.get(d.hash) || { n: 0, cost: 0, value: 0, cases: new Set(), unknown: 0 };
+      x.n++;
+      if (r.caseCost == null || r.unknownPaid) x.unknown++;
+      else { x.cost += Math.round(r.cost * share); x.value += d.value; }
+      if (r.caseIt?.name) x.cases.add(r.caseIt.name);
+      dropTx.set(d.hash + '|' + d.saleT, { case: r.caseIt?.name || 'skrzynia', cost: r.caseCost == null ? null : Math.round(r.cost * share), value: d.value });
+      dropInfo.set(d.hash, x);
+    }
+  }
+  const floatsOf = (hash) => [...new Set(all.filter((t) => t.hash === hash && t.float != null).map((t) => t.float.toFixed(4)))];
+  el.querySelector('#h-cards').innerHTML = `
+    <div class="card"><div class="k">Zysk z flipów</div><div class="v ${pnl >= 0 ? 'pos' : 'neg'}">${steam.fmt(pnl)}</div><div class="sub">${realizedP.length} flipów · ${realizedP.length ? pct(wins / realizedP.length, 0) : '-'} na plus</div></div>
+    <div class="card"><div class="k">Wydano na rynku</div><div class="v">${steam.fmt(spent)}</div></div>
+    <div class="card"><div class="k">Otrzymano ze sprzedaży</div><div class="v">${steam.fmt(recv)}</div><div class="sub">bilans: <b class="${recv - spent >= 0 ? 'pos' : 'neg'}">${recv - spent >= 0 ? '+' : ''}${steam.fmt(recv - spent)}</b></div></div>`;
+
+  // cumulative realized P&L chart
+  let acc = 0;
+  const pts = res.realized.filter((r) => r.t >= periodSince).sort((a, b) => a.t - b.t).map((r) => [r.t, (acc += r.pnl)]);
+  chartPts = pts;
+  drawChart();
+
+  if (view === 'tx') return renderTx({ res, since, until, all, dropTx });
+  // ---- per item: one row = "how did this item go for me" (bought → sold/held/gone → result)
+  el.querySelector('#h-tbl thead').innerHTML = `<tr>
+      <th data-sort="name">Przedmiot</th><th data-sort="bought">Kupione</th><th data-sort="sold">Sprzedane</th>
+      <th data-sort="now">Status</th><th data-sort="result">Zysk / strata</th></tr>`;
+  const per = res.items.map((it) => {
+    const rp = realizedP.filter((r) => r.hash === it.hash);
+    const realized = rp.reduce((s, r) => s + r.pnl, 0);
+    const cost = rp.reduce((s, r) => s + r.buy * r.qty, 0);
+    const tradedInPeriod = inP.some((t) => t.hash === it.hash);
+    const unreal = it.holdQty ? it.unreal : null;
+    const result = realized + (unreal || 0);
+    const base = cost + (it.holdQty ? it.holdCost : 0);
+    return { ...it, realizedP: realized, unrealP: unreal, result, roi: base ? result / base : null,
+      avgBuy: it.bought ? it.spent / it.bought : null, avgSell: it.sold ? it.received / it.sold : null,
+      active: tradedInPeriod };
+  }).filter((x) => x.active);
+  for (const x of per) x.todayLow = nowPrice(x.hash);
+  const rows = sort.apply(per, {
+    name: (x) => x.hash, bought: (x) => x.bought, sold: (x) => x.sold,
+    now: (x) => (x.holdQty ? 2 : x.goneQty ? 1 : 0), result: (x) => x.result, realized: (x) => x.result,
+  });
+  renderPager('tx', rows.length);
+  el.querySelector('#tx-h .cnt').textContent = `(${rows.length})`;
+  const money = (v) => `<span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${v > 0 ? '+' : ''}${steam.fmt(Math.round(v))}</span>`;
+  el.querySelector('#h-tbl tbody').innerHTML = rows.length ? pageOf('tx', rows).map((x) => {
+    const m = meta.get(x.hash) || {};
+    const est = estHashes.has(x.hash) || fxHashes.has(x.hash) ? ' <span class="warn" title="Część kwot oszacowana (brak ceny w historii Steama) albo przeliczona z innej waluty po kursie NBP">≈</span>' : '';
+    const fls = floatsOf(x.hash);
+    // the English names carry the wear "(Field-Tested)": the subtitle keeps just the float
+    const sub = fls.length ? `float ${fls.slice(0, 3).join(', ')}${fls.length > 3 ? '…' : ''}` : '';
+    const di = dropInfo.get(x.hash);
+    // bought
+    const buyCell = x.bought ? `${x.bought} × ${steam.fmt(Math.round(x.avgBuy))}${est}<div class="sub">razem ${steam.fmt(x.spent)}</div>` : '<span class="sub">nie kupowane</span>';
+    // sold
+    const sellCell = x.sold ? `${x.sold} × ${steam.fmt(Math.round(x.avgSell))}${est}<div class="sub">${x.unmatchedSells ? `${x.unmatchedSells} z dropu/wymiany · ` : ''}na rękę ${steam.fmt(x.received)}</div>` : '<span class="sub">-</span>';
+    // now: held / gone / all sold
+    let nowCell;
+    if (x.holdQty) {
+      const val = x.todayLow != null ? steam.receivedFromBuyer(x.todayLow) * x.holdQty : null;
+      nowCell = `trzymasz ${x.holdQty}${val != null ? `<div class="sub">warte ${steam.fmt(val)} na rękę · ${steam.fmt(x.todayLow)}/szt.</div>` : '<div class="sub">brak ceny</div>'}`;
+    } else if (x.goneQty) nowCell = goneCell(x);
+    else nowCell = `<span class="sub">wszystko sprzedane${x.todayLow != null ? ` · dziś ${steam.fmt(x.todayLow)}/szt.` : ''}</span>`;
+    if (x.holdQty && x.goneQty) nowCell += goneCell(x);
+    // result
+    const parts = [];
+    if (x.realizedP) parts.push(`sprzedaż ${money(x.realizedP)}`);
+    if (x.unrealP != null && x.holdQty) parts.push(`trzymane ${money(x.unrealP)}`);
+    const resCell = x.realizedP || x.unrealP != null
+      ? `<b>${money(x.result)}</b>${x.roi != null ? ` <span class="sub">${pct(x.roi)}</span>` : ''}${parts.length > 1 ? `<div class="sub">${parts.join(' · ')}</div>` : x.unrealP != null && x.holdQty && !x.realizedP ? '<div class="sub">niezrealizowany</div>' : ''}`
+      : x.goneQty ? '<span class="sub" title="Przedmiot wyszedł z ekwipunku inaczej niż przez sprzedaż na rynku (wymiana, kontrakt, użycie), nie da się policzyć zysku">nieznany</span>' : '<span class="sub">-</span>';
+    const dropLine = di ? `<div class="sub" title="Przedmiot wypadł ze skrzyni/kapsuły. Koszt = skrzynia + klucz.">drop z ${esc([...di.cases].join(', ') || 'skrzyni')}${di.n - di.unknown ? `: ${money(di.value - di.cost)} vs koszt otwarcia` : ''}</div>` : '';
+    return `<tr><td>${ui.itemCell({ ...m, hash: x.hash, name: m.name || x.hash, appid: m.appid || 730, sub })}</td>
+      <td>${buyCell}</td><td>${sellCell}${dropLine}</td><td>${nowCell}</td><td>${resCell}</td></tr>`;
+  }).join('') : '<tr><td colspan="5" class="empty">Brak transakcji w tym okresie.</td></tr>';
+}
+
+/** one row per market transaction (newest first by default) */
+const txOpen = new Set(); // merged rows (group keys) the user opened
+// a purchase row's own id (two purchases of one item in the same minute are still two rows)
+const bk = (t) => t.key || `${t.hash}|${t.t}`;
+function renderTx({ res, since, until = Infinity, all, dropTx }) {
+  const items = new Map(res.items.map((it) => [it.hash, it]));
+  // FIFO: which purchases are still unsold (oldest buys are consumed first)
+  const unsoldOf = new Map();
+  { const cum = new Map(), sold = new Map(res.items.map((it) => [it.hash, it.sold - it.unmatchedSells]));
+    for (const t of [...all].sort((a, b) => a.t - b.t)) {
+      if (t.type !== 'buy') continue;
+      const q = t.amount || 1, st = cum.get(t.hash) || 0, en = st + q;
+      cum.set(t.hash, en);
+      unsoldOf.set(bk(t), Math.max(0, Math.min(q, en - Math.max(sold.get(t.hash) || 0, st))));
+    } }
+  // of a purchase's unsold copies, how many are gone from the inventory: the item's gone count goes to the oldest first
+  const goneOf = new Map();
+  { const left = new Map(res.items.map((it) => [it.hash, it.goneQty || 0]));
+    for (const t of [...all].sort((a, b) => a.t - b.t)) {
+      if (t.type !== 'buy') continue;
+      const k = bk(t), u = unsoldOf.get(k) || 0, l = left.get(t.hash) || 0;
+      const g = Math.min(u, l);
+      if (g) { goneOf.set(k, g); left.set(t.hash, l - g); }
+    } }
+  // which inventory events took those copies (opened, traded, trade-up, sticker applied): per item in time order, each
+  // purchase takes the next ones after it
+  const fatesOf = new Map();
+  { const outs = new Map();
+    for (const e of ih.all()) {
+      if (e.kind === 'rynek') continue;
+      for (const i of e.minus || []) if (i.hash) (outs.get(i.hash) || outs.set(i.hash, []).get(i.hash)).push(e);
+    }
+    for (const a of outs.values()) a.sort((x, y) => x.t - y.t);
+    // cases and terminals: the openings that the "Otwarte skrzynie" tab gives to market-bought copies (it knows which
+    // opened copy came from a drop or a trade), so both tabs tell the same story
+    for (const r of memo?.co?.rows || []) {
+      const h = r.caseIt?.hash;
+      if (!h || !/^kupiona/.test(r.caseSrc || '')) continue;
+      if (!outs.has('case:' + h)) outs.set('case:' + h, []);
+      outs.get('case:' + h).push({ ...r.e, kind: 'skrzynia', _row: r });
+    }
+    for (const k of outs.keys()) if (k.startsWith('case:')) outs.get(k).sort((x, y) => x.t - y.t);
+    const ptr = new Map();
+    for (const t of [...all].sort((a, b) => a.t - b.t)) {
+      if (t.type !== 'buy') continue;
+      const g = goneOf.get(bk(t));
+      if (!g) continue;
+      const ok = outs.has('case:' + t.hash) ? 'case:' + t.hash : t.hash;
+      const list = outs.get(ok) || [];
+      let i = ptr.get(ok) || 0;
+      while (i < list.length && list[i].t < t.t) i++; // left before this purchase: another copy
+      const mine = list.slice(i, i + g);
+      ptr.set(ok, i + mine.length);
+      if (mine.length) fatesOf.set(bk(t), mine);
+    } }
+  el.querySelector('#h-tbl thead').innerHTML = `<tr><th data-sort="t">Data</th><th data-sort="name">Przedmiot</th><th data-sort="type">Typ</th>
+    <th data-sort="price">Cena zakupu / sprzedaży</th><th data-sort="today">Cena dziś</th><th data-sort="pnl">Zysk / strata</th></tr>`;
+  // FIFO result per sale: realized entries share the sale's hash + time
+  const pnlOf = new Map();
+  for (const r of res.realized) {
+    const k = r.hash + '|' + r.t;
+    const x = pnlOf.get(k) || { pnl: 0, qty: 0, cost: 0 };
+    x.pnl += r.pnl; x.qty += r.qty; x.cost += r.buy * r.qty;
+    pnlOf.set(k, x);
+  }
+  // sales of items not bought on the market (and not a case drop already matched): the inventory-history event that
+  // brought them, per item the oldest acquisition not yet used, before the sale
+  const srcOfSale = new Map();
+  { const acq = new Map();
+    for (const e of ih.all()) {
+      if (e.kind === 'rynek') continue;
+      const had = new Set((e.minus || []).map((i) => i.hash));
+      for (const it of e.plus || []) if (it.hash && !had.has(it.hash)) (acq.get(it.hash) || acq.set(it.hash, []).get(it.hash)).push(e);
+    }
+    for (const a of acq.values()) a.sort((x, y) => x.t - y.t);
+    const used = new Map();
+    for (const t of all.filter((x) => x.type === 'sell').sort((a, b) => a.t - b.t)) {
+      const k = t.hash + '|' + t.t;
+      if (pnlOf.has(k) || dropTx.has(k)) continue;
+      const list = acq.get(t.hash) || [], i = used.get(t.hash) || 0;
+      if (i < list.length && list[i].t <= t.t) { srcOfSale.set(k, list[i]); used.set(t.hash, i + 1); }
+    } }
+  const srcLabel = (e) => {
+    const d = new Date(e.t).toLocaleDateString();
+    if (e.kind === 'naklejka') return `zdjęta z przedmiotu ${d}`;
+    if (e.kind === 'wymiana') return `z wymiany ${d}${e.partner?.href ? ` od ${partnerLink(e)}` : ''}`;
+    if (e.kind === 'kontrakt') return `z kontraktu ${d}`;
+    if (e.kind === 'skrzynia') return `ze skrzyni / kapsuły ${d}`;
+    if (/gift/i.test(e.desc)) return `prezent ${d}`;
+    if (/store|purchased/i.test(e.desc)) return `ze sklepu Steam ${d}`;
+    if (/drop|earned|reward|level|rank|xp/i.test(e.desc)) return `drop za grę ${d}`;
+    return `${esc(e.desc)} ${d}`;
+  };
+  const tx = all.filter((t) => t.t >= since && t.t <= until).map((t) => {
+    const k = t.hash + '|' + t.t;
+    const m = t.type === 'sell' ? pnlOf.get(k) : null;
+    const drop = t.type === 'sell' ? dropTx.get(k) : null;
+    const q = t.amount || 1;
+    let pnl = null;
+    if (m) pnl = m.pnl;
+    else if (drop && drop.cost != null) pnl = drop.value - drop.cost;
+    const low = nowPrice(t.hash);
+    // same basis as the price column: sells = on hand (after fee), buys = what the buyer pays
+    const now = low == null ? null : t.type === 'sell' ? steam.receivedFromBuyer(low) : low;
+    const today = now == null || !t.price ? null : (now - t.price) / t.price;
+    return { ...t, q, m, drop, pnl, low, now, today, unsold: t.type === 'buy' ? unsoldOf.get(bk(t)) ?? 0 : 0, gone: t.type === 'buy' ? goneOf.get(bk(t)) ?? 0 : 0, fates: t.type === 'buy' ? fatesOf.get(bk(t)) || null : null, src: t.type === 'sell' && !m && !drop ? srcOfSale.get(k) || null : null };
+  });
+  const rows = txSort.apply(tx, {
+    t: (x) => x.t, name: (x) => x.hash, type: (x) => x.type, price: (x) => x.price * x.q, today: (x) => (x.price ? x.today : null), pnl: (x) => x.pnl,
+  });
+  // identical neighbours → one row ×N: same day, item, side, price, estimate mark, state (in the inventory / sold /
+  // gone) and, for sales, the same cost basis and result per unit
+  const gkey = (x) => {
+    const st = x.type === 'buy'
+      ? (!x.unsold ? 'sold' : x.gone >= x.unsold ? 'gone' : x.gone ? 'mixed' : 'inv')
+      : x.m ? `m${Math.round(x.m.cost / x.m.qty)}|${x.q ? Math.round(x.pnl / x.q) : x.pnl}` : x.drop ? `d${x.drop.case}|${x.drop.cost}|${x.pnl}` : `s${x.src?.kind || ''}|${x.src?.partner?.href || ''}|${x.src ? new Date(x.src.t).toDateString() : ''}`;
+    return [new Date(x.t).toDateString(), x.hash, x.type, x.price, x.estimated ? 1 : 0, x.fx || '', st].join('|');
+  };
+  const groups = [], byKey = new Map();
+  for (const x of rows) {
+    const k = store.get('histGroup', true) ? gkey(x) : x.key || `${x.hash}|${x.t}|${Math.random()}`, g = byKey.get(k);
+    if (g) { g.n += x.q; g.unsold += x.unsold || 0; g.gone += x.gone || 0; if (x.fates) g.fates = [...(g.fates || []), ...x.fates]; if (g.pnl != null && x.pnl != null) g.pnl += x.pnl; g.t0 = Math.min(g.t0, x.t); g.t1 = Math.max(g.t1, x.t); g.items.push(x); continue; }
+    const ng = { k, x, n: x.q, unsold: x.unsold || 0, gone: x.gone || 0, fates: x.fates || null, pnl: x.pnl, t0: x.t, t1: x.t, items: [x] };
+    byKey.set(k, ng);
+    groups.push(ng);
+  }
+  renderPager('tx', groups.length);
+  el.querySelector('#tx-h .cnt').textContent = `(${rows.length}${groups.length < rows.length ? ` w ${groups.length} wierszach` : ''})`;
+  const rowHtml = (g, child = false) => {
+    const x = g.n > (g.x.q || 1) ? { ...g.x, pnl: g.pnl, unsold: g.unsold, gone: g.gone, fates: g.fates } : g.x;
+    const many = g.n > 1;
+    const split = !child && g.items.length > 1; // a merged row, can be opened
+    const meta1 = meta.get(x.hash) || {};
+    const sub = x.float != null ? `<span title="float: ${x.float.toFixed(6)}">float ${x.float.toFixed(4)}</span>` : '';
+    const mark = x.estimated ? ' <span class="warn" title="Cena oszacowana z historii cen rynku, Steam zapisał tę transakcję tylko w historii ekwipunku, bez kwoty.">≈</span>'
+      : x.fx ? ' <span class="warn" title="Przeliczone z innej waluty po kursie NBP z dnia transakcji.">≈</span>' : '';
+    let typ, res1 = '<span class="sub">-</span>';
+    if (x.type === 'buy') {
+      typ = '<span class="neg">kupno</span>';
+      const it = items.get(x.hash);
+      if (!x.unsold) typ += '<div class="sub">sprzedane</div>';
+      else if (x.gone >= x.unsold) typ += goneCell(it, x.gone, x.fates, split);
+      else if (x.gone) typ += `<div class="sub">${invLink(x, meta1, `${x.unsold - x.gone} w ekwipunku`, !split && !many)}</div>${goneCell(it, x.gone, x.fates, split)}`;
+      else typ += `<div class="sub">${invLink(x, meta1, `w ekwipunku${many ? ` (${x.unsold})` : ''}`, !split && !many)}</div>`;
+    }
+    else {
+      typ = '<span class="pos">sprzedaż</span>';
+      if (x.m) {
+        typ += `<div class="sub">kupione za ${steam.fmt(Math.round(x.m.cost / x.m.qty))}</div>`;
+        res1 = `<b class="${x.pnl >= 0 ? 'pos' : 'neg'}">${x.pnl >= 0 ? '+' : ''}${steam.fmt(x.pnl)}</b>`;
+      } else if (x.drop) {
+        typ += `<div class="sub" title="Koszt otwarcia = skrzynia + klucz">drop z ${esc(x.drop.case)}${x.drop.cost != null ? ` · koszt ${steam.fmt(x.drop.cost)}` : ''}</div>`;
+        if (x.pnl != null) res1 = `<span class="${x.pnl >= 0 ? 'pos' : 'neg'}" title="Sprzedaż minus koszt otwarcia skrzyni (${esc(steam.fmt(x.drop.cost))})">${x.pnl >= 0 ? '+' : ''}${steam.fmt(x.pnl)}</span>`;
+      } else if (x.src) typ += `<div class="sub" title="${esc(`Nie kupione na rynku: ${x.src.desc} (${new Date(x.src.t).toLocaleString()}), brak kosztu do porównania`)}">${srcLabel(x.src)}</div>`;
+      else typ += '<div class="sub" title="Nie kupione na rynku, a w historii ekwipunku nie ma, skąd się wziął (zsynchronizuj historię ekwipunku w zakładce „Historia ekwipunku”, także starsze wpisy)">bez zakupu (źródło nieznane)</div>';
+    }
+    const tip = x.low != null ? (x.type === 'sell' ? `Dziś na rękę (po prowizji): ${steam.fmt(x.now)}, kupujący zapłaciłby ${steam.fmt(x.low)}. Porównanie z tym, ile wtedy dostałeś na rękę.` : `Najniższa cena dziś (tyle zapłaciłbyś): ${steam.fmt(x.low)}, porównanie z ceną zakupu`) : '';
+    const d = new Date(x.t), hm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return `<tr${child ? ' style="background:rgba(102,192,244,.04)"' : ''}><td title="${esc(g.t0 !== g.t1 ? `${new Date(g.t0).toLocaleString()} - ${new Date(g.t1).toLocaleString()}` : d.toLocaleString())}">${d.toLocaleDateString()}<div class="sub">${g.t0 !== g.t1 ? `${hm(g.t0)}-${hm(g.t1)}` : hm(x.t)}</div></td>
+      <td>${ui.itemCell({ ...meta1, hash: x.hash, name: meta1.name || x.hash, appid: meta1.appid || 730, sub: `${sub}${many ? `${sub ? ' · ' : ''}${split ? `<span data-txg="${esc(g.k)}" class="acc" style="cursor:pointer;font-weight:700" title="${g.n} takich samych transakcji tego dnia, kliknij, żeby ${txOpen.has(g.k) ? 'zwinąć' : 'rozwinąć'}">${txOpen.has(g.k) ? '▾' : '▸'} ×${g.n}</span>` : `<b class="acc">×${g.n}</b>`}` : ''}` })}</td>
+      <td>${typ}</td>
+      <td title="${x.type === 'sell' ? esc(`Na rękę (po prowizji Steama). Kupujący zapłacił ${steam.fmt(steam.buyerFromReceived(x.price))}.`) : 'Tyle zapłaciłeś'}">${steam.fmt(x.price)}${mark}${many ? `<div class="sub">× ${g.n} = ${steam.fmt(x.price * g.n)}</div>` : ''}${x.type === 'sell' ? '<div class="sub">na rękę</div>' : ''}${x.q > 1 ? `<div class="sub">×${x.q} = ${steam.fmt(x.price * x.q)}</div>` : ''}</td>
+      <td title="${esc(tip + (many && x.low != null ? `
+
+Wszystkie ${g.n} szt. dziś: ${steam.fmt(x.now * g.n)}${x.type === 'buy' ? `, na rękę po sprzedaży ok. ${steam.fmt(steam.receivedFromBuyer(x.low) * g.n)}` : ''}` : ''))}">${x.low != null ? `${steam.fmt(x.now)}${x.today != null && isFinite(x.today) ? `<div class="sub ${x.today >= 0 ? 'pos' : 'neg'}">${x.today >= 0 ? '+' : ''}${pct(x.today, 0)}</div>` : ''}${many ? `<div class="sub">× ${g.n} = ${steam.fmt(x.now * g.n)}</div>` : ''}` : '<span class="sub">…</span>'}</td>
+      <td>${res1}</td></tr>`;
+  };
+  // an opened group: its transactions one by one under it
+  el.querySelector('#h-tbl tbody').innerHTML = groups.length ? pageOf('tx', groups).map((g) => rowHtml(g) + (g.items.length > 1 && txOpen.has(g.k) ? g.items.map((x) => rowHtml({ k: g.k, x, n: x.q, unsold: x.unsold || 0, gone: x.gone || 0, pnl: x.pnl, t0: x.t, t1: x.t, items: [x] }, true)).join('') : '')).join('') : '<tr><td colspan="6" class="empty">Brak transakcji w tym okresie.</td></tr>';
+}
+
+
+// ---------------------------------------------------------------- inventory history (trades, cases, trade-ups…)
+/** "w ekwipunku" as a link: opens Ekwipunek scrolled to the item (the card with this purchase price first) */
+function invLink(x, m, text, exact = false) {
+  // exact: one purchase of one copy → Ekwipunek ungrouped, that copy; otherwise the grouped cards of this price
+  return `<a href="#" class="acc" data-inv="${esc(x.hash)}" data-app="${m.appid || 730}" data-cost="${x.type === 'buy' ? x.price : ''}"${exact ? ` data-t="${x.t}"` : ''} title="${exact ? 'Pokaż ten egzemplarz w Ekwipunku (bez grupowania)' : 'Pokaż te przedmioty w Ekwipunku'}">${text} ↗</a>`;
+}
+function goneCell(x, n = x.goneQty, evs = null, brief = false) {
+  // the events that took these copies (given per purchase), else the latest one for the item
+  const list = evs?.length ? evs : [ih.fateOf(x.hash)].filter(Boolean);
+  const f = list[0];
+  // the drop's name like the others: Polish when known (from your market history), without the wear in brackets
+  // (inventory-history names don't have it; the market names do)
+  const nm = (i) => displayName(i.hash, i.name) || '?';
+  const got = (e) => (e.plus || []).filter((i) => i.hash && i.hash !== x.hash).map(nm);
+  // a sealed terminal: unsealing only turns it into an "Active" one; what you bought in it is a later event, which
+  // the case openings already tie to this unsealing (null: the Active terminal wasn't used yet)
+  const term = (e) => {
+    if (!/terminal/i.test(x.hash || '')) return null;
+    if (e._row) return { bought: e._row.drops.map(nm) }; // given by the case openings
+    if (!e.minus?.some((i) => i.hash === x.hash)) return null;
+    const row = memo?.co?.rows.find((r) => r.terminal && r.e.unseal === e.id);
+    return { bought: row ? row.drops.map(nm) : null };
+  };
+  const what1 = (e, dated = true) => {
+    const d = dated ? ` ${new Date(e.t).toLocaleDateString()}` : '', g = got(e);
+    if (e.kind === 'skrzynia') {
+      const tm = term(e);
+      if (tm) return `aktywowany${d}, ${tm.bought == null ? 'jeszcze nie użyty' : tm.bought.length ? `kupiono: ${tm.bought.join(', ')}` : 'nic nie kupiono'}`;
+      return `otwarte${d}${g.length ? `: ${g.join(', ')}` : ''}`;
+    }
+    if (e.kind === 'naklejka') return `naklejona${d}${g.length ? ` na ${g.join(', ')}` : ''}`;
+    if (e.kind === 'kontrakt') return `kontrakt${d}${g.length ? `, wyszło: ${g.join(', ')}` : ''}`;
+    if (e.kind === 'wymiana') return `wymienione${d}`;
+    return `${e.kind}${d}`;
+  };
+  const short = (e) => (e.kind === 'skrzynia' ? (term(e) ? 'aktywowane' : 'otwarte') : { wymiana: 'wymienione', kontrakt: 'kontrakt', naklejka: 'naklejone' }[e.kind] || e.kind);
+  // a merged row with several events: just what happened, the details are in its rows (▸ ×N)
+  if (brief && list.length > 1) {
+    const kinds = [...new Set(list.map(short))].join(', ');
+    return `<div class="sub" title="Szczegóły po rozwinięciu grupy (▸ ×N przy nazwie)">${n} poza ekwip. · <span class="acc">${esc(kinds)}</span></div>`;
+  }
+  const what = f ? what1(f) + (list.length > 1 ? ` +${list.length - 1}` : '') : '';
+  const line = (e) => {
+    const g = got(e).join(', ');
+    const w = e.kind === 'wymiana' ? `wymienione${e.partner?.name ? ` z ${e.partner.name}` : ''}${g ? `, w zamian: ${g}` : ''}` : what1(e, false);
+    return `${new Date(e.t).toLocaleString()}: ${w}`;
+  };
+  const title = f ? list.map(line).join('\n') : 'Kupione na rynku, ale nie ma ich już w ekwipunku. Zsynchronizuj historię ekwipunku (zakładka „Historia ekwipunku”), żeby zobaczyć, co się z nimi stało.';
+  return `<div class="sub" title="${esc(title)}">${n} poza ekwip.${what ? ` · <span class="acc">${esc(what)}</span>` : ''}${f?.partner ? ` z ${partnerLink(f)}${ownerBtn(f, x.hash)}` : ''}</div>`;
+}
+
+let ihTask = null;
+async function syncInv(full) {
+  if (!(await steam.ensureLogin())) return;
+  ihTask = token();
+  const info = el.querySelector('#ih-info');
+  try {
+    const n = await ih.sync({ full, isCancelled: () => ihTask.cancelled, onProgress: (cnt, pages, oldest) => { renderInv(); info.textContent = `pobieram… ${cnt} nowych zdarzeń (${pages} str.)${oldest ? ` · doszedłem do ${new Date(oldest).toLocaleDateString()}` : ''}`; } });
+    ui.log(`Historia ekwipunku: +${n} zdarzeń.`, 'ok');
+  } catch (e) {
+    ui.log('Historia ekwipunku: ' + e.message, 'err');
+  }
+  renderInv();
+  render();
+}
+
+function renderInv(listOnly = false) {
+  if (!el) return;
+  if (listOnly !== true) renderCases();
+  const k = el.querySelector('#ih-kind').value;
+  const q = el.querySelector('#ih-q').value.trim().toLowerCase();
+  const since = period ? Date.now() - period * 86400000 : 0;
+  const evs = ih.all().filter((e) => e.t >= since && (!k || e.kind === k)
+    && (!q || matchSearch(`${e.desc} ${e.partner?.name || ''} ${[...e.plus, ...e.minus].map((i) => i.name + ' ' + (i.hash || '')).join(' ')}`, q)));
+  el.querySelector('#ih-h .cnt').textContent = `(${evs.length})`;
+  el.querySelector('#ih-info').textContent = ih.syncedAt() ? `${ih.all().length} zdarzeń w bazie${ih.oldest() ? ` · od ${new Date(ih.oldest()).toLocaleDateString()}` : ''}${ih.isComplete() ? ' (cała historia)' : ' · starsze jeszcze niepobrane, dociągnę przy następnej synchronizacji'} · zsynchronizowano ${timeAgo(ih.syncedAt())}` : 'nie zsynchronizowano';
+  const chip = (i, sign) => `<span class="tag" style="margin:1px 2px;border-color:${sign === '-' ? '#7a2b2b' : '#3d5a12'}"><span class="${sign === '-' ? 'neg' : 'pos'}">${sign === '-' ? '−' : '+'}</span> <span style="color:#${esc(i.color || 'c6d4df')}">${esc(i.name)}</span></span>`;
+  renderPager('ih', evs.length);
+  el.querySelector('#ih-list').innerHTML = evs.length ? `<table><thead><tr><th>Data</th><th>Zdarzenie</th><th>Przedmioty</th></tr></thead><tbody>${pageOf('ih', evs).map((e) => `
+    <tr><td style="white-space:nowrap">${new Date(e.t).toLocaleString()}</td>
+    <td><span class="tag">${e.kind}</span> ${e.partner?.name ? esc(e.desc).replace(esc(e.partner.name), partnerLink(e)) : esc(e.desc)}</td>
+    <td>${e.minus.map((i) => chip(i, '-')).join('')}${e.plus.map((i) => chip(i, '+')).join('')}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="empty">Brak zdarzeń w tym okresie' + (ih.syncedAt() ? '' : ', kliknij Synchronizuj') + '.</div>';
+}
+
+// ---------------------------------------------------------------- case openings: what dropped, what it cost, profit
+// Data: inventory history "Unlocked a container" (−case −key +drop), matched with market trades (FIFO by item
+// name and time) and the current inventory. Keys come from the Steam store: their price is taken from the store
+// purchase history, else 2.49 USD at the rate of that day.
+const isKey = (i) => /\bkey\b/i.test(i.hash || i.name || '');
+/** store price of a key (2.49 USD) in the wallet currency at today's rate */
+function keyPrice() {
+  const usd = rateFor(1);
+  return usd ? Math.round(249 * usd) : 249;
+}
+/** expected price of one store key on a day: 2.49 USD at that day's rate (for recognising key purchases) */
+function keyExpect(ts) {
+  const { r } = histRate(1, ts);
+  return r ? Math.round(249 * r) : keyPrice();
+}
+/** key price on a given day when that key purchase isn't matched in the store history */
+function keyPriceAt(ts) {
+  // what you really paid for a key in your currency: nearest key purchase in your store history
+  const near = sh.nearestKeyPrice(ts, CUR_NAME[steam.wallet().currency], keyExpect);
+  if (near && Math.abs(near.t - ts) < 400 * 86400000) return { price: near.price, src: 'jak Twój klucz z ' + new Date(near.t).toLocaleDateString() };
+  const { r, src } = histRate(1, ts);
+  if (r && src === 'nbp') return { price: Math.round(249 * r), src: '≈ 2,49 USD po kursie z dnia, brak zakupu klucza w historii' };
+  return { price: keyPrice(), src: '2,49 USD po dzisiejszym kursie' };
+}
+
+async function syncStore() {
+  el.querySelector('#cs-info').textContent = 'pobieram historię zakupów…';
+  try {
+    const rows = await sh.sync({ onProgress: (n) => { el.querySelector('#cs-info').textContent = `historia zakupów: ${n}…`; } });
+    ui.log(`Historia zakupów Steam: ${rows.length} pozycji (${rows.filter(sh.isCS).length} zakupów w CS2).`, 'ok');
+  } catch (e) { ui.log('Historia zakupów Steam: ' + e.message, 'err'); }
+  render(); renderInv();
+}
+/** nearest market purchase of an item to a moment; every purchase is handed out once */
+function buyMatcher(buys) {
+  const pool = buys.map((b) => ({ ...b }));
+  return {
+    priceOf(hash, t) {
+      const c = pool.filter((b) => !b.used && b.hash === hash).sort((a, b) => Math.abs(a.t - t) - Math.abs(b.t - t))[0];
+      if (c) c.used = true;
+      return c ? c.price : null;
+    },
+    unmatched: () => pool.filter((b) => !b.used),
+  };
+}
+/** one trade can show up as two rows ("You traded with X." + "Traded") → how many of the n copies in event x are new */
+function tradeDeduper() {
+  const seen = new Map();
+  return (x, hash, n) => {
+    if (x.kind !== 'wymiana') return n;
+    const k = Math.round(x.t / 120000) + '|' + hash;
+    const add = Math.max(0, n - (seen.get(k) || 0));
+    seen.set(k, Math.max(n, seen.get(k) || 0));
+    return add;
+  };
+}
+function caseOpenings() {
+  const market = marketTimed();
+  const { list: trades } = converted([...market, ...invHistoryTrades(market)]);
+  const events = ih.all();
+  // terminals (e.g. "Sealed Dead Hand Terminal"): the item bought in it may arrive in the same event or as a separate one right after
+  const isTerm = (i) => /terminal/i.test(i.hash || i.name || '');
+  const byT = [...events].sort((a, b) => a.t - b.t);
+  // Sealed terminal → unsealing turns it into an "Active" terminal (not a purchase, hidden here).
+  // Using the Active terminal = the in-game purchase; the bought item arrives in the same event or right after.
+  const isSealed = (i) => /sealed/i.test(i.hash || i.name || '') && isTerm(i);
+  const isActive = (i) => isTerm(i) && !isSealed(i);
+  const junk = (i) => isTerm(i) || isKey(i) || /\b(case|capsule|package)\b/i.test(i.hash || i.name || '');
+  const unseals = byT.filter((e) => e.minus.some(isSealed));
+  const sealUsed = new Set();
+  const opens = byT.filter((e) => e.kind === 'skrzynia' && !e.minus.some(isTerm) && e.plus.length).concat(
+    byT.filter((e) => e.minus.some(isActive)).map((e) => {
+      // which sealed terminal became this Active one: latest unused unsealing before it
+      // (not later than it: an Active terminal used at 01:25 wasn't unsealed at 01:26; same minute is fine)
+      const u = [...unseals].reverse().find((x) => !sealUsed.has(x) && x.t <= e.t);
+      if (u) sealUsed.add(u);
+      const sealedIt = u?.minus.find(isSealed);
+      // Steam: 'Purchased from Arms Dealer' (−Active +item) = purchase; 'Unlocked a container' (−Active, nothing) = used without buying
+      return { ...e, minus: sealedIt ? [sealedIt] : e.minus.filter(isActive), plus: e.plus.filter((i) => !junk(i)), terminal: true, unseal: u ? u.id : null };
+    })).sort((x, y) => x.t - y.t);
+  const buys = trades.filter((t) => t.type === 'buy').sort((a, b) => a.t - b.t);
+  const sells = trades.filter((t) => t.type === 'sell').sort((a, b) => a.t - b.t);
+  const tradesOut = events.filter((e) => e.kind === 'wymiana' && e.minus.length).sort((a, b) => a.t - b.t);
+  const used = new Set();
+  const owned = new Map(ownedNow() || []);
+  let waiting = 0;
+  const shUsed = new Set();
+  ensureNbp(opens.filter((e) => e.minus.some(isKey)).map((e) => ({ cur: 1, t: e.t })));
+  // every way a case/terminal got into the inventory, oldest first (market buys come from the market history;
+  // inventory-history "market" events are the same purchases, so they're skipped)
+  // Inventory history has the exact moment each copy arrived (market purchase, drop, trade); market-history dates
+  // are only interpolated, so they're used just for the price paid (nearest purchase of that item).
+  const bought = buyMatcher(buys);
+  const newCopies = tradeDeduper();
+  const acq = [];
+  const moves = []; // copies put on the market (they leave) and listings cancelled (they come back)
+  for (const x of byT) {
+    if (x.kind === 'rynek' && !/purchas|bought/i.test(x.desc)) {
+      for (const i of x.minus) if (i.hash) moves.push({ t: x.t, hash: i.hash, op: 'list' });
+      for (const i of x.plus) if (i.hash) moves.push({ t: x.t, hash: i.hash, op: 'back' });
+      continue;
+    }
+    const counts = new Map();
+    for (const i of x.plus) if (i.hash) counts.set(i.hash, (counts.get(i.hash) || 0) + 1);
+    for (const [hash, n] of counts) {
+      const add = newCopies(x, hash, n);
+      for (let j = 0; j < add; j++) {
+        if (x.kind === 'wymiana') acq.push({ t: x.t, hash, src: 'z wymiany' });
+        else if (x.kind === 'rynek') acq.push({ t: x.t, hash, src: 'kupiona', price: bought.priceOf(hash, x.t) });
+        else acq.push({ t: x.t, hash, src: 'z dropu' });
+      }
+    }
+  }
+  // purchases older than the inventory history (no matching event), keep them with their market-history date
+  for (const b of bought.unmatched()) acq.push({ t: b.t, hash: b.hash, price: b.price, src: 'kupiona' });
+  acq.sort((a, b) => a.t - b.t);
+  const acqUsed = new Set();
+  // a copy put on the market (and sold) wasn't opened later: the oldest one you had then leaves the pool; a cancelled
+  // listing brings it back
+  { const listed = new Map();
+    for (const mv of moves) {
+      const st = listed.get(mv.hash) || listed.set(mv.hash, []).get(mv.hash);
+      if (mv.op === 'list') { const a = acq.find((x) => !acqUsed.has(x) && x.hash === mv.hash && x.t <= mv.t); if (a) { acqUsed.add(a); st.push(a); } }
+      else { const a = st.pop(); if (a) acqUsed.delete(a); }
+    } }
+  // copies you still own weren't opened: take them out of the pool first. Trade protection ("Tradable After …")
+  // lasts 7 days from when the item arrived, so it tells which acquisition a still-owned copy is.
+  for (const it of ownedItems()) {
+    const pool = acq.filter((x) => !acqUsed.has(x) && x.hash === it.hash);
+    if (!pool.length) continue;
+    const until = lockUntil(it.lock);
+    let kept;
+    if (until) {
+      const got = arrivedAt(until);
+      kept = pool.filter((x) => Math.abs(x.t - got) < 2 * 86400000).sort((a, b) => Math.abs(a.t - got) - Math.abs(b.t - got))[0];
+    }
+    // no protection left → got more than 7 days ago: assume the oldest such copy is the one kept
+    if (!kept) kept = pool.find((x) => x.t < Date.now() - 7 * 86400000) || null;
+    if (kept) acqUsed.add(kept);
+  }
+  const take = (list, pred) => { const x = list.find((y) => !used.has(y) && pred(y)); if (x) used.add(x); return x; };
+  const net = (p) => (p == null ? null : steam.receivedFromBuyer(p));
+
+  const rows = opens.map((e) => {
+    const caseIt = e.minus.find((i) => !isKey(i)) || (e.terminal ? { name: 'Terminal' } : null);
+    const keyIt = e.minus.find(isKey);
+    // cost of the case: which copy got opened? FIFO, the oldest one you had (market buy, drop or trade)
+    let caseCost = null, caseSrc = '';
+    if (caseIt?.hash) {
+      const a = acq.find((x) => !acqUsed.has(x) && x.hash === caseIt.hash && x.t <= e.t + 60000)
+        || acq.find((x) => !acqUsed.has(x) && x.hash === caseIt.hash && x.src === 'kupiona' && x.t <= e.t + 86400000);
+      if (a) acqUsed.add(a);
+      if (a?.src === 'kupiona' && a.price != null) { caseCost = a.price; caseSrc = `kupiona ${new Date(a.t).toLocaleDateString()}`; }
+      else {
+        const v = net(estimate('730', caseIt.hash, e.t));
+        if (v == null) waiting++;
+        caseCost = v;
+        caseSrc = `${a?.src || 'z dropu'}${a ? ' ' + new Date(a.t).toLocaleDateString() : ''}`;
+      }
+    }
+    let keyCost = 0, keySrc = '';
+    if (keyIt) {
+      const b = keyIt.hash && take(buys, (t) => t.hash === keyIt.hash && t.t <= e.t + 86400000);
+      const kp = !b ? sh.keyPaid(e.t, shUsed, keyExpect(e.t)) : null;
+      const ka = !b && !kp ? keyPriceAt(e.t) : null;
+      keyCost = b ? b.price : kp ? kp.price : ka.price;
+      keySrc = b ? 'z rynku' : kp ? `historia zakupów ${new Date(kp.row.t).toLocaleDateString()}` : ka.src;
+    }
+    // what happened to each drop
+    const drops = e.plus.map((d) => {
+      if (!d.hash) return { ...d, fate: 'nieznany', value: null };
+      const s = take(sells, (t) => t.hash === d.hash && t.t >= e.t - 60000);
+      if (s) return { ...d, fate: `sprzedany ${new Date(s.t).toLocaleDateString()}`, value: s.price, kind: 'sold', saleT: s.t };
+     // one trade can carry several of your drops → don't consume it, just skip trades this drop already used
+      const tr = tradesOut.find((o) => o.t >= e.t && o.minus.some((i) => i.hash === d.hash) && !used.has(o.id + '|' + d.hash));
+      if (tr) {
+        used.add(tr.id + '|' + d.hash);
+        // value = your share of what you got in return: (this item's market value / everything you gave) × value received
+        const est = (i) => (i.hash ? net(estimate('730', i.hash, tr.t)) : null);
+        const mine = est(d);
+        const gave = tr.minus.map(est), got = tr.plus.map(est);
+        let v = mine, how = 'cena rynkowa z dnia wymiany';
+        if (tr.plus.length && mine != null && gave.every((x) => x != null) && got.every((x) => x != null)) {
+          const gaveSum = gave.reduce((a, b) => a + b, 0), gotSum = got.reduce((a, b) => a + b, 0);
+          if (gaveSum > 0) { v = Math.round((mine / gaveSum) * gotSum); how = `udział w tym, co dostałeś: ${steam.fmt(mine)} z ${steam.fmt(gaveSum)} oddanych → ${steam.fmt(gotSum)} otrzymanych`; }
+        } else if (tr.plus.length && mine != null) waiting++;
+        if (v == null) waiting++;
+        return { ...d, fate: `wymieniony ${new Date(tr.t).toLocaleDateString()}`, value: v, kind: 'traded', tr, title: `${tr.desc}${tr.plus.length ? '\nW zamian: ' + tr.plus.map((i) => i.name).join(', ') : '\nNic nie dostałeś w zamian (prezent?), liczona cena rynkowa'}\nWartość: ${how}` };
+      }
+      if ((owned.get(d.hash) || 0) > 0) {
+        owned.set(d.hash, owned.get(d.hash) - 1);
+        const low = prices.cached('730', d.hash)?.lowest;
+        return { ...d, fate: 'masz w ekwipunku', value: net(low), kind: 'owned' };
+      }
+      const v = net(estimate('730', d.hash, e.t));
+      if (v == null) waiting++;
+      return { ...d, fate: 'nie ma w ekwipunku', value: v, kind: 'gone' };
+    });
+    // terminal: the in-game payment isn't in any Steam history → entered by the user
+    let paid = null, paidSrc = '';
+    if (e.terminal && drops.length) {
+      const manual = store.get('termPaid', {})[e.id];
+      if (manual != null) { paid = manual; paidSrc = 'wpisane'; }
+      else { const tp = sh.terminalPaid(e.t, drops[0]?.name, shUsed, keyExpect(e.t)); if (tp) { paid = tp.price; paidSrc = 'historia zakupów'; } }
+    }
+    const cost = (caseCost ?? 0) + keyCost + (paid ?? 0);
+    const value = drops.reduce((s, d) => s + (d.value ?? 0), 0);
+    const known = caseCost != null && drops.every((d) => d.value != null);
+    const unknownPaid = !!e.terminal && paid == null && drops.length > 0;
+    return { e, caseIt, keyIt, caseCost, caseSrc, keyCost, keySrc, drops, cost, value, profit: known && !unknownPaid ? value - cost : null, terminal: !!e.terminal, paid, paidSrc, unknownPaid };
+  });
+  return { rows: rows.reverse(), waiting };
+}
+
+function renderCases() {
+  if (!el) return;
+  const since = period ? Date.now() - period * 86400000 : 0;
+  const { rows: allRows, waiting } = caseOpenings();
+  const rows = allRows.filter((r) => r.e.t >= since);
+  const done = rows.filter((r) => r.profit != null);
+  const spent = rows.reduce((s, r) => s + r.cost, 0);
+  const value = rows.reduce((s, r) => s + (r.unknownPaid ? 0 : r.value), 0); // terminal without the paid amount: left out
+  const spentTerm = rows.reduce((s, r) => s + (r.terminal ? r.cost : 0), 0);
+  const spentT = rows.reduce((s, r) => s + (r.unknownPaid ? r.cost : 0), 0);
+  const best = [...rows].sort((a, b) => b.value - a.value)[0];
+  const plus = done.filter((r) => r.profit > 0).length;
+  el.querySelector('#cs-h .cnt').textContent = `(${rows.length})`;
+  el.querySelector('#cs-info').textContent = (period ? `okres: ostatnie ${period} dni (zmień u góry) · ` : '') + (waiting ? `szacuję ceny (${waiting})… · ` : '') + (ih.syncedAt() ? 'dane z historii ekwipunku' : 'zsynchronizuj historię ekwipunku (zakładka „Historia ekwipunku”)') + (sh.syncedAt() ? ` · historia zakupów: ${sh.all().filter(sh.isCS).length} zakupów CS2` : '');
+  el.querySelector('#cs-cards').innerHTML = rows.length ? `
+    <div class="card"><div class="k">Otwarcia</div><div class="v">${rows.length}</div><div class="sub">${done.length ? `${plus}/${done.length} na plus` : 'liczę wynik…'}</div></div>
+    <div class="card"><div class="k">Koszt otwarć</div><div class="v">${steam.fmt(spent)}</div><div class="sub" title="${esc(`Skrzynie i klucze: ${steam.fmt(spent - spentTerm)}
+Terminale (terminal + zakup w grze): ${steam.fmt(spentTerm)}`)}">${spentTerm ? `skrzynie ${steam.fmt(spent - spentTerm)} · terminale ${steam.fmt(spentTerm)}` : "skrzynie + klucze"}</div></div>
+    <div class="card"><div class="k">Wartość dropów</div><div class="v">${steam.fmt(value)}</div><div class="sub">po prowizji</div></div>
+    <div class="card"><div class="k">Zysk / strata na skrzyniach</div><div class="v ${value - (spent - spentT) >= 0 ? 'pos' : 'neg'}">${steam.fmt(value - (spent - spentT))}</div><div class="sub">${spent - spentT ? pct((value - (spent - spentT)) / (spent - spentT)) : '-'}${spentT ? ' · bez terminali bez kwoty' : ''}</div></div>
+    ${best ? `<div class="card"><div class="k">Najlepszy drop</div><div class="v" style="font-size:14px;color:#${esc(best.drops[0]?.color || 'fff')}">${esc(best.drops[0]?.name || '')}</div><div class="sub">${steam.fmt(best.value)} · ${new Date(best.e.t).toLocaleDateString()}</div></div>` : ''}` : '';
+  renderPager('cs', rows.length);
+  el.querySelector('#cs-list').innerHTML = rows.length ? `<table><thead><tr><th>Data</th><th>Skrzynia / terminal</th><th>Koszt</th><th>Drop / zakup</th><th>Co się z nim stało</th><th>Wartość</th><th>Zysk / strata</th></tr></thead><tbody>${pageOf('cs', rows).map((r) => `
+    <tr><td style="white-space:nowrap">${new Date(r.e.t).toLocaleString()}</td>
+    <td><span class="tag" style="margin-right:5px;${r.terminal ? 'border-color:#8a6d1f;color:#e6c35c' : ''}" title="${r.terminal ? 'Terminal: po odpieczętowaniu można kupić przedmiot u Arms Dealera za pieniądze z portfela Steam' : 'Skrzynia otwarta kluczem'}">${r.terminal ? 'terminal' : 'skrzynia'}</span>${esc((r.caseIt?.name || '?').replace(/^Sealed /, ''))}${r.terminal && r.drops.length && r.paidSrc !== 'historia zakupów' ? `<label class="sub" style="display:flex;gap:4px;align-items:center;margin-top:2px">zapłacono <input class="p" data-termpaid="${esc(r.e.id)}" value="${r.paidSrc === 'wpisane' ? toInput(r.paid) : ''}" placeholder="${r.paidSrc === 'historia zakupów' ? esc(toInput(r.paid)) : 'kwota'}" style="width:64px;padding:2px 5px"></label>` : ''}</td>
+    <td>${steam.fmt(r.cost)}<div class="sub">${r.paid != null ? `zakup w grze ${steam.fmt(r.paid)} (${r.paidSrc}) · ` : ''}${r.caseIt ? `${r.terminal ? 'terminal' : 'skrzynia'} ${r.caseCost != null ? steam.fmt(r.caseCost) : '…'} (${r.caseSrc})` : ''}${r.keyIt ? ` · klucz ${steam.fmt(r.keyCost)} (${r.keySrc})` : ''}</div></td>
+    <td>${r.terminal && !r.drops.length ? '<span class="sub">nic nie kupiono</span>' : ''}${r.drops.map((d) => `<span style="color:#${esc(d.color || 'c6d4df')}">${esc(displayName(d.hash, d.name))}</span>`).join('<br>')}</td>
+    <td>${r.drops.map((d) => `<span class="sub ${d.kind === 'owned' ? 'acc' : ''}" title="${esc(d.title || '')}">${esc(d.fate)}</span>${d.tr?.partner ? ` <span class="sub">z ${partnerLink(d.tr)}</span>${ownerBtn(d.tr, d.hash)}` : ''}`).join('<br>')}</td>
+    <td>${r.drops.map((d) => (d.value != null ? steam.fmt(d.value) : '…') + (d.kind !== 'owned' ? nowCmp(d.hash, d.value) : '')).join('')}</td>
+    <td class="${r.profit > 0 ? 'pos' : r.profit < 0 ? 'neg' : ''}">${r.profit != null ? steam.fmt(r.profit) : r.unknownPaid ? '<span class="sub warn" title="Wpisz kwotę zapłaconą w terminalu (pole „zapłacono” w kolumnie Skrzynia)">wpisz kwotę</span>' : '…'}</td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">Brak otwartych skrzyń w tym okresie${ih.syncedAt() ? '' : ', najpierw zsynchronizuj historię ekwipunku'}.</div>`;
+}
+
+// ---------------------------------------------------------------- partner links, "does he still have it", today's price
+function partnerLink(e) {
+  if (!e?.partner?.href) return '';
+  return `<a href="${esc(e.partner.href)}" target="_blank" class="acc" title="Profil partnera wymiany">${esc(e.partner.name || 'profil')}</a>`;
+}
+function ownerBtn(e, hash) {
+  if (!e?.partner?.href || !hash) return '';
+  const st = ih.ownerState(e.partner.href, hash);
+  if (!st) return ` <button class="b s" data-owner="${esc(e.partner.href)}" data-hash="${esc(hash)}" title="Sprawdza publiczny ekwipunek partnera (1 zapytanie)">czy nadal ma?</button>`;
+  return {
+    checking: ' <span class="sub">sprawdzam…</span>',
+    has: ` <span class="ok" title="Ten przedmiot (ta sama nazwa i stan) jest w jego ekwipunku">✔ nadal ma${st.n > 1 ? ` (${st.n})` : ''}</span>`,
+    no: ' <span class="warn" title="Nie ma go w jego ekwipunku, sprzedał lub wymienił dalej">✘ już nie ma</span>',
+    private: ' <span class="mut" title="Ekwipunek partnera jest prywatny">🔒 prywatny ekwipunek</span>',
+    error: ` <span class="err" title="${esc(st.msg || '')}">błąd sprawdzania</span>`,
+  }[st.state] || '';
+}
+
+// today's price for comparison (queued in the background when not cached)
+const nowQueue = new Map();
+let nowTimer = null;
+function nowPrice(hash) {
+  if (!hash) return null;
+  const c = prices.cached('730', hash);
+  if (c?.lowest) return c.lowest;
+  if (!prices.hasLowest('730', hash, 360) && (nowQueue.has(hash) || nowQueue.size < 150)) {
+    nowQueue.set(hash, { appid: '730', hash });
+    clearTimeout(nowTimer);
+    nowTimer = setTimeout(() => {
+      const list = [...nowQueue.values()];
+      nowQueue.clear();
+      prices.lowestPrices(list).then(() => { render(); renderInv(); });
+    }, 1000);
+  }
+  return null;
+}
+/** "dziś 3,20 zł (+12%)", ref is what you got/paid "na rękę"; today's lowest is turned into "na rękę" too */
+function nowCmp(hash, ref, { net = true } = {}) {
+  const low = nowPrice(hash);
+  if (low == null) return '';
+  const today = net ? steam.receivedFromBuyer(low) : low;
+  const d = ref ? (today - ref) / ref : null;
+  const tip = net ? `Najniższa cena dziś: ${steam.fmt(low)} (na rękę po prowizji ${steam.fmt(today)})` : `Najniższa cena dziś: ${steam.fmt(low)}`;
+  return `<div class="sub" title="${esc(tip)}">dziś ${steam.fmt(low)}${d != null && isFinite(d) ? ` <span class="${d >= 0 ? 'pos' : 'neg'}">(${d >= 0 ? '+' : ''}${pct(d, 0)})</span>` : ''}</div>`;
+}
+
+// ---------------------------------------------------------------- P&L chart (optional, zoomable by dragging)
+let chartPts = [];
+let chartZoom = null; // [from, to] timestamps
+const CH = { l: 70, r: 12, W: 1000 }; // must match ui.lineChart padding
+function drawChart() {
+  const box = el?.querySelector('#h-chart');
+  if (!box) return;
+  const on = store.get('histChart', false);
+  el.querySelector('[data-a="chart"]')?.classList.toggle('on', on);
+  if (!on || chartPts.length < 2) { box.innerHTML = on ? '<div class="sub" style="padding:6px 0">Za mało sprzedaży, żeby narysować wykres.</div>' : ''; return; }
+  let p = chartPts;
+  if (chartZoom) {
+    const [a, b] = chartZoom;
+    const before = [...chartPts].reverse().find((x) => x[0] < a);
+    const inside = chartPts.filter((x) => x[0] >= a && x[0] <= b);
+    const lastV = (inside.length ? inside[inside.length - 1] : before)?.[1] ?? 0;
+    p = [[a, before ? before[1] : 0], ...inside, [b, lastV]];
+  }
+  const x0 = p[0][0], x1 = p[p.length - 1][0];
+  const short = x1 - x0 < 3 * 86400000;
+  const endV = chartPts[chartPts.length - 1][1];
+  const delta = chartZoom ? p[p.length - 1][1] - p[0][1] : endV;
+  box.innerHTML = `
+    <div class="sub" style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0 2px">
+      <b style="color:#c6d4df;font-size:13px">Zysk z flipów narastająco</b>
+      <span>${chartZoom ? `tabela i karty pokazują tylko ${new Date(x0).toLocaleDateString()} - ${new Date(x1).toLocaleDateString()}: ` : 'razem: '}<b class="${delta >= 0 ? 'pos' : 'neg'}">${delta >= 0 ? '+' : ''}${steam.fmt(Math.round(delta))}</b></span>
+      <span class="sp" style="flex:1"></span>
+      <span id="h-ch-tip" style="color:#c6d4df"></span>
+      ${chartZoom ? '<button class="b" data-a="chartreset">pokaż całość</button>' : '<span>przeciągnij myszą po wykresie, żeby przybliżyć</span>'}
+    </div>
+    <div id="h-ch-wrap" style="position:relative;cursor:crosshair;user-select:none">
+      ${ui.lineChart([{ points: p, color: endV >= 0 ? '#a4d007' : '#ff6b6b' }], { fmtY: (v) => steam.fmt(Math.round(v)), fmtX: (v) => (short ? new Date(v).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : new Date(v).toLocaleDateString()), height: 180, zero: true })}
+      <div id="h-ch-sel" hidden style="position:absolute;top:0;bottom:22px;background:rgba(102,192,244,.18);border:1px solid rgba(102,192,244,.6);pointer-events:none"></div>
+    </div>`;
+  const wrap = box.querySelector('#h-ch-wrap');
+  const sel = box.querySelector('#h-ch-sel');
+  const tip = box.querySelector('#h-ch-tip');
+  const tAt = (clientX) => {
+    const r = wrap.getBoundingClientRect();
+    const fx = ((clientX - r.left) / r.width) * CH.W;
+    const f = Math.min(1, Math.max(0, (fx - CH.l) / (CH.W - CH.l - CH.r)));
+    return x0 + f * (x1 - x0);
+  };
+  let start = null;
+  wrap.onmousedown = (e) => { if (e.button !== 0) return; start = e.clientX; sel.hidden = true; e.preventDefault(); };
+  wrap.onmousemove = (e) => {
+    const t = tAt(e.clientX);
+    const near = p.reduce((best, x) => (Math.abs(x[0] - t) < Math.abs(best[0] - t) ? x : best), p[0]);
+    tip.innerHTML = `${new Date(near[0]).toLocaleString()} · <b class="${near[1] >= 0 ? 'pos' : 'neg'}">${steam.fmt(Math.round(near[1]))}</b>`;
+    if (start == null) return;
+    const r = wrap.getBoundingClientRect();
+    const a = Math.min(start, e.clientX) - r.left, b = Math.max(start, e.clientX) - r.left;
+    Object.assign(sel.style, { left: a + 'px', width: b - a + 'px' });
+    sel.hidden = b - a < 3;
+  };
+  wrap.onmouseleave = () => { tip.textContent = ''; };
+  const finish = (e) => {
+    if (start == null) return;
+    const s = start; start = null; sel.hidden = true;
+    window.removeEventListener('mouseup', finish);
+    if (Math.abs(e.clientX - s) < 6) return;
+    const a = tAt(Math.min(s, e.clientX)), b = tAt(Math.max(s, e.clientX));
+    if (b - a < 60000) return;
+    chartZoom = [a, b];
+    pages.tx = 0;
+    render(true);
+  };
+  wrap.addEventListener('mousedown', () => window.addEventListener('mouseup', finish));
+  wrap.ondblclick = () => { if (chartZoom) { chartZoom = null; pages.tx = 0; render(true); } };
+}
+
+// ---------------------------------------------------------------- where did each item I own come from, what did it cost
+let originsMemo = null;
+/**
+ * assetid -> { src, t, cost (cents, buyer price / what you gave) | null, detail, wait }
+ * src: 'kupiony' | 'ze skrzyni' | 'z terminala' | 'z wymiany' | 'z kontraktu' | 'drop'
+ */
+export function itemOrigins() {
+  if (originsMemo && Date.now() - originsMemo.at < 60000) return originsMemo.map;
+  const market = marketTimed();
+  const { list: trades } = converted([...market, ...invHistoryTrades(market)]);
+  const bought = buyMatcher(trades.filter((t) => t.type === 'buy').sort((a, b) => a.t - b.t));
+  // drops from cases / terminals with their share of the opening cost
+  const drops = [];
+  try {
+    for (const r of caseOpenings().rows) {
+      const share = r.drops.length ? 1 / r.drops.length : 1;
+      for (const d of r.drops) if (d.hash) drops.push({ t: r.e.t, hash: d.hash, cost: r.caseCost == null || r.unknownPaid ? null : Math.round(r.cost * share), name: (r.caseIt?.name || '').replace(/^Sealed /, ''), terminal: r.terminal, used: false });
+    }
+  } catch { /* history not synced yet */ }
+  const est = (hash, t) => (hash ? estimate('730', hash, t) : null);
+  const acq = [];
+  const newCopies = tradeDeduper();
+  const allEv = ih.all();
+  for (const x of [...allEv].sort((a, b) => a.t - b.t)) {
+    // market events other than a purchase (a cancelled listing returns the item) aren't acquisitions
+    if (x.kind === 'rynek' && !/purchas|bought/i.test(x.desc)) continue;
+    const counts = new Map();
+    for (const i of x.plus) if (i.hash) counts.set(i.hash, (counts.get(i.hash) || 0) + 1);
+    // the same item going out and back in = it was modified (name tag, sticker applied/scraped, …), not acquired:
+    // it keeps its original origin
+    if (x.kind !== 'wymiana') for (const i of x.minus) if (i.hash && counts.get(i.hash) > 0) counts.set(i.hash, counts.get(i.hash) - 1);
+    for (const [hash, n] of counts) {
+      const add = newCopies(x, hash, n);
+      for (let j = 0; j < add; j++) {
+        const d = drops.find((y) => !y.used && y.hash === hash && Math.abs(y.t - x.t) < 5 * 60000);
+        if (d) { d.used = true; acq.push({ t: x.t, hash, src: d.terminal ? 'z terminala' : 'ze skrzyni', detail: d.name, cost: d.cost, wait: d.cost == null }); continue; }
+        if (x.kind === 'rynek') {
+          const p = bought.priceOf(hash, x.t);
+          // no matching row in the market history → the market price of that day
+          const e = p == null ? est(hash, x.t) : null;
+          acq.push({ t: x.t, hash, src: 'kupiony', cost: p ?? e, approx: p == null, wait: p == null && e == null, detail: '' });
+          continue;
+        }
+        if (x.kind === 'wymiana' || x.kind === 'kontrakt') {
+          // cost = what you gave, split over what you got (by market value at that moment).
+          // One trade is often logged as two rows ("You traded with X" + "Traded"), take the fullest of them.
+          const sib = x.kind === 'wymiana' ? allEv.filter((y) => y.kind === 'wymiana' && Math.abs(y.t - x.t) <= 120000) : [x];
+          const outs = sib.reduce((a, y) => (y.minus.length > a.length ? y.minus : a), x.minus);
+          const ins = sib.reduce((a, y) => (y.plus.length > a.length ? y.plus : a), x.plus);
+          const gave = outs.map((i) => est(i.hash, x.t)), got = ins.map((i) => est(i.hash, x.t));
+          const mine = est(hash, x.t);
+          let cost = null;
+          if (!outs.length) cost = 0; // gift
+          else if (gave.every((v) => v != null) && got.every((v) => v != null) && mine != null) {
+            const gs = got.reduce((a, b) => a + b, 0);
+            cost = gs ? Math.round(gave.reduce((a, b) => a + b, 0) * (mine / gs)) : null;
+          }
+          const who = x.partner?.name ? ` od ${x.partner.name}` : '';
+          acq.push({ t: x.t, hash, src: x.kind === 'kontrakt' ? 'z kontraktu' : 'z wymiany', detail: x.kind === 'kontrakt' ? '' : who, cost, wait: cost == null, gave: outs.map((i) => i.name) });
+          continue;
+        }
+        acq.push({ t: x.t, hash, src: 'drop', detail: x.desc, cost: 0 });
+      }
+    }
+  }
+  for (const b of bought.unmatched()) acq.push({ t: b.t, hash: b.hash, src: 'kupiony', cost: b.price, detail: '' });
+  // match the copies you own: trade protection ("Tradable After …") = arrival + 7 days pins the exact one;
+  // otherwise the newest unmatched acquisitions (older copies were the ones sold/traded, FIFO)
+  const map = new Map();
+  const used = new Set();
+  const own = ownedItems();
+  const pick = (it, pred, order = (a, b) => b.t - a.t) => {
+    const pool = acq.filter((x) => !used.has(x) && x.hash === it.hash && pred(x)).sort(order);
+    const got = pool[0];
+    if (got) { used.add(got); map.set(it.assetid, got); }
+    return got;
+  };
+  // a copy under trade protection: the acquisition closest to when it arrived (not just the newest of those days:
+  // a terminal traded in at 23:46 and one bought at 01:24 the next night are 2 hours apart)
+  for (const it of own) {
+    const until = lockUntil(it.lock);
+    if (until) { const at = arrivedAt(until); pick(it, (x) => Math.abs(x.t - at) < 2 * 86400000, (a, b) => Math.abs(a.t - at) - Math.abs(b.t - at)); }
+  }
+  for (const it of own) if (!map.has(it.assetid)) pick(it, () => true);
+  // items on the market have other asset ids → newest acquisition per item not matched above
+  for (const x of [...acq].sort((a, b) => b.t - a.t)) if (!used.has(x) && !map.has('h:' + x.hash)) map.set('h:' + x.hash, x);
+  originsMemo = { at: Date.now(), map };
+  return map;
+}

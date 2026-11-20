@@ -1,0 +1,17 @@
+// ==UserScript==
+// @name         Flipster
+// @namespace    szoggun.flipster
+// @version      __VERSION__
+// @description  Flipster, relist, auto-relist, zlecenia kupna, ekwipunek z cenami i floatem, masowa sprzedaż, historia P&L, analiza flipów i wymian
+// @match        https://steamcommunity.com/*
+// @connect      api.nbp.pl
+// @connect      store.steampowered.com
+// @connect      raw.githubusercontent.com
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_deleteValue
+// @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
+// @run-at       document-idle
+// @noframes
+// ==/UserScript==

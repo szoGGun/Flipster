@@ -1,0 +1,1267 @@
+import * as ui from '../core/ui.js';
+import * as steam from '../core/steam.js';
+import * as prices from '../core/prices.js';
+import * as store from '../core/store.js';
+import { settings } from '../core/store.js';
+import { withLock, token, isLeader } from '../core/jobs.js';
+import { competitorSell, listAdvice, listAdviceFill, sellChance, floatRank, LIST_SHARE } from '../core/analysis.js';
+import * as casedb from './casedb.js';
+import { parsePrice, toInput, esc, icon, matchSearch, lockUntil } from '../core/util.js';
+import { MIN_BUYER } from '../core/fees.js';
+import { sellMany } from './relist-engine.js';
+import * as sig from './sellsignals.js';
+import { itemOrigins } from './history.js';
+import * as research from './research.js';
+
+const APPS = [[730, 2, 'CS2'], [570, 2, 'Dota 2'], [440, 2, 'TF2'], [252490, 2, 'Rust'], [753, 6, 'Steam (karty)']];
+let el;
+let items = [];
+let listed = []; // items currently listed on the market (shown with their own filter)
+let sel = new Set();
+let shown = 200;
+let task = null;
+let app = [730, 2];
+const sellRules = store.bucket('sellRules');
+const invMkMode = () => store.get('invMkMode', 'sell'); // which items to show: 'all' / 'sell' / 'lock' / 'unsell'
+// 📌 "na sprzedaż": items you want to get rid of, a filter of their own, and their offers are re-checked every 10 min
+// with the changes in the log. Keyed by market name: every copy of that skin / wear counts.
+const sellWatch = store.bucket('invSellWatch'); // hash -> {at}
+const watchSeen = new Map(); // hash -> {low, sellNow, sig}: what the last check saw
+let watching = false;
+const wtBtn = (it) => (it.hash && (it.listed || it.marketable || it.lock) ? `<button class="wt ${sellWatch.get(it.hash) ? 'on' : ''}" data-wt="${esc(it.hash)}" title="${sellWatch.get(it.hash) ? 'Na sprzedaż, kliknij, żeby odznaczyć' : 'Oznacz na sprzedaż: filtr „📌 na sprzedaż” i sprawdzanie ofert co 10 minut (zmiany w logu)'}">📌</button>` : '');
+
+const steamOf = (it) => prices.cached(it.appid, it.hash);
+
+// ---------------------------------------------------------------- what to list it at (listAdvice in analysis.js)
+const fmtWait = (d) => (d == null ? '' : d < 1 / 24 ? 'w mniej niż godzinę' : d < 1 ? `w ok. ${Math.round(d * 24)} godz.` : `w ok. ${d.toFixed(1).replace('.', ',')} dnia`);
+const fmtRate = (r) => (r < 10 ? r.toFixed(1).replace('.', ',') : String(Math.round(r)));
+const fmtDays = (n) => (n === 1 ? '1 dzień' : `${n} dni`);
+const pctOf = (c) => `${Math.round(c * 100)}%`;
+/**
+ * from the listings saved at valuation (no request), or from a fresh order book `h` right before listing.
+ * The item's own hour-by-hour record (listAdviceFill) when its price history is in; the queue model otherwise.
+ */
+export function adviceOf(it, h = null) {
+  const s = steamOf(it);
+  const graph = h?.sellGraph || s?.ask;
+  if (!graph?.length) return null;
+  const table = sig.fill(it.hash);
+  if (table) {
+    const a = listAdviceFill({ table, sellGraph: graph, highestBuy: h ? h.highestBuy : s?.bid ?? null, net: (p) => steam.receivedFromBuyer(p), maxWaitDays: settings.maxWaitDays ?? 2, undercut: settings.undercut });
+    if (a) return a;
+  }
+  const typ = sig.typical(it.hash);
+  const perDay = typ?.sold7 ? typ.sold7 / 7 : s?.volume || null;
+  return listAdvice({
+    sellGraph: graph, highestBuy: h ? h.highestBuy : s?.bid ?? null, perDay, d7: typ?.d7, d30: typ?.d30,
+    net: (p) => steam.receivedFromBuyer(p), maxWaitDays: settings.maxWaitDays ?? 2, undercut: settings.undercut,
+  });
+}
+function adviceTitle(a, it) {
+  const f = steam.fmt, L = [];
+  if (a.sellNow && a.instant) {
+    L.push(`Sprzedaj od razu do zlecenia kupna: ${f(a.instant.price)} (na rękę ${f(a.instant.net)}).`);
+    L.push('Czekanie na wyższą cenę dałoby najwyżej ~2% więcej.');
+  } else {
+    L.push(`Wystaw za ${f(a.price)} (na rękę ${f(a.net)}).`);
+    if (a.method === 'fill') L.push(`Szansa, że sprzeda się w ${fmtDays(a.horizon)}: ${pctOf(a.chance)}.`);
+    else if (a.wait != null) L.push(`Powinna zejść ${fmtWait(a.wait)}.`);
+    if (a.instant) L.push(`Od razu do zlecenia kupna: ${f(a.instant.price)}.`);
+  }
+  if (a.falling) L.push('Cena zwykle spada po kilku dniach, nie przeciągaj.');
+  if (it.float != null || it.stickers?.length) L.push('Float i naklejki nie są wliczone.');
+  return L.join('\n');
+}
+function adviceLine(it, lowest) {
+  if (!it.marketable || it.listed) return '';
+  if (sig.signals(it, lowest).some((x) => x.k === 'hold')) return ''; // fees eat ≥ 40%: the card already says keep it
+  const a = adviceOf(it);
+  if (!a) return '';
+  const t = esc(adviceTitle(a, it));
+  return a.sellNow && a.instant
+    ? `<div class="adv now" title="${t}"><span class="lb">⚡ Od razu</span><b>${steam.fmt(a.instant.price)}</b><span class="w">do zlecenia, czekanie da ≤ 2% więcej</span></div>`
+    : `<div class="adv" title="${t}"><span class="lb">Wystaw za</span><b>${steam.fmt(a.price)}</b><span class="w">${a.method === 'fill' ? `szansa w ${fmtDays(a.horizon)}: ${a.lowChance ? 'tylko ' : ''}${pctOf(a.chance)}` : a.wait != null ? `zejdzie ${fmtWait(a.wait)}` : 'brak danych o sprzedaży'}</span></div>`;
+}
+/** unit price (buyer) on the Steam market: the lowest listing ("-" when Steam has none) */
+export function unitPrice(it) {
+  const s = steamOf(it);
+  return s?.lowest ? { v: s.lowest, src: 'steam' } : { v: null, src: null };
+}
+// applied stickers / patches / charms: Steam market price of a new one
+const stickerHash = (x) => `${x.kind} | ${x.name}`;
+const stickerPrice = (x) => prices.cached(730, stickerHash(x))?.lowest || 0;
+const stickerValue = (it) => it.stickers.reduce((s, x) => s + stickerPrice(x), 0);
+
+export function mount(root) {
+  el = root;
+  root.innerHTML = `
+    <div class="bar">
+      <div class="line">
+        <select id="i-app">${APPS.map(([a, c, n]) => `<option value="${a}_${c}">${n}</option>`).join('')}</select>
+        <button class="b" data-a="reload">⟳ Wczytaj</button>
+        <input type="search" id="i-q" placeholder="Szukaj…" style="width:200px">
+        <span class="grp"><span class="lb">Układ</span>
+          <select id="i-sort">
+            <option value="price">Cena ↓</option><option value="name">Nazwa</option><option value="float">Float ↑</option><option value="stickers">Naklejki ↓</option><option value="new">Najnowsze</option>
+          </select>
+          <label class="tgl" title="Łączy identyczne przedmioty (bez floatu, naklejek i name taga, ten sam koszt i stan blokady) w jedną kartę z liczbą sztuk"><input type="checkbox" id="i-grp" checked><span class="tr"></span>Grupuj identyczne</label>
+        </span>
+        <span class="sp"></span>
+        <button class="b" data-a="prices" title="Ceny wyceniają się same po wczytaniu (cache 6 h). Ten przycisk odświeża je od razu, dla zaznaczonych lub, gdy nic nie zaznaczono, dla wszystkich.">Odśwież ceny Steam</button>
+        <button class="b" data-a="research" title="Pobiera z Rynku Steam księgę zleceń i pełną historię cen Twoich przedmiotów (zaznaczonych albo wszystkich) i zapisuje je do pliku, do wspólnej analizy, czy i po ile sprzedawać. Tylko odczyt, niczego nie kupuje ani nie wystawia.">⬇ Dane do analizy</button>
+        <button class="b" data-a="stop" hidden>■ Stop</button>
+      </div>
+      <div class="line">
+        <label class="spot" title="Tylko przedmioty ze znaczkiem „z zyskiem” albo „drogo teraz”, te, które Flipster radzi sprzedać. „Cena spada” jest tylko informacją: w sprawdzeniu na historii cen nie przewidywał dalszych spadków."><input type="checkbox" id="i-worth">💰 Warte sprzedaży <b id="i-worthn"></b></label>
+        <span class="grp"><span class="lb">Pokaż</span>
+          <span class="seg" title="Sprzedawalne: można wystawić teraz (i wystawione). Z blokadą handlu: do sprzedania po odblokowaniu. Niesprzedawalne: nigdy na rynek (medale, odznaki, monety…).">
+            ${[['all', 'Wszystkie'], ['sell', 'Sprzedawalne'], ['lock', 'Z blokadą handlu'], ['unsell', 'Niesprzedawalne']].map(([v, t]) => `<label><input type="radio" name="i-mkmode" value="${v}" ${invMkMode() === v ? 'checked' : ''}>${t}</label>`).join('')}
+          </span>
+          <label class="tgl" title="Pokazuje też przedmioty, które masz wystawione na Rynku Steam"><input type="checkbox" id="i-listed" ${settings.invShowListed ? 'checked' : ''}><span class="tr"></span>Wystawione</label>
+          <label class="tgl" title="Tylko przedmioty oznaczone 📌 na sprzedaż (ich oferty sprawdzam co 10 minut, zmiany widać w logu)"><input type="checkbox" id="i-wt"><span class="tr"></span>📌 Na sprzedaż <b id="i-wtn" class="sub"></b></label>
+        </span>
+      </div>
+    </div>
+    <div class="cards" id="i-cards"></div>
+    <div class="bar" style="top:auto;position:relative;z-index:1">
+      <span id="i-sel" class="sub">Kliknij przedmioty, aby je zaznaczyć. Shift-klik zaznacza zakres.</span>
+      <button class="b s" data-a="selall">zaznacz widoczne</button><button class="b s" data-a="selnone">odznacz</button>
+      <span class="sp"></span>
+      <button class="b go" data-a="sell">Sprzedaj zaznaczone…</button>
+    </div>
+    <div class="grid" id="i-grid"></div>
+    <div style="text-align:center;padding:10px"><button class="b" data-a="more" hidden>Pokaż więcej</button></div>`;
+  root.addEventListener('click', onClick);
+  root.querySelector('#i-app').onchange = (e) => { app = e.target.value.split('_').map(Number); load(); };
+  for (const id of ['#i-q', '#i-sort', '#i-grp', '#i-worth', '#i-wt']) root.querySelector(id).addEventListener('input', () => { shown = 200; render(); });
+  root.querySelectorAll('input[name="i-mkmode"]').forEach((r) => r.addEventListener('change', (e) => { store.set('invMkMode', e.target.value); shown = 200; render(); }));
+  root.querySelector('#i-listed').addEventListener('input', (e) => {
+    settings.invShowListed = e.target.checked;
+    shown = 200;
+    render();
+  });
+  let estT = 0;
+  steam.bus.on('estimated', () => { clearTimeout(estT); estT = setTimeout(() => el && items.length && render(), 1500); });
+  casedb.load().then((d) => { floatDb = d; if (items.length) render(); }).catch(() => {}); // float ranges for the float checker
+  setInterval(watchTick, 10 * 60000); // 📌 "na sprzedaż": offers re-checked every 10 minutes
+  load();
+}
+
+export const show = () => {};
+
+// ---------------------------------------------------------------- float checker
+let floatDb = null; // casedb (float ranges of every skin), loaded once
+/** float ranges loaded (once), for tabs that show floats without the Ekwipunek tab having been opened */
+export async function ensureFloatDb() { if (!floatDb) floatDb = await casedb.load().catch(() => null); return floatDb; }
+/** rank of an item's float inside its wear (analysis.floatRank), null without float / range */
+export const floatRankOf = (it) => rankOf(it);
+/** open the float checker for any item with { float, seed, hash, name, appid } */
+export async function floatCheck(it) { await ensureFloatDb(); return floatDialog(it); }
+
+// floats of the item's listings on the market: { at, n (with float), total, min, max }, filled by the checker and by
+// a background pass over your items that may be extreme; 12 h. 'none': Steam doesn't send listing floats (1 day).
+const mktFloats = store.bucket('mktFloats');
+const MKT_TTL = 12 * 3600000;
+const mktNone = () => Date.now() - (store.get('mktFloatsNone', 0) || 0) < 86400000;
+function saveMkt(hash, withF, total) {
+  if (withF.length) mktFloats.set(hash, { at: Date.now(), n: withF.length, total, min: withF[0].float, max: withF[withF.length - 1].float });
+  else mktFloats.set(hash, { at: Date.now(), n: 0, total });
+}
+/** 'low' = no checked listing has a lower float (best on the market), 'high' = none higher (worst), else null */
+export function marketMark(it) {
+  const m = mktFloats.get(it.hash);
+  if (it.float == null || !m?.n || Date.now() - m.at > MKT_TTL) return null;
+  return it.float <= m.min ? { k: 'low', m } : it.float >= m.max ? { k: 'high', m } : null;
+}
+/** background: market floats for your items whose float may be extreme (lowest / highest 25% of the wear) */
+let floatScanRunning = false;
+async function floatScan(tk) {
+  if (floatScanRunning || mktNone()) return;
+  const own = [...new Map([...items, ...listed].filter((it) => it.float != null && it.hash && (it.marketable || it.lock || it.listed)).map((it) => [it.hash, it])).values()];
+  const todo = own.filter((it) => { const r = rankOf(it); const m = mktFloats.get(it.hash); return r && (r.lower <= 0.25 || r.lower >= 0.75) && !(m && Date.now() - m.at < MKT_TTL); });
+  if (!todo.length) return;
+  floatScanRunning = true;
+  let seen = 0, withAny = 0;
+  try {
+    for (const it of todo) {
+      if (tk?.cancelled) break;
+      const p = await steam.marketListings(it.appid || 730, it.hash, { start: 0, count: 100 });
+      const withF = p.listings.filter((x) => x.float != null).sort((a, b) => a.float - b.float);
+      saveMkt(it.hash, withF, p.total);
+      seen++;
+      if (withF.length) withAny++;
+      // Steam sends no listing floats at all → stop asking (checked again tomorrow)
+      if (seen >= 3 && !withAny) { store.set('mktFloatsNone', Date.now()); break; }
+      if (el) render();
+    }
+  } catch (e) { if (e.status === 429) ui.log('Floaty z rynku: Steam ogranicza zapytania, dokończę później.', 'warn'); }
+  floatScanRunning = false;
+}
+const rankOf = (it) => (it.float != null ? floatRank(it.float, casedb.floatRange(floatDb, it.hash)) : null);
+const pctTxt = (x) => (x < 0.001 ? '<0,1%' : x < 0.01 ? `${(x * 100).toFixed(1).replace('.', ',')}%` : `${Math.round(x * 100)}%`);
+/** ❗ = best / worst 0.1% of the wear (the global ranking, exact); ★ = lower / higher than every checked market listing */
+export function floatMarks(it, r = rankOf(it)) {
+  let out = '';
+  if (r?.super) out += ` <span style="color:#ff6b6b;font-weight:700" title="${r.super === 'low' ? 'Ranking: wyjątkowo niski float, niższy ma najwyżej 1 na 1000 egzemplarzy w tym stanie' : 'Ranking: wyjątkowo wysoki float, wyższy ma najwyżej 1 na 1000 egzemplarzy w tym stanie (najgorszy możliwy; bywa ceniony, np. „max float”)'}">❗</span>`;
+  const mk = marketMark(it);
+  if (mk) out += ` <span style="color:#e5b84c" title="${mk.k === 'low' ? `Rynek: najniższy float wśród ${mk.m.n} sprawdzonych ofert tego przedmiotu (najniższy z nich: ${mk.m.min.toFixed(6)})` : `Rynek: najwyższy float wśród ${mk.m.n} sprawdzonych ofert tego przedmiotu (najwyższy z nich: ${mk.m.max.toFixed(6)})`}">★</span>`;
+  return out;
+}
+/** "0.003035 ❗★ · seed 732": the float is clickable (checker); gold text = lowest 5% of its wear */
+function floatLine(it, key) {
+  const r = rankOf(it);
+  const star = floatMarks(it, r);
+  const title = r ? `Float ${it.float.toFixed(6)}: niższy ma tylko ${pctTxt(r.lower)} wszystkich egzemplarzy w stanie ${r.wear} (zakres tego skina w tym stanie: ${r.lo.toFixed(3)}-${r.hi.toFixed(3)}). Kliknij, żeby porównać z ofertami na rynku.` : 'Kliknij, żeby porównać float z ofertami na rynku.';
+  return `<div class="sub"><span data-fc="${esc(key)}" title="${esc(title)}" style="cursor:pointer;border-bottom:1px dotted currentColor;${r && r.lower <= 0.05 ? 'color:#e5b84c;' : ''}">${it.float.toFixed(6)}</span>${star}${it.seed != null ? ` · seed ${it.seed}` : ''}</div>`;
+}
+
+/**
+ * The checker: rank inside the wear (from Valve's model, no outside data) and the floats of the cheapest listings
+ * of the same item on the Steam market (up to 300): how many are lower, the lowest one and its price, and the
+ * listings closest to yours, what similar floats ask.
+ */
+async function floatDialog(it) {
+  const f = steam.fmt;
+  const r = rankOf(it);
+  const box = (html) => ui.ask('Float na tle rynku', `<div id="fc-body" style="min-width:420px">${html}</div>`, { ok: 'Zamknij', cancel: null, wide: true });
+  const head = `<b>${esc(it.name)}</b> <span class="sub">${esc(it.hash)}</span><br>
+    Twój float: <b>${it.float.toFixed(8)}</b>${it.seed != null ? ` · seed ${it.seed}` : ''}<br>
+    ${r?.super ? `<div style="margin:6px 0;padding:6px 8px;border:1px solid #ff6b6b;border-radius:5px;background:rgba(255,107,107,.08)">❗ <b>${r.super === 'low' ? 'Wyjątkowo niski float' : 'Wyjątkowo wysoki (najgorszy) float'}</b>, ${r.super === 'low' ? 'niższy' : 'wyższy'} ma najwyżej 1 na 1000 egzemplarzy w tym stanie. ${r.super === 'low' ? 'Taki przedmiot może być w światowej czołówce' : 'Najgorsze floaty też mają kolekcjonerów (np. „max float”)'}: zanim go sprzedasz, sprawdź jego miejsce w bazie floatów (np. CSFloat, SIH) i nie wystawiaj go za cenę zwykłego egzemplarza.</div>` : ''}
+    <div class="sub" style="margin:4px 0">Miejsce wśród znanych egzemplarzy (np. „#3 najniższy”) sprawdzisz w bazach floatów: <a class="acc" href="https://sih.app/floats" target="_blank" rel="noopener">SIH</a> · <a class="acc" href="https://www.steamanalyst.com/item-db" target="_blank" rel="noopener">Steam Analyst Item DB</a> · CSFloat, otwierają się w nowej karcie, nic nie wysyłam do nich sam.</div>
+    ${r ? `W stanie ${r.wear} (dla tego skina ${r.lo.toFixed(3)}-${r.hi.toFixed(3)}) niższy float ma tylko <b>${pctTxt(r.lower)}</b> wszystkich egzemplarzy, lepszy jest od <b>${pctTxt(1 - r.lower)}</b>.<br><span class="sub">Valve losuje najpierw stan, potem float równomiernie w jego zakresie, więc to dokładny odsetek, bez zewnętrznych baz. Najniższy możliwy w tym stanie: ${r.best.toFixed(3)}.</span>` : '<span class="sub">Nie znam zakresu floatu tego skina, pokazuję tylko porównanie z rynkiem.</span>'}`;
+  const done = box(`${head}<div id="fc-mk" style="margin-top:10px"><span class="spin"></span>pobieram oferty z rynku…</div>`);
+  const out = () => root().querySelector('#fc-mk');
+  const root = () => document.querySelector('#fc-body') || document.createElement('div');
+  try {
+    const all = [];
+    let total = 0;
+    for (let start = 0; start < 300; start += 100) {
+      const p = await steam.marketListings(it.appid || 730, it.hash, { start, count: 100 });
+      total = p.total;
+      all.push(...p.listings);
+      if (p.listings.length < 100 || all.length >= total) break;
+    }
+    const withF = all.filter((x) => x.float != null).sort((a, b) => a.float - b.float);
+    saveMkt(it.hash, withF, total);
+    if (el) render();
+    if (!out().isConnected) return;
+    if (!withF.length) { out().innerHTML = `<span class="sub">Steam nie podał floatów ofert tego przedmiotu (${all.length} ofert sprawdzonych), porównanie z rynkiem niemożliwe bez zewnętrznych serwisów.</span>`; return; }
+    const lower = withF.filter((x) => x.float < it.float);
+    const near = [...withF].sort((a, b) => Math.abs(a.float - it.float) - Math.abs(b.float - it.float)).slice(0, 6).sort((a, b) => a.float - b.float);
+    const cheapest = all[0]?.price;
+    out().innerHTML = `Na rynku: ${total} ofert, sprawdziłem ${all.length} najtańszych (${withF.length} z floatem).<br>
+      Niższy float od Twojego ma <b>${lower.length}</b> z nich${lower.length ? `, najniższy ${withF[0].float.toFixed(6)} za <b>${f(withF[0].price)}</b>` : ', <b class="ok">masz najniższy float wśród sprawdzonych ofert</b>'}. Najtańsza oferta: ${f(cheapest)}.<br>
+      <table style="margin-top:8px"><tr><th>Float</th><th>Cena</th><th></th></tr>${near.map((x) => `<tr><td>${x.float.toFixed(6)}${x.seed != null ? ` <span class="sub">seed ${x.seed}</span>` : ''}</td><td>${f(x.price)}</td><td class="sub">${x.float < it.float ? 'niższy od Twojego' : 'wyższy od Twojego'}${cheapest && x.price > cheapest * 1.05 ? ` · +${Math.round((x.price / cheapest - 1) * 100)}% ponad najtańszą` : ''}</td></tr>`).join('')}</table>
+      <span class="sub">Oferty z floatem podobnym do Twojego, jeśli wyraźnie drożej niż najtańsza, to tyle kupujący chcą dopłacać za taki float (o ile ktoś je kupuje). Liczą się tylko oferty, które sprawdziłem (najtańsze ${all.length}).</span>`;
+  } catch (e) {
+    if (out().isConnected) out().innerHTML = `<span class="err">${esc(e.message)}</span>`;
+  }
+  await done;
+}
+
+/**
+ * The 📌 items: a fresh order book each (10 min apart), and a log line when something you'd act on changed, the
+ * cheapest listing moved ≥ 5%, a "sell" chip appeared, or selling to the buy orders right away became the best move.
+ * The first check after loading only notes where things stand.
+ */
+async function watchTick() {
+  if (watching || !items.length) return;
+  const own = [...items, ...listed];
+  const list = Object.keys(sellWatch.all()).map((h) => own.find((it) => it.hash === h)).filter(Boolean);
+  if (!list.length) return;
+  watching = true;
+  const f = steam.fmt;
+  try {
+    for (const it of list) {
+      const h = await prices.hist(it.appid, it.hash, 0).catch((e) => { if (e.status === 429) throw e; return null; });
+      if (!h) continue;
+      const a = adviceOf(it, h);
+      const now = { low: h.lowestSell, sellNow: !!a?.sellNow, sig: sig.signals(it, h.lowestSell).filter((x) => x.k === 'high' || x.k === 'profit').map((x) => x.label).join(', ') };
+      const prev = watchSeen.get(it.hash);
+      if (prev) {
+        if (prev.low && now.low && Math.abs(now.low / prev.low - 1) >= 0.05) ui.log(`📌 ${it.name}: najtańsza oferta ${f(prev.low)} → ${f(now.low)} (${now.low > prev.low ? '+' : '−'}${Math.round(Math.abs(now.low / prev.low - 1) * 100)}%)`, now.low > prev.low ? 'ok' : 'warn');
+        if (now.sellNow && !prev.sellNow && a?.instant) ui.log(`📌 ${it.name}: kupujący płacą już ${f(a.instant.price)}, sprzedaż od razu się opłaca`, 'ok');
+        if (now.sig && now.sig !== prev.sig) ui.log(`📌 ${it.name}: ${now.sig}`, 'ok');
+      }
+      watchSeen.set(it.hash, now);
+    }
+  } catch (e) {
+    if (e.status === 429) ui.log('📌 Steam ogranicza zapytania, oznaczone sprawdzę przy następnej rundzie.', 'warn');
+  }
+  watching = false;
+  if (el) render();
+}
+
+/** how many of this item are in the loaded inventory (not listed); null = the inventory wasn't loaded in this tab */
+export const ownedCount = (hash) => (items.length ? items.filter((it) => it.hash === hash).reduce((s, it) => s + (it.amount || 1), 0) : null);
+
+let lastClicked = null;
+function onClick(e) {
+  const fc = e.target.closest('[data-fc]');
+  if (fc) { e.stopPropagation(); const g = groups().find((x) => x.key === fc.dataset.fc); if (g) floatDialog(g.rep); return; }
+  const wt = e.target.closest('[data-wt]');
+  if (wt) {
+    e.stopPropagation();
+    const h = wt.dataset.wt;
+    if (sellWatch.get(h)) { sellWatch.del(h); watchSeen.delete(h); } else { sellWatch.set(h, { at: Date.now() }); watchTick(); }
+    render();
+    return;
+  }
+  const qs = e.target.closest('[data-q]');
+  if (qs) {
+    e.stopPropagation();
+    const k = qs.closest('.gi').dataset.k;
+    if (qs.dataset.q === 'plan') { const g = groups().find((x) => x.key === k); if (g) planDialog(g).catch((er) => ui.log(er.message, 'err')); return; }
+    qs.dataset.q === 'unlist' ? unlist(k) : quickSell(k, qs.dataset.q);
+    return;
+  }
+  const gi = e.target.closest('.gi');
+  if (gi && gi.classList.contains('listed')) return; // listed items aren't selectable for selling
+  if (gi && !e.target.closest('a')) {
+    const k = gi.dataset.k;
+    const vis = visible().map((g) => g.key);
+    if (e.shiftKey && lastClicked) {
+      const [a, b] = [vis.indexOf(lastClicked), vis.indexOf(k)].sort((x, y) => x - y);
+      vis.slice(a, b + 1).forEach((x) => sel.add(x));
+    } else sel.has(k) ? sel.delete(k) : sel.add(k);
+    lastClicked = k;
+    render();
+    return;
+  }
+  const a = e.target.closest('button')?.dataset.a;
+  if (!a) return;
+  ({
+    reload: load,
+    prices: fetchPrices,
+    stop: () => { task?.cancel(); priceTask?.cancel(); },
+    more: () => { shown += 200; render(); },
+    selall: () => { visible().filter((g) => !g.rep.listed).forEach((g) => sel.add(g.key)); render(); },
+    selnone: () => { sel.clear(); render(); },
+    research: () => {
+      // the selected cards, or everything you own that has a market (in the inventory, locked, listed)
+      const gs = sel.size ? groups().filter((g) => sel.has(g.key)) : groups();
+      const list = gs.filter((g) => g.rep.marketable || g.rep.lock || g.rep.listed).map((g) => ({ hash: g.hash, appid: g.rep.appid }));
+      research.exportResearch(list, sel.size ? 'zaznaczonych w ekwipunku' : 'z Twojego ekwipunku (także wystawionych i z blokadą)', { onBusy: (b) => (el.querySelector('[data-a="stop"]').hidden = !b) });
+    },
+    sell: () => sellDialog([...sel].map((k) => groups().find((g) => g.key === k)).filter(Boolean)),
+  })[a]?.();
+}
+
+let loading = false;
+let loadGen = 0; // every load gets a number; a load that was overtaken (game switched meanwhile) drops its result
+const stale = (gen) => gen !== loadGen;
+async function load() {
+  const gen = ++loadGen, a = [...app]; // the game this load is for, fixed for its whole run
+  if (!(await steam.ensureLogin()) && !steam.ctx().steamId) return ui.log('Zaloguj się do Steam.', 'err');
+  if (stale(gen)) return;
+  loading = true;
+  el.querySelector('#i-grid').innerHTML = '<div class="empty" style="padding:60px 0"><span class="spin"></span>Ładowanie ekwipunku…</div>';
+  try {
+    // your listings in parallel (they count towards the total value), but they don't hold the inventory up: that
+    // request is often the one Steam rate-limits for a minute
+    const listedP = loadListed(a, gen);
+    const got = await loadAllContexts(a);
+    if (stale(gen)) return; // another game was picked while this one loaded
+    items = got;
+    items.forEach((it, i) => (it.idx = i));
+    mergeListed(); // dedupe with the listings that are already in (loadListed merges again when it ends)
+    loading = false;
+    sel.clear();
+    ui.log(`Ekwipunek: ${items.length} przedmiotów.`);
+    listedP.then(() => { if (stale(gen)) return; if (listed.length) ui.log(`Ekwipunek: na rynku ${listed.length}.`); render(); if (listed.length) autoPrice(); });
+    render();
+    watchTick(); // 📌 items: where their offers stand now (changes are logged from the next round on)
+    autoPrice();
+  } catch (e) {
+    if (stale(gen)) return;
+    loading = false;
+    el.querySelector('#i-grid').innerHTML = `<div class="empty err">${esc(e.message)}</div>`;
+  }
+}
+
+/**
+ * CS2 keeps listed / trade-protected items in extra inventory contexts (2025+ system).
+ * Load context 2 plus any extra contexts discovered on the inventory page.
+ */
+async function loadAllContexts(a = app) {
+  const main = await steam.inventory(undefined, a[0], a[1]);
+  if (!(a[0] === 730 && a[1] === 2)) return main;
+  // + 16: CS2's trade-protected items (market buys, trades) live there for 7 days, known even when the native
+  // inventory page (where the context list is read from) hasn't been visited yet
+  const extra = [...new Set([...store.get('ctx730', [2]), 16])].filter((c) => c !== 2);
+  const seen = new Set(main.map((i) => i.assetid));
+  for (const c of extra) {
+    try {
+      for (const it of await steam.inventory(undefined, 730, c)) if (!seen.has(it.assetid)) { seen.add(it.assetid); main.push(it); }
+    } catch (e) { console.warn(`[Flipster] kontekst ${c}: ${e.message}`); }
+  }
+  return main;
+}
+
+/** my active market listings for the selected game, as inventory-like items */
+async function loadListed(a = app, gen = loadGen) {
+  try {
+    const { listings } = await steam.myListings();
+    if (stale(gen)) return;
+    listed = listings
+      .filter((l) => +l.appid === a[0] && +l.contextid === a[1])
+      .map((l, i) => ({ ...l.item, listed: true, listingid: l.listingid, listPrice: l.buyer, listRecv: l.recv, listedAt: l.created, amount: l.amount, idx: -1 - i }));
+  } catch (e) {
+    if (stale(gen)) return;
+    listed = [];
+    ui.log('Nie udało się wczytać ofert z rynku: ' + e.message, 'warn');
+  }
+  if (stale(gen)) return;
+  mergeListed();
+}
+
+/**
+ * Listed items are also present in the inventory API (sealed). Merge each listing with its inventory
+ * asset (float, stickers, name tag) and drop the duplicate from `items`.
+ */
+function mergeListed() {
+  const byId = new Map(items.map((i) => [i.assetid, i]));
+  const taken = new Set();
+  listed = listed.map((l) => {
+    // listing asset ids differ from inventory ids → fall back to the same item name among non-sellable items
+    let inv = byId.get(l.assetid);
+    if (!inv) inv = items.find((i) => i.hash === l.hash && !i.marketable && !taken.has(i.assetid));
+    if (inv) taken.add(inv.assetid);
+    const merged = inv ? {
+      ...inv, ...l,
+      float: l.float ?? inv.float, seed: l.seed ?? inv.seed, nameTag: l.nameTag || inv.nameTag,
+      stickers: l.stickers?.length ? l.stickers : inv.stickers,
+    } : l;
+    return steam.recallProps(merged);
+  });
+  const ids = new Set(listed.map((l) => l.assetid));
+  items = items.filter((i) => !ids.has(i.assetid) && !taken.has(i.assetid));
+}
+
+// ---------------------------------------------------------------- automatic valuation
+let pricing = null; // {done, total}
+let priceTask = null;
+const marketableList = () => [...new Map([...items.filter((it) => it.hash && (it.marketable || it.lock)), ...listed].map((it) => [it.hash, it])).values()]
+  .map((it) => ({ appid: it.appid, hash: it.hash, v: steamOf(it)?.lowest || 0 }))
+  .sort((a, b) => b.v - a.v) // most valuable first (by the last known price), so the total is useful early
+  // then the stickers on your skins (for the "naklejki ~" estimate)
+  .concat([...new Set(items.flatMap((it) => (it.stickers || []).map(stickerHash)))].map((hash) => ({ appid: 730, hash, v: 0 })));
+
+/** price everything without a lowest price younger than 6 h, in the background */
+async function autoPrice({ force = false, list = marketableList() } = {}) {
+  priceTask?.cancel();
+  const tk = (priceTask = token());
+  el.querySelector('[data-a="stop"]').hidden = false;
+  let lastRender = 0;
+  const n = await prices.lowestPrices(list, {
+    force,
+    isCancelled: () => tk.cancelled,
+    onEach: (hash, low, err, done, total) => {
+      pricing = { done, total };
+      if (err && err.status !== 429) console.warn('[Flipster]', hash, err.message);
+      if (err?.status === 429) ui.log('Steam ogranicza zapytania, wycenianie wstrzymane, spróbuj za kilka minut.', 'warn');
+      if (Date.now() - lastRender > 1500 || done === total) { lastRender = Date.now(); render(); updateBadges(); }
+    },
+  });
+  if (n && !tk.cancelled) ui.log(`Wyceniono ${n} przedmiotów (ceny Steam).`, 'ok');
+  pricing = null;
+  if (priceTask === tk) el.querySelector('[data-a="stop"]').hidden = true;
+  render();
+  // price histories for the "drogo teraz" / "cena spada" signals (only sellable items worth more than the fees)
+  if (!tk.cancelled) {
+    const want = [...items.filter((it) => (it.marketable || it.lock) && (steamOf(it)?.lowest || 0) >= 20)].map((it) => ({ hash: it.hash, appid: it.appid || 730 }));
+    let last = 0;
+    sig.ensure(want, { isCancelled: () => tk.cancelled, onEach: () => { if (Date.now() - last > 2000) { last = Date.now(); render(); } } }).then(() => { render(); return ensureFloatDb(); }).then(() => floatScan(tk));
+  }
+}
+
+/** the day a lock ends (local), or the raw text when Steam's wording can't be read */
+const lockDay = (it) => { const t = lockUntil(it.lock); if (t == null) return it.lock || 'x'; const d = new Date(t); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
+/**
+ * group identical items (same hash, no float/stickers/name tag), and only those that cost you the same and unlock the
+ * same day (bought at 0,92 and at 1,14, or locked until different days, are different cards); listed items are
+ * grouped separately by price
+ */
+function groups() {
+  const grp = el.querySelector('#i-grp').checked;
+  const out = [];
+  const map = new Map();
+  const all = settings.invShowListed ? [...items, ...listed] : items;
+  for (const it of all) {
+    const unique = it.float != null || it.stickers.length || it.nameTag;
+    const key = it.listed
+      ? (grp && !unique ? `lg:${it.hash}|${it.listPrice}` : 'l:' + it.listingid)
+      : (grp && !unique ? `g:${it.hash}|${originOf(it)?.cost ?? '?'}|${it.marketable ? '' : lockDay(it)}` : 'a:' + it.assetid);
+    let g = map.get(key);
+    if (!g) { g = { key, hash: it.hash, rep: it, items: [], qty: 0 }; map.set(key, g); out.push(g); }
+    g.items.push(it);
+    g.qty += it.amount;
+  }
+  return out;
+}
+
+/** the cards shown with the current filters; worthOnly can be forced (to count what "Warte sprzedaży" would show) */
+function visible(worthOnly = el.querySelector('#i-worth').checked, all = groups()) {
+  const q = el.querySelector('#i-q').value.trim().toLowerCase();
+  const mk = invMkMode(); // sell: can be listed now (or is listed) · unsell: locked or never marketable · all
+  const s = el.querySelector('#i-sort').value;
+  const onlyWt = el.querySelector('#i-wt').checked;
+  // sell: can be listed now (or is listed) · lock: trade-locked for now (sellable when it ends) · unsell: never on the market
+  const kindOf = (g) => (g.rep.marketable || g.rep.listed ? 'sell' : g.rep.lock ? 'lock' : 'unsell');
+  let gs = all.filter((g) => (mk === 'all' || mk === kindOf(g)) && matchSearch(`${g.rep.name} ${g.hash} ${g.rep.nameTag || ''}`, q)
+    && (!onlyWt || sellWatch.get(g.hash))
+    && (!worthOnly || (!g.rep.listed && g.rep.marketable && sig.worth(sig.signals(g.rep, unitPrice(g.rep).v)))));
+  const by = {
+    price: (g) => -(unitPrice(g.rep).v || 0),
+    name: (g) => g.rep.name,
+    float: (g) => g.rep.float ?? 9,
+    stickers: (g) => -stickerValue(g.rep),
+    new: (g) => g.rep.idx,
+  }[s];
+  gs.sort((a, b) => { const x = by(a), y = by(b); return typeof x === 'string' ? x.localeCompare(y) : x - y; });
+  return gs;
+}
+
+// ---------------------------------------------------------------- jump here from another tab (Historia → "w ekwipunku")
+let focus = null; // {hash, cost, t, until}: the item to show after the next render (waits for the inventory to load)
+let hl = null; // {keys:Set, until}: highlighted cards
+/** show the Ekwipunek card(s) of an item: switches the game if needed, makes the filters show it, scrolls to it */
+export function focusItem(hash, { appid = 730, cost = null, t = null } = {}) {
+  focus = { hash, cost, t, until: Date.now() + 30000 };
+  const opt = APPS.find(([a]) => a === appid);
+  if (opt && app[0] !== appid) {
+    app = [opt[0], opt[1]];
+    el.querySelector('#i-app').value = `${opt[0]}_${opt[1]}`;
+    load();
+    return;
+  }
+  if (items.length && !loading) render();
+}
+/** before rendering: the filters relaxed so the item is visible, enough cards shown; → the card key to scroll to */
+function prepFocus() {
+  const f = focus;
+  // one purchase (t) → a card per copy, to show that very one; a whole group of purchases → grouped cards
+  el.querySelector('#i-grp').checked = f.t == null;
+  let mine = groups().filter((g) => g.hash === f.hash);
+  if (!mine.length && !settings.invShowListed && listed.some((l) => l.hash === f.hash)) {
+    settings.invShowListed = true; // only on the market: show listed items
+    el.querySelector('#i-listed').checked = true;
+    mine = groups().filter((g) => g.hash === f.hash);
+  }
+  if (!mine.length) {
+    if (Date.now() > f.until) { focus = null; ui.log(`Ekwipunek: nie znalazłem „${f.hash}”, może już go nie masz.`, 'warn'); }
+    return null;
+  }
+  focus = null;
+  if (!visible().some((g) => g.hash === f.hash)) {
+    // hidden by the filters: search, 📌, "warte sprzedaży", collectibles, sellable / not
+    el.querySelector('#i-q').value = '';
+    el.querySelector('#i-wt').checked = false;
+    el.querySelector('#i-worth').checked = false;
+    if (!visible().some((g) => g.hash === f.hash)) {
+      store.set('invMkMode', 'all');
+      el.querySelectorAll('input[name="i-mkmode"]').forEach((r) => (r.checked = r.value === 'all'));
+    }
+  }
+  const vis = visible();
+  const shownMine = vis.filter((g) => g.hash === f.hash);
+  let best, keys;
+  if (f.t != null) {
+    // one purchase: the copy that came from it (its origin is the acquisition closest in time, same price first)
+    const dist = (g) => { const o = originOf(g.rep); return o?.t == null ? Infinity : Math.abs(o.t - f.t) + (f.cost != null && o.cost !== f.cost ? 86400000 : 0); };
+    best = [...shownMine].sort((a, b) => dist(a) - dist(b))[0];
+    keys = best ? [best.key] : [];
+  } else {
+    // a group of purchases: the cards with that purchase price (all copies of the item if none has it)
+    const same = shownMine.filter((g) => f.cost != null && originOf(g.rep)?.cost === f.cost);
+    keys = (same.length ? same : shownMine).map((g) => g.key);
+    best = (same.length ? same : shownMine)[0];
+  }
+  if (!best) return null;
+  const i = vis.indexOf(best);
+  if (i >= shown) shown = i + 50;
+  hl = { keys: new Set(keys), main: best.key, until: Date.now() + 8000 };
+  setTimeout(() => { if (hl && Date.now() >= hl.until) { hl = null; render(); } }, 8100);
+  return best.key;
+}
+const hlClass = (g) => (hl && Date.now() < hl.until && hl.keys.has(g.key) ? (g.key === hl.main ? 'hl main' : 'hl') : '');
+
+function render() {
+  try { origins = itemOrigins(); } catch (e) { console.warn('[Flipster] źródła przedmiotów', e); }
+  const fx = focus && !loading && items.length ? prepFocus() : null;
+  const all = groups();
+  const vis = visible(undefined, all);
+  const worthN = el.querySelector('#i-worth').checked ? vis.length : visible(true, all).length;
+  el.querySelector('#i-worthn').textContent = worthN || '';
+  el.querySelector('#i-wtn').textContent = new Set([...items, ...listed].filter((it) => sellWatch.get(it.hash)).map((it) => it.hash)).size || '';
+  // totals are computed from the raw data (not from the filtered/grouped view):
+  //  - "Wartość Steam" = everything you own: sellable now + temporarily locked + listed on the market, all at the lowest market price
+  //  - "Do sprzedania teraz" = only items in the inventory that can be listed right now
+  let tAll = 0, tNow = 0, rNow = 0, tLocked = 0, tListedLow = 0; // rNow: received, fee taken per item (min 0,04 + 0,04 zł each)
+  let nNow = 0, nLocked = 0, unpriced = 0;
+  let lCnt = 0, lSum = 0, lRecv = 0, lBeaten = 0;
+  for (const it of items) {
+    if (!it.hash || !(it.marketable || it.lock)) continue; // truly unsellable (medals, coins…) have no market price
+    const low = steamOf(it)?.lowest;
+    if (it.marketable) {
+      nNow += it.amount;
+      if (low) { tNow += low * it.amount; rNow += steam.receivedFromBuyer(low) * it.amount; }
+    } else {
+      nLocked += it.amount;
+      if (low) tLocked += low * it.amount;
+    }
+    if (!low) unpriced += it.amount;
+  }
+  for (const it of listed) {
+    const low = steamOf(it)?.lowest;
+    lCnt += it.amount;
+    lSum += it.listPrice * it.amount;
+    lRecv += it.listRecv * it.amount;
+    if (low != null) {
+      tListedLow += low * it.amount;
+      if (low < it.listPrice) lBeaten += it.amount;
+    } else unpriced += it.amount;
+  }
+  tAll = tNow + tLocked + tListedLow;
+  const parts = [tLocked ? `zablokowane ${steam.fmt(tLocked)}` : '', tListedLow ? `na rynku ${steam.fmt(tListedLow)}` : ''].filter(Boolean).join(' · ');
+  const selG = all.filter((g) => sel.has(g.key));
+  const selVal = selG.reduce((s, g) => s + (unitPrice(g.rep).v || 0) * g.qty, 0);
+  el.querySelector('#i-cards').innerHTML = `
+    <div class="card"><div class="k">Przedmioty</div><div class="v">${items.length + lCnt}</div><div class="sub">do sprzedania ${nNow}${nLocked ? ` · z blokadą ${nLocked}` : ''}${lCnt ? ` · na rynku ${lCnt}` : ''}</div></div>
+    <div class="card"><div class="k">Wartość Steam</div><div class="v">${steam.fmt(tAll)}</div><div class="sub">${pricing ? `<span class="acc">wyceniam ${pricing.done}/${pricing.total}…</span>` : `${parts || 'wszystko w ekwipunku'}${unpriced ? ` · ${unpriced} bez ceny` : ''}`}</div></div>
+    <div class="card"><div class="k">Do sprzedania teraz</div><div class="v">${steam.fmt(tNow)}</div><div class="sub">${nNow} szt. · otrzymasz ~${steam.fmt(rNow)}</div></div>
+    ${lCnt ? `<div class="card"><div class="k">Na rynku</div><div class="v">${steam.fmt(lSum)}</div><div class="sub">${lCnt} szt. · otrzymasz ${steam.fmt(lRecv)}${lBeaten ? ` · <span class="err">${lBeaten} przebite</span>` : ''}</div></div>` : ''}
+    <div class="card"><div class="k">Zaznaczone</div><div class="v">${selG.reduce((s, g) => s + g.qty, 0)}</div><div class="sub">${steam.fmt(selVal)}</div></div>`;
+  el.querySelector('#i-sel').textContent = selG.length ? `Zaznaczono ${selG.length} pozycji (${steam.fmt(selVal)})` : 'Kliknij przedmioty, aby je zaznaczyć. Shift-klik zaznacza zakres.';
+  const grid = el.querySelector('#i-grid');
+  if (!vis.length) { grid.innerHTML = loading ? '<div class="empty" style="padding:60px 0"><span class="spin"></span>Ładowanie ekwipunku…</div>' : `<div class="empty">${items.length || listed.length ? 'Brak przedmiotów w tym widoku, zmień filtry „Pokaż”.' : 'Brak przedmiotów.'}</div>`; return; }
+  grid.innerHTML = vis.slice(0, shown).map(card).join('');
+  el.querySelector('[data-a="more"]').hidden = vis.length <= shown;
+  if (fx) grid.querySelector(`[data-k="${CSS.escape(fx)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+/** "kupiony 12.11.2024 · 2,10 zł", "ze skrzyni Gamma Case · 14,08 zł", "z wymiany od X · ~3,20 zł" */
+let origins = new Map();
+// by asset; listed items (other asset ids while on the market) fall back to the newest acquisition of that item
+const originOf = (it) => origins.get(it.assetid) || origins.get('h:' + it.hash);
+/** what an inventory-history event that just "gave" you an item was (Steam's English description → Polish) */
+function dropLabel(desc = '') {
+  if (/operation|mission|challenge|upgraded|journal|stars/i.test(desc)) return 'z operacji (przepustka / misje)';
+  if (/rank|level|xp|service|medal|earned/i.test(desc)) return 'nagroda za poziom / rangę';
+  if (/gift/i.test(desc)) return 'prezent';
+  if (/store|purchased/i.test(desc)) return 'zakup w sklepie';
+  if (/drop/i.test(desc)) return 'drop';
+  return desc || 'otrzymany';
+}
+// items every player gets with the game: stock weapons (only in the inventory when they got a name tag / sticker)
+// and the default music kits
+const isDefault = (it) => it.rarity === 'Rarity_Default' || /^Music Kit \| Valve, (CS:GO|CS2)$/.test(it.hash || '') || (!it.marketable && !it.lock && it.hash && !it.hash.includes('|') && /^(★ )?(AK-47|M4A4|M4A1-S|AWP|Glock-18|USP-S|P2000|Desert Eagle|Knife|C4 Explosive|Zeus x27|.*Knife)$/.test(it.hash));
+function originLine(g) {
+  if (isDefault(g.rep)) return '<div class="src" title="Domyślny przedmiot, który dostaje każdy gracz (w ekwipunku widać go, gdy ma name tag, naklejkę albo to domyślny music kit)">domyślny przedmiot z gry</div>';
+  const o = originOf(g.rep);
+  if (!o) return '';
+  const date = new Date(o.t).toLocaleDateString();
+  const cost = o.cost != null ? steam.fmt(o.cost) : o.wait ? '…' : '?';
+  const what = o.src === 'drop' ? esc(dropLabel(o.detail)) : `${o.src}${o.detail ? ' ' + esc(o.detail) : ''}`;
+  const title = {
+    kupiony: `Kupiony na rynku ${date} za ${cost}`,
+    'ze skrzyni': `Wypadł ze skrzyni ${o.detail} (${date}). Koszt = skrzynia + klucz: ${cost}`,
+    'z terminala': `Kupiony w terminalu ${o.detail} (${date}). Koszt = terminal + zapłata w grze: ${cost}`,
+    'z wymiany': `Z wymiany${o.detail} (${date}). Koszt = wartość tego, co oddałeś (${(o.gave || []).join(', ') || 'nic, prezent'}) w przeliczeniu na ten przedmiot: ${cost}`,
+    'z kontraktu': `Z kontraktu (${date}). Koszt = wartość oddanych przedmiotów: ${cost}`,
+    drop: `${o.detail} (${date})`,
+  }[o.src] || '';
+  return `<div class="src" title="${esc(title)}">${what}</div>`;
+}
+/** right side of the price row: what this copy cost you, coloured by whether it's worth more now */
+/**
+ * result per unit if sold at buyer price `now`: what you get after the fee − what the item cost you (from Historia;
+ * "ok." when the cost is an estimate). '' when the cost isn't known (yet).
+ */
+function profitOf(g, now) {
+  const o = originOf(g.rep);
+  if (!o || o.cost == null || !now) return null;
+  const net = steam.receivedFromBuyer(now);
+  return { v: net - o.cost, pct: o.cost > 0 ? net / o.cost - 1 : null, approx: !((o.src === 'kupiony' && !o.approx) || o.cost === 0) };
+}
+function profitTag(g, now, what = 'sprzedaży po najniższej cenie') {
+  const p = profitOf(g, now);
+  if (!p) return '';
+  const sign = p.v >= 0 ? '+' : '−';
+  return `<div class="pl ${p.v >= 0 ? 'pos' : 'neg'}" title="Na rękę przy ${what} minus to, ile Cię kosztował${p.approx ? ' (koszt szacunkowy)' : ''}${g.qty > 1 ? ', za sztukę' : ''}"><span class="lb">wynik${p.approx ? ' ok.' : ''}</span><b>${sign}${steam.fmt(Math.abs(p.v))}${p.pct != null ? ` <span class="sub">(${sign}${Math.round(Math.abs(p.pct) * 100)}%)</span>` : ''}</b></div>`;
+}
+
+function costTag(g, now) {
+  const o = originOf(g.rep);
+  if (!o) return '';
+  const free = o.cost === 0;
+  if (o.cost == null) return `<div title="${o.wait ? 'Liczę koszt…' : 'Nie udało się ustalić kosztu'}"><span class="lb">koszt</span><b class="mut">${o.wait ? '…' : '?'}</b></div>`;
+  const net = now ? steam.receivedFromBuyer(now) : null;
+  const cls = free || net == null ? '' : net >= o.cost ? 'pos' : 'neg';
+  return `<div title="Ile Cię kosztował${o.src === 'kupiony' && !o.approx ? '' : o.approx ? ' (szacunkowo, brak tego zakupu w historii transakcji, cena rynkowa z tamtego dnia)' : ' (szacunkowo)'}${net != null && !free ? `; dziś dostałbyś na rękę ${steam.fmt(net)}` : ''}"><span class="lb">koszt${(o.src === 'kupiony' && !o.approx) || free ? '' : ' ok.'}</span><b class="${cls}">${free ? 'za darmo' : steam.fmt(o.cost)}</b></div>`;
+}
+
+/** "Tradable/Marketable After Nov 19, 2026 (8:00:00) GMT" → "19.11 09:00" (local time) */
+function lockDate(lock) {
+  const t = lockUntil(lock);
+  return t == null ? null : new Date(t).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+// storefront: "this item on the market" (a cart would read as "listed for sale", which the 🛒 line already says)
+const SHOP_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.6-5h14.8L21 9"/><path d="M3 9a3 3 0 0 0 6 0a3 3 0 0 0 6 0a3 3 0 0 0 6 0"/><path d="M5 11.6V20h14v-8.4"/><path d="M10 20v-4.5h4V20"/></svg>';
+
+function card(g) {
+  const it = g.rep;
+  const up = unitPrice(it);
+  const st = steamOf(it);
+  const sv = stickerValue(it);
+  const border = it.rarityColor ? `border-bottom-color:#${esc(it.rarityColor)}` : '';
+  // the same item on the market: same wear, StatTrak / Souvenir or not (ui.marketUrl adds the filters Steam's new item pages need)
+  const mk = it.listed || it.marketable || it.lock ? `<a class="mk" href="${esc(ui.marketUrl(it.appid || 730, it.hash))}" target="_blank" rel="noopener" title="${esc(`Pokaż na rynku Steam: ${it.hash}\nTen sam stan zużycia i StatTrak/Souvenir, otwiera się w nowej karcie`)}" aria-label="Pokaż na rynku Steam">${SHOP_ICON}</a>` : '';
+  const nameTag = it.nameTag ?`<div class="sub" style="color:#e5b84c;font-style:italic;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="Name tag: ${esc(it.nameTag)}">🏷 „${esc(it.nameTag)}”</div>` : '';
+  if (it.listed) {
+    const low = st?.lowest;
+    const beaten = low != null && low < it.listPrice;
+    return `<div class="gi listed ${sellWatch.get(it.hash) ? 'mark' : ''} ${hlClass(g)}" data-k="${esc(g.key)}" style="${border}" title="${esc(it.hash)}\nWystawione na rynku, cenę zmienisz w zakładce Rynek → Moje oferty">
+    <div class="qs"><button class="red" data-q="unlist" title="Zdejmij ofertę z rynku, przedmiot wróci do ekwipunku. Najpierw pokażę potwierdzenie.">✕ Zdejmij</button></div>
+    ${mk}${wtBtn(it)}
+    <div class="st">${it.stickers.slice(0, 5).map((s) => `<img src="${esc(s.img)}" title="${esc(s.kind + ': ' + s.name)}">`).join('')}</div>
+    <img class="m" loading="lazy" src="${icon(it.icon, '128fx96f')}">${g.qty > 1 ? `<span class="qty" title="${g.qty} takie same sztuki w tej grupie (ten sam koszt i stan blokady)">×${g.qty}</span>` : ''}
+    <div class="n" style="color:#${esc(it.color || 'c6d4df')}">${esc(it.name)}</div>
+    <div class="meta">${nameTag}${it.float != null ? `<div class="fl"><i style="left:${(it.float * 100).toFixed(1)}%"></i></div>${floatLine(it, g.key)}` : ''}</div>
+    <div class="foot">
+      <div class="sub warn">🛒 na rynku za <b>${steam.fmt(it.listPrice)}</b></div>
+      <div class="sub ${beaten ? 'err' : low != null ? 'ok' : ''}">${low == null ? 'sprawdzam rynek…' : beaten ? `przebita, najniższa ${steam.fmt(low)}` : 'Twoja jest najtańsza'}</div>
+      <div class="pv">
+        <div title="Ile dostaniesz po prowizji przy Twojej cenie wystawienia; pod spodem najniższa cena na rynku"><span class="lb">na rękę</span><b>${steam.fmt(steam.receivedFromBuyer(it.listPrice))}</b><span class="sub">${low != null ? `rynek ${steam.fmt(low)}` : ''}</span></div>
+        ${costTag(g, it.listPrice)}${profitTag(g, it.listPrice, 'sprzedaży po Twojej cenie wystawienia')}
+      </div>
+    </div>
+    <div class="tail">${originLine(g)}</div>
+  </div>`;
+  }
+  const locked = !it.marketable && it.lock;
+  return `<div class="gi ${sel.has(g.key) ? 'sel' : ''} ${locked ? 'locked' : ''} ${sellWatch.get(it.hash) ? 'mark' : ''} ${hlClass(g)}" data-k="${esc(g.key)}" style="${border}" title="${esc(it.hash)}${it.nameTag ? `\nName tag: ${esc(it.nameTag)}` : ''}${it.lock ? '\n' + esc(it.lock) : ''}">
+    ${it.marketable ? `<div class="qs"><button data-q="lowest" title="Wystaw na rynku: okno z proponowaną ceną (ta z ramki „Wystaw za”), najszybszą i własną do wpisania, zobaczysz, ile dostaniesz i jaka jest szansa sprzedaży.">Wystaw</button><button class="g" data-q="instant" title="Sprzedaj od razu do najwyższego zlecenia kupna (zwykle taniej). Najpierw pokażę cenę i potwierdzenie.">⚡ Teraz</button></div>` : locked ? `<div class="qs"><button data-q="plan" title="Wystawię ten przedmiot sam, gdy skończy się blokada handlu">⏰ ${planOf(it.hash) ? 'Zmień plan sprzedaży' : 'Zaplanuj sprzedaż'}</button></div>` : ''}
+    ${mk}${wtBtn(it)}
+    <div class="st">${it.stickers.slice(0, 5).map((s) => `<img src="${esc(s.img)}" title="${esc(s.kind + ': ' + s.name)}">`).join('')}</div>
+    <img class="m" loading="lazy" src="${icon(it.icon, '128fx96f')}">${g.qty > 1 ? `<span class="qty" title="${g.qty} takie same sztuki w tej grupie (ten sam koszt i stan blokady)">×${g.qty}</span>` : ''}
+    <div class="n" style="color:#${esc(it.color || 'c6d4df')}">${esc(it.name)}</div>
+    <div class="meta">${nameTag}${it.float != null ? `<div class="fl"><i style="left:${(it.float * 100).toFixed(1)}%"></i></div>${floatLine(it, g.key)}` : ''}</div>
+    <div class="foot">
+    ${!it.marketable && !it.lock ? '' : `<div class="pv">
+      <div title="${esc(`Na rękę = ile dostaniesz po prowizji Steama. Rynek = najniższa cena na rynku Steam (tyle płaci kupujący)${st?.volume != null ? ` · sprzedaje się ${st.volume} szt./24h` : ''}`)}"><span class="lb">na rękę</span><b>${up.v ? steam.fmt(steam.receivedFromBuyer(up.v)) : '-'}</b><span class="sub">${up.v ? `rynek ${steam.fmt(up.v)}` : ''}</span></div>
+      ${costTag(g, up.v)}${profitTag(g, up.v)}
+    </div>`}
+    ${adviceLine(it, up.v)}
+    </div>
+    <div class="tail">
+    ${originLine(g)}
+    ${sv ? `<div class="sub warn" title="${esc(`Naklejki (cena nowych na rynku):
+${it.stickers.map((x) => `${x.name}: ${stickerPrice(x) ? steam.fmt(stickerPrice(x)) : '?'}`).join('\n')}
+
+Naklejone podnoszą cenę skina zwykle tylko o ułamek tej kwoty (często 5-15%), chyba że to rzadkie naklejki.`)}">naklejki ~${steam.fmt(sv)}</div>` : ''}
+    ${(() => {
+      // never for sale (medals, coins…): just that; trade-locked: the 🔒 chip first, then the same signals
+      if (!it.marketable && !it.lock) return '<div class="sigs"><span class="sig skip" title="Tego przedmiotu nie da się sprzedać na rynku">niesprzedawalny</span></div>';
+      const lockChip = it.marketable ? '' : `<span class="sig skip" title="${esc(it.lock)}">🔒 ${lockDate(it.lock) ? 'do ' + lockDate(it.lock) : 'blokada handlu'}</span>${planChip(it)}`;
+      const lockNote = it.marketable ? '' : '\n\nPrzedmiot ma blokadę handlu: to stan na dziś, sprzedać możesz dopiero po odblokowaniu.';
+      const lowest = up.v;
+      const ss = sig.signals(it, lowest);
+      const hs = sig.histState(it, lowest);
+      const checking = '<span class="sig skip" title="Pobieram historię cen tego przedmiotu: sprawdzę, czy cena nie spada i czy nie jest teraz wyjątkowo wysoko…"><span class="spin" style="width:8px;height:8px;border-width:1.5px;margin-right:4px"></span>sprawdzam</span>';
+      if (ss.length) {
+        // trend checked and nothing to say (no "cena spada" / "drogo teraz"): said in the tooltip of the other chips
+        const calm = hs === 'ok' && !ss.some((x) => x.k === 'fall' || x.k === 'high' || x.k === 'hold') ? '\n\nTrend sprawdzony: cena nie spada i nie jest teraz wyjątkowo wysoko.' : '';
+        return `<div class="sigs">${lockChip}${ss.map((x) => `<span class="sig ${x.k}" title="${esc(x.title + calm + lockNote)}">${esc(x.label)}</span>`).join('')}${hs === 'wait' && !ss.some((x) => x.k === 'hold') ? checking : ''}</div>`;
+      }
+      if (hs === 'wait') return `<div class="sigs">${lockChip}${checking}</div>`;
+      if (hs === 'ok') return `<div class="sigs">${lockChip}<span class="sig hold" title="Cena w normie, nie spada, a nie masz tu zysku względem ceny zakupu, nic nie przemawia za sprzedażą teraz">trzymaj</span></div>`;
+      if (hs === 'none') return `<div class="sigs">${lockChip}<span class="sig skip" title="Steam nie ma historii cen tego przedmiotu (za mało sprzedaży)">brak historii cen</span></div>`;
+      return lockChip ? `<div class="sigs">${lockChip}</div>` : '';
+    })()}
+    </div>
+  </div>`;
+}
+
+/** button: refresh prices now, selected items, or all marketable when nothing is selected */
+async function fetchPrices() {
+  const base = sel.size ? groups().filter((g) => sel.has(g.key)) : groups();
+  const list = [...new Map(base.filter((g) => g.rep.marketable).map((g) => [g.hash, g.rep])).values()].map((it) => ({ appid: it.appid, hash: it.hash }));
+  if (!list.length) return ui.log('Brak sprzedawalnych przedmiotów.', 'warn');
+  ui.log(`Odświeżam ceny Steam dla ${list.length} przedmiotów (~${Math.max(1, Math.ceil((list.length * 1.2) / 60))} min)…`);
+  await autoPrice({ force: true, list });
+}
+
+
+// ---------------------------------------------------------------- selling
+async function priceFor(g, mode, fixed) {
+  const it = g.rep;
+  const rule = sellRules.get(it.hash) || {};
+  if (mode === 'fixed') return { price: fixed, note: '' };
+  if (mode === 'saved') return rule.target != null ? { price: rule.target, note: 'zapisana' } : { price: null, note: 'brak zapisanej ceny' };
+  const h = await prices.hist(it.appid, it.hash);
+  if (mode === 'advice') {
+    const a = adviceOf(it, h);
+    if (!a) return { price: rule.target ?? null, note: 'brak ofert na rynku' };
+    let p = a.price;
+    let note = a.method === 'fill' ? `szansa sprzedaży w ${fmtDays(a.horizon)}: ${pctOf(a.chance)} (z historii przedmiotu)`
+      : !a.rate ? `grosz taniej niż najtańsza (${steam.fmt(a.cheapest)}), brak danych o sprzedaży`
+      : a.ahead ? `powinna zejść ${fmtWait(a.wait)}, ${a.ahead} tańszych ofert przed Tobą`
+        : `grosz taniej niż najtańsza (${steam.fmt(a.cheapest)})`;
+    if (a.sellNow && a.instant) note += ` · od razu do zlecenia dostaniesz prawie tyle samo (${steam.fmt(a.instant.price)})`;
+    if (a.dumped) note += ' · najtańsze oferty są wyraźnie poniżej typowej ceny';
+    if (rule.min != null && p < rule.min) { p = rule.min; note += ', podniesiono do min'; }
+    return { price: p, note };
+  }
+  if (mode === 'instant') {
+    if (!h.highestBuy) return { price: null, note: 'brak zleceń kupna' };
+    return { price: h.highestBuy, note: `najwyższe zlecenie (${h.buyGraph[0]?.[1] ?? '?'} szt.)` };
+  }
+  const comp = competitorSell(h.sellGraph, {}, settings.ignoreBelow ?? 2, sig.skipChooser(g.hash)); // a few cheap listings in front, when waiting for them to go pays
+  if (comp == null) return { price: rule.target ?? null, note: 'brak ofert na rynku' };
+  let p = comp - settings.undercut;
+  let note = `najniższa ${steam.fmt(comp)}`;
+  if (rule.min != null && p < rule.min) { p = rule.min; note += ', podniesiono do min'; }
+  return { price: Math.max(MIN_BUYER, p), note };
+}
+
+/**
+ * "Wystaw": one dialog, the price field starts at the proposal; buttons for the proposal / fastest / sell now / your
+ * saved target fill it in; or type your own. Live: what you get, the price Steam will really show, the chance to sell
+ * (from the item's own record) and warnings (under your minimum, far under the market, at or below a buy order).
+ */
+async function listDialog(g) {
+  const it = g.rep;
+  const rule = sellRules.get(it.hash) || {};
+  const h = await prices.hist(it.appid, it.hash);
+  const a = adviceOf(it, h);
+  const table = sig.fill(it.hash);
+  const N = a?.method === 'fill' ? a.horizon : null;
+  const cheapest = h.lowestSell;
+  const quick = a?.quick ?? (cheapest ? Math.max(MIN_BUYER, cheapest - settings.undercut) : null);
+  const f = steam.fmt;
+  const presets = [];
+  if (a?.sellNow && a.instant) presets.push({ p: a.instant.price, label: 'Proponowana', sub: 'od razu do zlecenia kupna, czekanie się nie opłaca' });
+  else if (a) presets.push({ p: a.price, label: 'Proponowana', sub: a.method === 'fill' ? `szansa w ${fmtDays(N)}: ${pctOf(a.chance)}` : a.wait != null ? `zejdzie ${fmtWait(a.wait)}` : '' });
+  if (quick && quick !== a?.price) presets.push({ p: quick, label: 'Najszybciej', sub: `grosz pod najtańszą (${f(cheapest)})` });
+  if (h.highestBuy && !presets.some((x) => x.p === h.highestBuy)) presets.push({ p: h.highestBuy, label: '⚡ Od razu', sub: 'do najwyższego zlecenia kupna' });
+  if (rule.target != null && !presets.some((x) => x.p === rule.target)) presets.push({ p: rule.target, label: 'Zapisana', sub: 'Twoja cena docelowa' });
+  const ref = unitPrice(it).v || cheapest;
+  const info = (m) => {
+    const box = m.querySelector('#ls-info');
+    const v = parsePrice(m.querySelector('#ls-price').value);
+    if (isNaN(v) || v < MIN_BUYER) { box.innerHTML = 'Wpisz cenę, jaką zapłaci kupujący (np. 1,85), albo kliknij jedną z opcji.'; return; }
+    const recv = steam.receivedFromBuyer(v);
+    const listed = steam.buyerFromReceived(recv); // what Steam will really show
+    const L = [`Dostaniesz <b>${f(recv)}</b>${g.qty > 1 ? ` za sztukę, razem <b>${f(recv * g.qty)}</b>` : ''}`];
+    const pr = profitOf(g, listed);
+    if (pr) L.push(`Wynik względem kosztu${pr.approx ? ' (koszt szacunkowy)' : ''}: <b class="${pr.v >= 0 ? 'ok' : 'err'}">${pr.v >= 0 ? '+' : '−'}${f(Math.abs(pr.v))}${pr.pct != null ? ` (${pr.v >= 0 ? '+' : '−'}${Math.round(Math.abs(pr.pct) * 100)}%)` : ''}</b>${g.qty > 1 ? ' za sztukę' : ''}`);
+    if (listed !== v) L.push(`<span class="warn">${f(v)} nie istnieje na Steamie, oferta stanie jako ${f(listed)}</span>`);
+    const c = table && N ? sellChance(table, N, listed) : null;
+    if (c != null) L.push(`Szansa sprzedaży w ${fmtDays(N)}: <b class="${c >= 0.5 ? 'ok' : c >= 0.25 ? 'warn' : 'err'}">${pctOf(c)}</b> <span class="sub">(z historii przedmiotu)</span>`);
+    if (h.highestBuy && listed <= h.highestBuy) L.push('<span class="warn">Nie więcej niż najwyższe zlecenie kupna, sprzeda się od razu.</span>');
+    else if (quick && listed < quick) L.push(`<span class="warn">Taniej, niż trzeba, żeby być pierwszą ofertą (najtańsza: ${f(cheapest)})</span>`);
+    if (rule.min != null && listed < rule.min) L.push(`<span class="warn">Poniżej Twojego minimum (${f(rule.min)})</span>`);
+    if (ref && listed < ref * 0.75) L.push(`<span class="err">${Math.round((1 - listed / ref) * 100)}% poniżej najniższej ceny na rynku!</span>`);
+    box.innerHTML = L.join('<br>');
+  };
+  const html = `${esc(it.name)}${g.qty > 1 ? ` <b>×${g.qty}</b>` : ''}
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0">${presets.map((x) => `<button class="b" data-set="${x.p}" style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:6px 10px;text-align:left"><span>${x.label}: <b>${f(x.p)}</b></span>${x.sub ? `<span class="sub">${esc(x.sub)}</span>` : ''}</button>`).join('')}</div>
+    <label style="display:flex;align-items:center;gap:8px">Cena (płaci kupujący)<input class="p" id="ls-price" value="${toInput(presets[0]?.p ?? '')}" style="width:90px"></label>
+    <div id="ls-info" class="sub" style="margin-top:8px;min-height:3.6em;line-height:1.5"></div>`;
+  const price = await ui.ask('Wystaw na rynku', html, {
+    ok: 'Wystaw',
+    collect: (m) => parsePrice(m.querySelector('#ls-price').value),
+    onOpen: (m) => {
+      const inp = m.querySelector('#ls-price');
+      inp.addEventListener('input', () => info(m));
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') m.querySelector('[data-r="1"]').click(); });
+      m.querySelectorAll('[data-set]').forEach((b) => b.addEventListener('click', () => { inp.value = toInput(+b.dataset.set); info(m); inp.focus(); }));
+      info(m);
+      inp.focus();
+      inp.select();
+    },
+  });
+  if (price === false) return;
+  if (isNaN(price) || price < MIN_BUYER) return ui.log('Nieprawidłowa cena, nic nie wystawiono.', 'warn');
+  await sell([{ g, price }]);
+}
+
+// ---------------------------------------------------------------- planned sales of trade-locked items
+// hash → { appid, qty, until, mode: 'advice' | 'fixed', price, min, at }: listed once the lock is over (the leader tab
+// checks every minute while any Steam page with Flipster is open); every listing still needs the Steam app confirmation
+const sellPlans = store.bucket('sellPlans');
+const planOf = (hash) => sellPlans.get(hash) || null;
+const fmtWhen = (t) => (t ? new Date(t).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'po odblokowaniu');
+const planChip = (it) => {
+  const p = planOf(it.hash);
+  if (!p) return '';
+  const how = p.mode === 'fixed' ? `za ${steam.fmt(p.price)}` : `po proponowanej cenie${p.min != null ? `, min. ${steam.fmt(p.min)}` : ''}`;
+  return `<span class="sig plan" data-q="plan" title="${esc(`Zaplanowana sprzedaż${p.qty > 1 ? ` ${p.qty} szt.` : ''}: ${fmtWhen(p.until)}, ${how}. Kliknij, żeby zmienić albo usunąć.`)}">⏰ wystawię ${esc(fmtWhen(p.until))}</span>`;
+};
+
+async function planDialog(g) {
+  const it = g.rep, f = steam.fmt;
+  const old = planOf(it.hash);
+  const until = lockUntil(it.lock);
+  const h = await prices.hist(it.appid, it.hash).catch(() => null);
+  const a = adviceOf(it, h);
+  const today = a?.price ?? unitPrice(it).v ?? null;
+  const html = `${esc(it.name)}${g.qty > 1 ? ` <b>×${g.qty}</b>` : ''}
+    <div class="sub" style="margin:4px 0 10px">Blokada do ${esc(fmtWhen(until))}. Wtedy Flipster sam wystawi przedmiot, jeśli będzie otwarta jakaś strona Steama (jeśli nie, przy następnym otwarciu). Ofertę i tak potwierdzasz w aplikacji Steam.</div>
+    <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="pl-m" value="advice" ${old?.mode !== 'fixed' ? 'checked' : ''}> Proponowana cena z dnia odblokowania${today ? ` <span class="sub">(dziś: ${f(today)})</span>` : ''}</label>
+    <label class="sub" style="display:flex;gap:8px;align-items:center;margin:0 0 6px 26px">nie taniej niż <input class="p" id="pl-min" value="${toInput(old?.min ?? null)}" placeholder="bez granicy" style="width:90px"> zł</label>
+    <label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="pl-m" value="fixed" ${old?.mode === 'fixed' ? 'checked' : ''}> Stała cena <input class="p" id="pl-price" value="${toInput(old?.price ?? today ?? null)}" style="width:80px"> zł <span class="sub">(płaci kupujący)</span></label>
+    ${g.qty > 1 ? `<label style="display:flex;gap:8px;align-items:center;margin:10px 0 0">Ile sztuk <input type="number" id="pl-qty" min="1" max="${g.qty}" value="${Math.min(old?.qty ?? g.qty, g.qty)}" style="width:70px"> z ${g.qty}</label>` : ''}
+    ${old ? '<label style="display:flex;gap:8px;align-items:center;margin:12px 0 0"><input type="checkbox" id="pl-del"> Usuń ten plan</label>' : ''}`;
+  const r = await ui.ask(old ? 'Plan sprzedaży' : 'Zaplanuj sprzedaż', html, {
+    ok: old ? 'Zapisz' : 'Zaplanuj',
+    collect: (m) => ({
+      del: !!m.querySelector('#pl-del')?.checked,
+      mode: m.querySelector('input[name="pl-m"]:checked')?.value || 'advice',
+      min: parsePrice(m.querySelector('#pl-min').value),
+      price: parsePrice(m.querySelector('#pl-price').value),
+      qty: Math.max(1, Math.min(g.qty, parseInt(m.querySelector('#pl-qty')?.value, 10) || g.qty)),
+    }),
+    onOpen: (m) => {
+      // typing a price picks its option
+      m.querySelector('#pl-price').addEventListener('input', () => { m.querySelector('input[value="fixed"]').checked = true; });
+      m.querySelector('#pl-min').addEventListener('input', () => { m.querySelector('input[value="advice"]').checked = true; });
+    },
+  });
+  if (!r) return;
+  if (r.del) { sellPlans.del(it.hash); ui.log(`Plan sprzedaży usunięty: ${it.hash}`); render(); return; }
+  if (r.mode === 'fixed' && (isNaN(r.price) || r.price < MIN_BUYER)) return ui.log('Podaj stałą cenę (np. 1,85), plan nie został zapisany.', 'warn');
+  const min = r.mode === 'advice' && !isNaN(r.min) && r.min >= MIN_BUYER ? r.min : null;
+  sellPlans.set(it.hash, { name: it.name, icon: it.icon, color: it.color, appid: it.appid || 730, qty: r.qty, until, mode: r.mode, price: r.mode === 'fixed' ? r.price : null, min, at: Date.now() });
+  ui.log(`Zaplanowano sprzedaż ${it.hash}${r.qty > 1 ? ` ×${r.qty}` : ''} na ${fmtWhen(until)}: ${r.mode === 'fixed' ? `za ${f(r.price)}` : `po proponowanej cenie${min != null ? `, nie taniej niż ${f(min)}` : ''}`}.`, 'ok');
+  render();
+}
+
+let planBusy = false;
+/** every minute: plans whose lock is over → the sellable copies are listed (only the leader tab, so never twice) */
+async function planTick() {
+  if (planBusy || !isLeader()) return;
+  const due = Object.entries(sellPlans.all()).filter(([, p]) => !p.until || p.until <= Date.now());
+  if (!due.length) return;
+  planBusy = true;
+  let listedAny = false;
+  try {
+    if (!(await steam.ensureLogin())) return;
+    const invs = new Map();
+    for (const [hash, p] of due) {
+      const appid = +p.appid || 730;
+      if (!invs.has(appid)) invs.set(appid, await steam.inventory(undefined, appid, appid === 753 ? 6 : 2).catch(() => null));
+      const inv = invs.get(appid);
+      if (!inv) continue;
+      const copies = inv.filter((i) => i.hash === hash && i.marketable).slice(0, p.qty || 1);
+      if (!copies.length) {
+        // the lock ended but nothing to sell (not moved yet, or the item is gone): keep trying for 3 days
+        if (p.until && Date.now() - p.until > 3 * 86400000) { sellPlans.del(hash); ui.log(`Zaplanowana sprzedaż ${hash}: 3 dni po końcu blokady dalej nie ma sprzedawalnej sztuki, plan usunięty.`, 'warn'); }
+        continue;
+      }
+      let price = p.mode === 'fixed' ? p.price : null, note = '';
+      if (p.mode !== 'fixed') {
+        try { await sig.ensure([{ hash, appid }]); } catch { /* the advice works without the history too */ }
+        const h = await prices.hist(appid, hash).catch(() => null);
+        const a = h ? adviceOf(copies[0], h) : null;
+        price = a?.price ?? p.min ?? null;
+        if (p.min != null && price < p.min) { price = p.min; note = ' (podniesione do Twojego minimum)'; }
+      }
+      if (price == null || price < MIN_BUYER) {
+        if (!p.warnAt || Date.now() - p.warnAt > 30 * 60000) { sellPlans.set(hash, { ...p, warnAt: Date.now() }); ui.log(`Zaplanowana sprzedaż ${hash}: brak ceny z rynku, spróbuję ponownie.`, 'warn'); }
+        continue;
+      }
+      sellPlans.del(hash); // before listing: another round mustn't list the same copies again
+      const r = await sellMany(copies.map((item) => ({ item, price, amount: 1 })), { log: (m, c) => ui.log(`Zaplanowana sprzedaż: ${m}`, c) });
+      ui.log(`Zaplanowana sprzedaż ${hash}: wystawiono ${r.ok} z ${copies.length} za ${steam.fmt(price)}${note}${r.confirm ? ', potwierdź w aplikacji Steam' : ''}.`, r.ok ? 'ok' : 'err');
+      if (r.ok) listedAny = true;
+      else sellPlans.set(hash, p); // nothing listed: the plan stays for the next round
+    }
+  } catch (e) {
+    ui.log(`Zaplanowana sprzedaż: ${e.message}`, 'warn');
+  } finally { planBusy = false; }
+  if (listedAny && el) load(); // the Ekwipunek tab shows the new state
+}
+/** started once from main: the plans run whether or not the Ekwipunek tab was opened */
+export function startSellPlans() {
+  setTimeout(planTick, 20000);
+  setInterval(planTick, 60000);
+}
+
+async function quickSell(key, mode) {
+  const g = groups().find((x) => x.key === key);
+  if (!g) return;
+  try {
+    if (mode !== 'instant') return await listDialog(g);
+    const { price, note } = await priceFor(g, 'instant');
+    if (!price) return ui.log(`${g.hash}: ${note}`, 'warn');
+    const recv = steam.receivedFromBuyer(price);
+    const ref = unitPrice(g.rep).v;
+    const warn = ref && price < ref * 0.75 ? `<br><span class="err">Uwaga: ${Math.round((1 - price / ref) * 100)}% poniżej najniższej ceny!</span>` : '';
+    const ok = await ui.ask(mode === 'instant' ? 'Sprzedaj natychmiast' : 'Szybka sprzedaż',
+      `${esc(g.rep.name)}${g.qty > 1 ? ` ×${g.qty}` : ''}<br>Cena: <b>${steam.fmt(price)}</b> (${esc(note)})<br>Otrzymasz: <b>${steam.fmt(recv * g.qty)}</b>${warn}`, { ok: 'Wystaw' });
+    if (!ok) return;
+    await sell([{ g, price }]);
+  } catch (e) { ui.log(`${g.hash}: ${e.message}`, 'err'); }
+}
+
+async function sellDialog(gs) {
+  gs = gs.filter((g) => g.rep.marketable && !g.rep.listed);
+  if (!gs.length) return ui.log('Zaznacz sprzedawalne przedmioty.', 'warn');
+  const okMode = await ui.ask('Masowa sprzedaż', `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label><input type="radio" name="sm" value="advice" checked> Proponowana, najwyższa cena, która powinna zejść w ~${settings.maxWaitDays ?? 2} dni („Wystaw za” na kartach)</label>
+      <label><input type="radio" name="sm" value="lowest"> Najniższa cena − podcięcie (${steam.fmt(settings.undercut)}), nie niżej niż zapisane min</label>
+      <label><input type="radio" name="sm" value="instant"> Natychmiast, do najwyższego zlecenia kupna</label>
+      <label><input type="radio" name="sm" value="saved"> Zapisane ceny docelowe</label>
+      <label><input type="radio" name="sm" value="fixed"> Stała cena: <input class="p" id="sm-fixed"></label>
+      <div class="sub">${gs.length} pozycji. W następnym kroku zobaczysz i poprawisz ceny przed wystawieniem.</div>
+    </div>`, {
+    ok: 'Dalej',
+    collect: (m) => ({ mode: m.querySelector('input[name="sm"]:checked')?.value || 'advice', fixed: parsePrice(m.querySelector('#sm-fixed')?.value) }),
+  });
+  if (!okMode) return;
+  const { mode, fixed } = okMode;
+  if (mode === 'fixed' && isNaN(fixed)) return ui.log('Podaj stałą cenę.', 'warn');
+
+  task = token();
+  const plan = [];
+  let i = 0;
+  for (const g of gs) {
+    if (task.cancelled) break;
+    ui.progress(++i, gs.length);
+    try { plan.push({ g, ...(await priceFor(g, mode, fixed)) }); } catch (e) { plan.push({ g, price: null, note: e.message }); if (e.status === 429) break; }
+  }
+  ui.progress(0);
+  const table = `<div style="max-height:50vh;overflow:auto"><table><tr><th>Przedmiot</th><th>Cena</th><th>Otrzymasz</th></tr>${plan.map((p, j) => `
+    <tr><td>${esc(p.g.rep.name)}${p.g.qty > 1 ? ` ×${p.g.qty}` : ''}<div class="sub">${esc(p.note)}</div></td>
+    <td><input class="p" data-j="${j}" value="${toInput(p.price)}"></td><td class="sub">${p.price ? steam.fmt(steam.receivedFromBuyer(p.price) * p.g.qty) : '-'}</td></tr>`).join('')}</table></div>
+    <div class="sub" style="margin-top:8px">Razem (otrzymasz): <b>${steam.fmt(plan.reduce((s, p) => s + (p.price ? steam.receivedFromBuyer(p.price) * p.g.qty : 0), 0))}</b>. Puste pole = pomiń.</div>`;
+  const edited = await ui.ask('Potwierdź ceny', table, {
+    ok: 'Wystaw',
+    wide: true,
+    collect: (m) => [...m.querySelectorAll('input[data-j]')].map((inp) => {
+      const v = inp.value.trim() ? parsePrice(inp.value) : null;
+      return { j: +inp.dataset.j, v: v == null || isNaN(v) ? null : Math.max(MIN_BUYER, v) };
+    }),
+  });
+  if (!edited) return;
+  for (const { j, v } of edited) plan[j].price = v;
+  const final = plan.filter((p) => p.price);
+  const ref = final.filter((p) => { const u = unitPrice(p.g.rep).v; return u && p.price < u * 0.75; });
+  if (ref.length && !(await ui.ask('Uwaga, niskie ceny', `${ref.length} pozycji ma cenę ponad 25% niższą od najniższej ceny rynkowej. Na pewno?`, { ok: 'Tak, wystaw', danger: true }))) return;
+  await sell(final);
+}
+
+async function sell(plan) {
+  const jobs = plan.flatMap(({ g, price }) => g.items.map((it) => ({ item: it, price, amount: it.amount })));
+  task = token();
+  await withLock('sell', async () => {
+    const r = await sellMany(jobs, {
+      log: ui.log,
+      isCancelled: () => task.cancelled,
+      onStatus: () => {},
+    });
+    ui.log(`Sprzedaż: ${r.ok} wystawiono, ${r.failed} błędów.`, r.failed ? 'warn' : 'ok');
+    if (r.confirm) ui.log(`${r.confirm} ofert czeka na potwierdzenie, w aplikacji Steam otwórz Potwierdzenia i kliknij „Potwierdź wszystkie”, żeby zatwierdzić je naraz.`, 'warn');
+  });
+  const sold = new Set(jobs.map((j) => j.item.assetid));
+  items = items.filter((it) => !sold.has(it.assetid));
+  sel.clear();
+  render();
+  // freshly listed items show up as "na rynku"
+  loadListed().then(render);
+}
+
+/** remove a listing (✕ on a listed card); the item returns to the inventory */
+async function unlist(key) {
+  const g = groups().find((x) => x.key === key);
+  if (!g) return;
+  const n = g.items.length;
+  const ok = await ui.ask('Zdjąć z rynku?', `${esc(g.rep.name)}${g.rep.nameTag ? ` („${esc(g.rep.nameTag)}”)` : ''}${n > 1 ? `, ${n} ofert` : ''} za ${steam.fmt(g.rep.listPrice)}.<br>Przedmiot wróci do ekwipunku.`, { ok: 'Zdejmij', danger: true });
+  if (!ok) return;
+  await withLock('unlist', async () => {
+    for (const it of g.items) {
+      const r = await steam.removeListing(it.listingid);
+      ui.log(r.ok ? `Zdjęto z rynku: ${it.name}` : `Nie udało się zdjąć ${it.name} (HTTP ${r.status})`, r.ok ? 'ok' : 'err');
+    }
+  });
+  load(); // reload both inventory (item came back) and listings
+}
+
+// ---------------------------------------------------------------- badges on Steam's native inventory page
+let badgeData = null;
+export async function initBadges() {
+  if (!settings.badges || !/\/inventory\/?/.test(location.pathname)) return;
+  const owner = [...document.scripts].map((s) => s.textContent.match(/UserYou\.SetSteamId\(\s*'(\d{17})'/)).find(Boolean)?.[1]
+    || location.pathname.match(/\/profiles\/(\d{17})/)?.[1]
+    || steam.ctx().steamId;
+  badgeData = new Map(); // filled from page data immediately, then from the API
+  // start observing right away: Steam renders the item grid asynchronously
+  const target = document.getElementById('inventories') || document.body;
+  let pending = false;
+  new MutationObserver(() => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; updateBadges(); });
+  }).observe(target, { childList: true, subtree: true });
+
+  updateBadges();
+
+  if (!owner) return;
+  // CS2 has extra inventory contexts in the 2025+ system (listed / trade-protected items live outside context 2)
+  const contexts = discoverContexts();
+  // full data (float, stickers, name tag) from the inventory API, 10-min cache shared with the panel,
+  // retries because Steam's own page loads the same inventory at the same moment (429)
+  for (const ctxId of contexts) {
+    for (let attempt = 0; attempt < (ctxId === 2 ? 4 : 2); attempt++) {
+      try {
+        const inv = await steam.inventory(owner, 730, ctxId, { maxAgeMin: 10 });
+        for (const i of inv) badgeData.set(i.assetid, i);
+        break;
+      } catch (e) {
+        console.warn(`[Flipster] znaczki, kontekst ${ctxId}: ${e.message}, próba ${attempt + 1}`);
+        if (e.status === 403 || e.status === 400 || e.status === 500) break; // context not accessible
+        await new Promise((r) => setTimeout(r, 15000 * (attempt + 1)));
+      }
+    }
+  }
+  // my own inventory: also show my listing price on listed items
+  if (owner === steam.ctx().steamId) {
+    try {
+      const { listings } = await steam.myListings();
+      badgeListings = new Map(listings.map((l) => [l.assetid, l]));
+      for (const l of listings) if (!badgeData.has(l.assetid)) badgeData.set(l.assetid, steam.recallProps(l.item));
+    } catch (e) { console.warn('[Flipster] znaczki, oferty z rynku', e.message); }
+  }
+  for (const [id, it] of badgeData) badgeData.set(id, steam.recallProps(it));
+  updateBadges();
+  // price everything that has a market: sellable, trade-protected and listed items
+  const list = [...new Map([...badgeData.values()].filter((i) => i.hash).map((i) => [i.hash, { appid: i.appid, hash: i.hash }])).values()];
+  let last = 0;
+  prices.lowestPrices(list, { onEach: () => { if (Date.now() - last > 2000) { last = Date.now(); updateBadges(); } } }).then(updateBadges);
+}
+
+/** CS2 inventory contexts from the page (g_rgAppContextData); remembered for the panel on other pages */
+export function discoverContexts() {
+  let ids = [];
+  try {
+    const w = pageWin();
+    let data = w.g_rgAppContextData;
+    if (!data) {
+      const m = [...document.scripts].map((s) => s.textContent.match(/g_rgAppContextData\s*=\s*(\{[\s\S]*?\});\s*\n/)).find(Boolean);
+      if (m) data = JSON.parse(m[1]);
+    }
+    ids = Object.keys(data?.[730]?.rgContexts || {}).map(Number).filter((n) => n > 0);
+  } catch { /* ignore */ }
+  if (ids.length) store.set('ctx730', ids);
+  else ids = store.get('ctx730', [2]);
+  if (!ids.includes(2)) ids.unshift(2);
+  if (!ids.includes(16)) ids.push(16); // trade-protected items (see loadAllContexts)
+  return [...new Set(ids)].sort((a, b) => (a === 2 ? -1 : b === 2 ? 1 : a - b));
+}
+
+/**
+ * Item data straight from Steam's page, the same objects Steam draws the tiles from
+ * (incl. listed "$" and trade-protected items): g_ActiveInventory.m_rgAssets[assetid], or element.rgItem.
+ */
+const pageWin = () => { try { return typeof unsafeWindow !== 'undefined' ? unsafeWindow : window; } catch { return window; } };
+function pageAsset(node, assetid) {
+  try {
+    const w = pageWin();
+    const ctxId = +node.id.replace(/^item/, '').split('_')[1] || 2;
+    const invs = [w.g_ActiveInventory, w.UserYou?.getInventory?.(730, ctxId), w.UserYou?.getInventory?.(730, 2)].filter(Boolean);
+    for (const inv of [...invs]) if (inv.m_rgChildInventories) invs.push(...Object.values(inv.m_rgChildInventories));
+    for (const inv of invs) {
+      const a = inv.m_rgAssets?.[assetid] || inv.rgInventory?.[assetid];
+      if (a) return a;
+    }
+    const el = w.document?.getElementById?.(node.id);
+    return el?.rgItem || node.rgItem || null;
+  } catch { return null; }
+}
+function fromPage(node, assetid) {
+  const r = pageAsset(node, assetid);
+  if (!r) return null;
+  const d = r.description || r;
+  if (!d.market_hash_name) return null;
+  try {
+    const it = steam.describeItem(
+      { appid: r.appid ?? d.appid ?? 730, contextid: r.contextid ?? '2', assetid, classid: d.classid ?? r.classid, instanceid: d.instanceid ?? r.instanceid, amount: r.amount },
+      d,
+      r.asset_properties || d.asset_properties || [],
+    );
+    queuePricing(it);
+    return steam.recallProps(it);
+  } catch { return null; }
+}
+
+// items discovered on the page that have no price yet → price them in the background (debounced)
+const pricingQueue = new Map();
+let pricingTimer = null;
+function queuePricing(it) {
+  if (!it.hash || prices.hasLowest(it.appid, it.hash, 360)) return;
+  pricingQueue.set(it.hash, { appid: it.appid, hash: it.hash });
+  clearTimeout(pricingTimer);
+  pricingTimer = setTimeout(() => {
+    const list = [...pricingQueue.values()];
+    pricingQueue.clear();
+    let last = 0;
+    prices.lowestPrices(list, { onEach: () => { if (Date.now() - last > 1500) { last = Date.now(); updateBadges(); } } }).then(updateBadges);
+  }, 800);
+}
+
+/** my listing for this tile: by assetid, otherwise by item name (asset ids of listed items can differ) */
+function listingFor(assetid, it) {
+  const byId = badgeListings.get(assetid);
+  if (byId) return byId;
+  if (!it?.hash || it.marketable) return null; // a sellable tile cannot be the listed one
+  const used = new Set([...badgeListingUse.values()]);
+  const prev = badgeListingUse.get(assetid);
+  if (prev) return prev;
+  const l = [...badgeListings.values()].find((x) => x.hash === it.hash && !used.has(x));
+  if (l) badgeListingUse.set(assetid, l);
+  return l || null;
+}
+const badgeListingUse = new Map();
+
+let badgeIds = null; // CSS selector variants for Steam's item elements
+let badgeListings = new Map(); // assetid -> my listing
+const pageTried = new Set();   // assetids already looked up in the page data
+function updateBadges() {
+  if (!badgeData) return;
+  // classic inventory: id="730_2_<assetid>"; be tolerant to an "item" prefix
+  document.querySelectorAll(badgeIds ||= '.item[id^="730_"], .item[id^="item730_"]').forEach((node) => {
+    const assetid = node.id.split('_')[2];
+    let it = badgeData.get(assetid);
+    // API didn't return this tile (listed / trade-protected) or returned it without float → ask the page once
+    if ((!it || !it.hash || it.float == null) && !pageTried.has(assetid)) {
+      const pg = fromPage(node, assetid); // page data may not be loaded yet → retried on the next DOM change
+      if (pg) {
+        pageTried.add(assetid);
+        it = it?.hash ? { ...pg, ...it, float: it.float ?? pg.float, seed: it.seed ?? pg.seed, nameTag: it.nameTag || pg.nameTag } : pg;
+        badgeData.set(assetid, it);
+      }
+    }
+    if (!it) return;
+    let b = node.querySelector('.stt-badge');
+    const up = unitPrice(it);
+    const lst = listingFor(assetid, it) || (it.sealed === 'listed' ? { buyer: null } : null);
+    const fl = `<span class="f">${it.nameTag ? '🏷' : ''}${it.float != null ? it.float.toFixed(3) : ''}</span>`;
+    let html;
+    if (lst) {
+      // listed: lowest market price + float, then my listing price (red when someone is cheaper)
+      const beaten = lst.buyer != null && up.v != null && up.src === 'steam' && up.v < lst.buyer;
+      html = `<span title="najniższa cena na rynku">${up.v ? steam.fmt(up.v) : ''}</span>${fl}<span class="l ${beaten ? 'bad' : ''}">🛒 ${lst.buyer != null ? steam.fmt(lst.buyer) : 'na rynku'}</span>`;
+    } else {
+      if (!up.v && it.float == null && !it.nameTag) return;
+      html = `<span>${up.v ? steam.fmt(up.v) : ''}</span>${fl}`;
+    }
+    if (!b) { b = document.createElement('div'); b.className = 'stt-badge'; node.appendChild(b); }
+    b.classList.toggle('two', !!lst);
+    // Steam draws its own "$" (listed) / lock (trade protected) icon bottom-left, move ours to the top there
+    if (b.innerHTML !== html) b.innerHTML = html;
+  });
+}
