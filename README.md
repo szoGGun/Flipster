@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="src/assets/logo/flipster-horizontal-outline.svg">
+    <img src="src/assets/logo/flipster-horizontal-outline-navy-f.svg" alt="Flipster" width="380">
+  </picture>
+</p>
+
 # Flipster
 
 A Tampermonkey userscript for trading on the Steam Community Market, mostly CS2 items. It runs in your browser on your own Steam session, with no server, no login and no subscription.
