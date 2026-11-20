@@ -1,3 +1,4 @@
+import './lang-pl.js'; // first: labels in Polish
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

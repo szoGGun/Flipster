@@ -1,5 +1,6 @@
 // Pure trading logic (no DOM / network), unit tested in test/analysis.test.js
 import { receivedFromBuyer, buyerFromReceived, MIN_BUYER } from './fees.js';
+import { L } from './i18n.js';
 
 /** cumulative order graph [[price, cumQty], ...] -> [{price, qty}] per level */
 export function levels(graph) {
@@ -87,20 +88,20 @@ export function relistTarget({ current, competitor, rule, snap = null }) {
   if (competitor == null) {
     // nobody else sells, go to max if set, otherwise keep
     const max = rule.max != null && snap ? snap(rule.max, false) : rule.max;
-    if (max != null && rule.raise !== false && current < max) return { price: max, reason: 'brak konkurencji → cena max' };
-    return { price: null, reason: 'brak konkurencji' };
+    if (max != null && rule.raise !== false && current < max) return { price: max, reason: L('no competition, max price', 'brak konkurencji → cena max') };
+    return { price: null, reason: L('no competition', 'brak konkurencji') };
   }
   let target = competitor - undercut;
-  let reason = 'najniższa konkurencja − podcięcie';
-  if (rule.max != null && target > rule.max) { target = rule.max; reason = 'ograniczono do ceny max'; }
-  if (rule.min != null && target < rule.min) { target = rule.min; reason = 'ograniczono do ceny min'; }
+  let reason = L('lowest competitor − undercut', 'najniższa konkurencja − podcięcie');
+  if (rule.max != null && target > rule.max) { target = rule.max; reason = L('capped at the max price', 'ograniczono do ceny max'); }
+  if (rule.min != null && target < rule.min) { target = rule.min; reason = L('raised to the min price', 'ograniczono do ceny min'); }
   target = Math.max(MIN_BUYER, target);
   if (snap) {
     target = snap(target, false);
     if (rule.min != null && target < rule.min) target = snap(rule.min, true); // never under the minimum
   }
-  if (target === current) return { price: null, reason: 'cena optymalna' };
-  if (target > current && rule.raise === false) return { price: null, reason: 'podnoszenie wyłączone' };
+  if (target === current) return { price: null, reason: L('price is optimal', 'cena optymalna') };
+  if (target > current && rule.raise === false) return { price: null, reason: L('raising is off', 'podnoszenie wyłączone') };
   return { price: target, reason };
 }
 
@@ -115,15 +116,15 @@ export function buyOrderTarget({ current, myQty, buyGraph, rule, net = null, min
   const shown = net ? realPrice(current, net) : current;
   const up = (p) => (net ? priceAbove(p - 1, net) : p);
   const comp = competitorBuy(buyGraph, shown, myQty, minQty);
-  if (comp == null) return { price: null, reason: 'brak konkurencji' };
+  if (comp == null) return { price: null, reason: L('no competition', 'brak konkurencji') };
   if (comp >= shown) {
     const t = up(comp + step);
-    if (rule.max != null && t > rule.max) return { price: null, reason: `przebicie (${t}) > max`, outbid: true };
-    return { price: t, reason: 'przebijam' };
+    if (rule.max != null && t > rule.max) return { price: null, reason: L(`outbidding (${t}) > max`, `przebicie (${t}) > max`), outbid: true };
+    return { price: t, reason: L('outbidding', 'przebijam') };
   }
   // we're on top alone
-  if (rule.lower && up(comp + step) < current) return { price: up(comp + step), reason: 'obniżam do 2. miejsca + krok' };
-  return { price: null, reason: 'jesteś najwyżej' };
+  if (rule.lower && up(comp + step) < current) return { price: up(comp + step), reason: L('lowering to 2nd place + step', 'obniżam do 2. miejsca + krok') };
+  return { price: null, reason: L('you are the highest', 'jesteś najwyżej') };
 }
 
 

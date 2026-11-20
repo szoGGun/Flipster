@@ -12,6 +12,7 @@ import { patternFor, patternChip } from './patternmark.js';
 import * as patterndb from './patterndb.js';
 import * as research from './research.js';
 import { floatCheck, floatRankOf, ensureFloatDb, floatMarks, focusItem, adviceOf } from './inventory.js';
+import { L } from '../core/i18n.js';
 
 const rules = store.bucket('sellRules'); // hash -> {min, max, auto, target}
 let rows = [];
@@ -43,28 +44,28 @@ function pendingRows(listings, pending, known, toConfirm) {
 }
 const pendingRow = (r) => `<tr class="pend" style="opacity:.62">
       <td></td>
-      <td>${ui.itemCell({ ...r, sub: `${r.amount > 1 ? `${r.amount} szt. · ` : ''}jeszcze nie na rynku` })}</td>
-      <td><b>${steam.fmt(r.buyer)}</b><div class="sub">dostaniesz ${steam.fmt(r.recv)}</div></td>
-      <td><span class="chipst mid" title="Steam wystawi tę ofertę dopiero po potwierdzeniu w aplikacji mobilnej, do tego czasu kupujący jej nie widzą">⏳ czeka na potwierdzenie</span></td>
-      <td colspan="2"><span class="sub">Potwierdź w aplikacji Steam → Potwierdzenia${r.local ? ' (nowa cena ustawiona we Flipsterze)' : ''}</span></td></tr>`;
+      <td>${ui.itemCell({ ...r, sub: `${r.amount > 1 ? `${r.amount} ${L('pcs', 'szt.')} · ` : ''}${L('not on the market yet', 'jeszcze nie na rynku')}` })}</td>
+      <td><b>${steam.fmt(r.buyer)}</b><div class="sub">${L('you get', 'dostaniesz')} ${steam.fmt(r.recv)}</div></td>
+      <td><span class="chipst mid" title="${L('Steam lists this item only after you confirm it in the mobile app, until then buyers can\'t see it', 'Steam wystawi tę ofertę dopiero po potwierdzeniu w aplikacji mobilnej, do tego czasu kupujący jej nie widzą')}">⏳ ${L('waiting for confirmation', 'czeka na potwierdzenie')}</span></td>
+      <td colspan="2"><span class="sub">${L('Confirm it in the Steam app, under Confirmations', 'Potwierdź w aplikacji Steam → Potwierdzenia')}${r.local ? L(' (new price set in Flipster)', ' (nowa cena ustawiona we Flipsterze)') : ''}</span></td></tr>`;
 // planned sales of trade-locked items (made in Ekwipunek, listed there when the lock ends)
 const sellPlans = store.bucket('sellPlans');
 const planList = () => Object.entries(sellPlans.all()).map(([hash, p]) => ({ ...p, hash, name: p.name || hash, appid: p.appid || 730 }))
   .sort((a, b) => (a.until || Infinity) - (b.until || Infinity));
 const planRow = (p) => `<tr class="plan" style="background:rgba(102,192,244,.04)">
       <td></td>
-      <td>${ui.itemCell({ ...p, sub: `${p.qty > 1 ? `${p.qty} szt. · ` : ''}z blokadą handlu${p.guard ? ' · potem automat' : ''}` })}</td>
-      <td>${p.mode === 'fixed' ? `<b>${steam.fmt(p.price)}</b><div class="sub">dostaniesz ${steam.fmt(steam.receivedFromBuyer(p.price))}</div>` : `<b>proponowana</b><div class="sub">${p.min != null ? `nie taniej niż ${steam.fmt(p.min)}` : 'bez dolnej granicy'}</div>`}</td>
-      <td><span class="chipst" style="color:#66c0f4;border-color:#2a6f9c" title="Gdy skończy się blokada, Flipster sam wystawi ten przedmiot (jeśli będzie otwarta jakaś strona Steama). Ofertę potwierdzasz w aplikacji Steam.">⏰ wystawię ${fmtWhen(p.until)}</span>${planStatus(p)}</td>
+      <td>${ui.itemCell({ ...p, sub: `${p.qty > 1 ? `${p.qty} ${L('pcs', 'szt.')} · ` : ''}${L('trade locked', 'z blokadą handlu')}${p.guard ? L(' · then the automation', ' · potem automat') : ''}` })}</td>
+      <td>${p.mode === 'fixed' ? `<b>${steam.fmt(p.price)}</b><div class="sub">${L('you get', 'dostaniesz')} ${steam.fmt(steam.receivedFromBuyer(p.price))}</div>` : `<b>${L('suggested', 'proponowana')}</b><div class="sub">${p.min != null ? L(`not below ${steam.fmt(p.min)}`, `nie taniej niż ${steam.fmt(p.min)}`) : L('no lower limit', 'bez dolnej granicy')}</div>`}</td>
+      <td><span class="chipst" style="color:#66c0f4;border-color:#2a6f9c" title="${L('When the lock ends, Flipster lists this item by itself (if some Steam page is open). You confirm the listing in the Steam app.', 'Gdy skończy się blokada, Flipster sam wystawi ten przedmiot (jeśli będzie otwarta jakaś strona Steama). Ofertę potwierdzasz w aplikacji Steam.')}">⏰ ${L('I\'ll list it', 'wystawię')} ${fmtWhen(p.until)}</span>${planStatus(p)}</td>
       <td colspan="2"><div class="acts" style="flex-wrap:nowrap;align-items:center">
-        <button class="b" data-a="planedit" data-hash="${esc(p.hash)}" data-app="${p.appid}" title="Plan zmienisz na karcie przedmiotu w Ekwipunku">Zmień w Ekwipunku ↗</button>
-        <button class="b red" data-a="plandel" data-hash="${esc(p.hash)}">Usuń plan</button>
+        <button class="b" data-a="planedit" data-hash="${esc(p.hash)}" data-app="${p.appid}" title="${L('You change the plan on the item card in Inventory', 'Plan zmienisz na karcie przedmiotu w Ekwipunku')}">${L('Change in Inventory', 'Zmień w Ekwipunku')} ↗</button>
+        <button class="b red" data-a="plandel" data-hash="${esc(p.hash)}">${L('Remove plan', 'Usuń plan')}</button>
       </div></td></tr>`;
 const planMarket = new Map(); // hash → order book of a planned item (checked on refresh)
 /** the plan on today's market: the price it would list at, its chance to sell, and a word on whether to change it */
 function planStatus(p) {
   const h = planMarket.get(p.hash);
-  if (!h) return '<div class="sub" style="margin-top:4px">sprawdzam rynek…</div>';
+  if (!h) return L('<div class="sub" style="margin-top:4px">checking the market…</div>', '<div class="sub" style="margin-top:4px">sprawdzam rynek…</div>');
   const f = steam.fmt, N = waitDays(), days = daysTxt(N);
   const table = sig.fill(p.hash);
   const low = h.lowestSell;
@@ -74,15 +75,16 @@ function planStatus(p) {
     price = a?.price ?? p.min ?? null;
     if (p.min != null && price != null && price < p.min) { price = p.min; atMin = true; }
   }
-  if (price == null) return `<div class="sub" style="margin-top:4px">dziś: brak danych z rynku${low ? ` · najtańsza ${f(low)}` : ''}</div>`;
+  const cheapest = low ? ` · ${L('cheapest', 'najtańsza')} ${f(low)}` : '';
+  if (price == null) return `<div class="sub" style="margin-top:4px">${L('today: no market data', 'dziś: brak danych z rynku')}${cheapest}</div>`;
   const c = table ? sellChance(table, N, price, h.sellGraph) : null;
-  const what = p.mode === 'fixed' ? 'Twoja cena' : atMin ? 'Twoje minimum' : 'propozycja';
-  const line = `dziś: ${what} <b>${f(price)}</b>${c != null ? ` · szansa w ${days}: ${Math.round(c * 100)}%` : ''}${low ? ` · najtańsza ${f(low)}` : ''}`;
+  const what = p.mode === 'fixed' ? L('your price', 'Twoja cena') : atMin ? L('your minimum', 'Twoje minimum') : L('suggestion', 'propozycja');
+  const line = `${L('today', 'dziś')}: ${what} <b>${f(price)}</b>${c != null ? ` · ${L(`chance within ${days}`, `szansa w ${days}`)}: ${Math.round(c * 100)}%` : ''}${cheapest}`;
   let verdict;
-  if (h.highestBuy && price <= h.highestBuy) verdict = `<span class="warn">nie wyżej niż zlecenie kupna (${f(h.highestBuy)}), sprzeda się od razu</span>`;
-  else if (c != null && c < 0.25) verdict = `<span class="err">dziś za drogo, małe szanse${atMin || p.mode === 'fixed' ? ', rozważ niższą cenę' : ''}</span>`;
-  else if (c != null && c < 0.5) verdict = `<span class="warn">raczej poczeka dłużej niż ${days}</span>`;
-  else if (c != null) verdict = '<span class="ok">wygląda dobrze</span>';
+  if (h.highestBuy && price <= h.highestBuy) verdict = `<span class="warn">${L(`not above the buy order (${f(h.highestBuy)}), it will sell right away`, `nie wyżej niż zlecenie kupna (${f(h.highestBuy)}), sprzeda się od razu`)}</span>`;
+  else if (c != null && c < 0.25) verdict = `<span class="err">${L('too pricey today, small chance', 'dziś za drogo, małe szanse')}${atMin || p.mode === 'fixed' ? L(', consider a lower price', ', rozważ niższą cenę') : ''}</span>`;
+  else if (c != null && c < 0.5) verdict = `<span class="warn">${L(`will probably wait longer than ${days}`, `raczej poczeka dłużej niż ${days}`)}</span>`;
+  else if (c != null) verdict = `<span class="ok">${L('looks good', 'wygląda dobrze')}</span>`;
   return `<div class="sub" style="margin-top:4px">${line}</div>${verdict ? `<div class="sub">${verdict}</div>` : ''}`;
 }
 async function checkPlans() {
@@ -108,40 +110,40 @@ export function mount(root) {
   el = root;
   root.innerHTML = `
     <div class="bar">
-      <button class="b" data-a="reload" title="Wczytuje oferty i sprawdza ceny konkurencji">⟳ Odśwież</button>
-      <span class="sub" id="l-tick" title="Gdy panel jest otwarty na tej zakładce, oferty i konkurencja odświeżają się same. Co ile minut, ustawisz w ⚙ obok."></span>
+      <button class="b" data-a="reload" title="${L('Loads your listings and checks competitor prices', 'Wczytuje oferty i sprawdza ceny konkurencji')}">⟳ ${L('Refresh', 'Odśwież')}</button>
+      <span class="sub" id="l-tick" title="${L(`While the panel is open on this tab, listings and competition refresh by themselves. How often is set in ⚙ next to it.`, `Gdy panel jest otwarty na tej zakładce, oferty i konkurencja odświeżają się same. Co ile minut, ustawisz w ⚙ obok.`)}"></span>
       <span class="sub" id="l-comp"></span> <span class="sub" id="l-note"></span>
       <span class="sp"></span>
-      <button class="b" data-a="pricepanel" title="Jak liczyć proponowane ceny i konkurencję, co ile odświeżać">⚙ <b id="l-pricesum"></b></button>
-      <button class="b dbg" data-a="research" title="Pobiera z Rynku Steam księgę zleceń i pełną historię cen przedmiotów, które masz wystawione i zapisuje je do pliku, do wspólnej analizy, czy i po ile sprzedawać. Tylko odczyt, niczego nie kupuje ani nie wystawia.">⬇ Dane do analizy</button>
+      <button class="b" data-a="pricepanel" title="${L(`How to calculate suggested prices and competition, how often to refresh`, `Jak liczyć proponowane ceny i konkurencję, co ile odświeżać`)}">⚙ <b id="l-pricesum"></b></button>
+      <button class="b dbg" data-a="research" title="${L('Downloads the order book and the full price history of the items you have listed from the Steam market and saves them to a file, for a joint analysis of whether and at what price to sell. Read only, it buys and lists nothing.', 'Pobiera z Rynku Steam księgę zleceń i pełną historię cen przedmiotów, które masz wystawione i zapisuje je do pliku, do wspólnej analizy, czy i po ile sprzedawać. Tylko odczyt, niczego nie kupuje ani nie wystawia.')}">⬇ ${L('Data for analysis', 'Dane do analizy')}</button>
       <span class="btng">
-        <button class="b" data-a="autotoggle" title="Kliknij, żeby włączyć albo wyłączyć automat. Co kilka minut podcina konkurencję ofertom, przy których w ⚙ zaznaczysz „Automat pilnuje tej oferty” i najniższą cenę."></button>
-        <button class="b" data-a="autopanel" title="Ustawienia automatu: co ile minut, podcięcie, podnoszenie ceny">⚙</button>
+        <button class="b" data-a="autotoggle" title="${L(`Click to turn the automation on or off. Every few minutes it undercuts the competition for listings where you tick "Automation watches this listing" in ⚙ and set a lowest price.`, `Kliknij, żeby włączyć albo wyłączyć automat. Co kilka minut podcina konkurencję ofertom, przy których w ⚙ zaznaczysz „Automat pilnuje tej oferty” i najniższą cenę.`)}"></button>
+        <button class="b" data-a="autopanel" title="${L(`Automation settings: how often, undercut, raising the price`, `Ustawienia automatu: co ile minut, podcięcie, podnoszenie ceny`)}">⚙</button>
       </span>
       <button class="b" data-a="stop" hidden>■ Stop</button>
     </div>
     <div id="l-pricepanel" hidden class="note" style="padding:12px 14px">
       <div style="display:grid;grid-template-columns:max-content max-content 1fr;gap:8px 14px;align-items:center">
-        <b>Czas na sprzedaż</b>
+        <b>${L(`Time to sell`, `Czas na sprzedaż`)}</b>
         <select id="l-wait">${[1, 2, 4, 7].map((d) => `<option value="${d}" ${waitDays() === d ? 'selected' : ''}>${daysTxt(d)}</option>`).join('')}</select>
-        <span class="sub">proponowana cena („Wystaw za”, „Ustaw”) ma się sprzedać w tym czasie</span>
-        <b>Pomijaj oferty poniżej normalnej ceny</b>
+        <span class="sub">${L('the suggested price ("List for", "Set") should sell within this time', 'proponowana cena („Wystaw za”, „Ustaw”) ma się sprzedać w tym czasie')}</span>
+        <b>${L('Skip listings below the normal price', 'Pomijaj oferty poniżej normalnej ceny')}</b>
         <label class="tgl"><input type="checkbox" id="l-ign" ${(settings.ignoreBelow ?? 2) > 1 ? 'checked' : ''}><span class="tr"></span></label>
-        <span class="sub">nie schodzę do nich, jeśli i tak szybko się sprzedadzą</span>
-        <b>Odświeżaj co</b>
+        <span class="sub">${L('I don\'t go down to them if they will sell quickly anyway', 'nie schodzę do nich, jeśli i tak szybko się sprzedadzą')}</span>
+        <b>${L('Refresh every', 'Odświeżaj co')}</b>
         <span><input type="number" id="l-refmin" min="1" max="60" value="${refreshMin()}" style="width:60px"> min</span>
-        <span class="sub">gdy panel jest otwarty na tej zakładce: wczytuję Twoje oferty i sprawdzam konkurencję (częściej = więcej zapytań do Steama)</span>
+        <span class="sub">${L(`while the panel is open on this tab I load your listings and check the competition (more often means more requests to Steam)`, `gdy panel jest otwarty na tej zakładce: wczytuję Twoje oferty i sprawdzam konkurencję (częściej = więcej zapytań do Steama)`)}</span>
       </div>
     </div>
     <div id="l-bulk" class="bar" hidden style="position:static;background:rgba(102,192,244,.06)">
       <span id="l-bulkn"></span>
-      <button class="b" data-a="bulkset">Ustaw proponowane ceny</button>
-      <button class="b red" data-a="remove">Zdejmij</button>
-      <button class="b" data-a="selnone">odznacz</button>
+      <button class="b" data-a="bulkset">${L('Set suggested prices', 'Ustaw proponowane ceny')}</button>
+      <button class="b red" data-a="remove">${L('Remove', 'Zdejmij')}</button>
+      <button class="b" data-a="selnone">${L('deselect', 'odznacz')}</button>
     </div>
     <table><thead><tr>
-      <th style="width:1%"><input type="checkbox" id="l-all" title="zaznacz wszystkie"></th>
-      <th data-sort="name">Przedmiot</th><th data-sort="buyer">Twoja cena</th><th data-sort="comp">Rynek</th><th>Proponowana cena</th><th></th>
+      <th style="width:1%"><input type="checkbox" id="l-all" title="${L(`select all`, `zaznacz wszystkie`)}"></th>
+      <th data-sort="name">${L('Item', 'Przedmiot')}</th><th data-sort="buyer">${L('Your price', 'Twoja cena')}</th><th data-sort="comp">${L('Market', 'Rynek')}</th><th>${L('Suggested price', 'Proponowana cena')}</th><th></th>
     </tr></thead><tbody></tbody></table>`;
 
   root.addEventListener('click', (e) => {
@@ -154,10 +156,10 @@ export function mount(root) {
     if (!a) return;
     const r = btn.dataset.id ? rows.find((x) => x.listingid === btn.dataset.id) : null;
     ({
-      plandel: () => { sellPlans.del(btn.dataset.hash); ui.log(`Plan sprzedaży usunięty: ${btn.dataset.hash}`); render(); },
+      plandel: () => { sellPlans.del(btn.dataset.hash); ui.log(L(`Sale plan removed: ${btn.dataset.hash}`, `Plan sprzedaży usunięty: ${btn.dataset.hash}`)); render(); },
       planedit: () => { ui.show('inv'); focusItem(btn.dataset.hash, { appid: +btn.dataset.app || 730 }); },
       reload: () => { lastComp = 0; refresh(); }, stop: () => { task?.cancel(); research.cancelResearch(); }, 
-      research: () => research.exportResearch([...rows, ...pend].map((x) => ({ hash: x.hash, appid: x.appid })), 'wystawionych przez Ciebie na rynku', { onBusy: (b) => (el.querySelector('[data-a="stop"]').hidden = !b) }),
+      research: () => research.exportResearch([...rows, ...pend].map((x) => ({ hash: x.hash, appid: x.appid })), L('you listed on the market', 'wystawionych przez Ciebie na rynku'), { onBusy: (b) => (el.querySelector('[data-a="stop"]').hidden = !b) }),
       autopanel: autoDialog, autotoggle: () => setAuto(!settings.autoRelist),
       pricepanel: () => { const p = el.querySelector('#l-pricepanel'); p.hidden = !p.hidden; },
       set: () => r && relistOne(r, suggest(r).price), setown: () => r && relistOne(r, r.newBuyer), rm: () => r && removeOne(r),
@@ -168,7 +170,7 @@ export function mount(root) {
   root.querySelector('#l-all').onchange = (e) => { rows.forEach((r) => (r.checked = e.target.checked)); render(); };
   priceSum = () => {
     const n = settings.ignoreBelow ?? 2, d = waitDays();
-    el.querySelector('#l-pricesum').textContent = `sprzedaż w ${daysTxt(d)}${n > 1 ? ' · pomijam zaniżone' : ''} · odświeżanie co ${refreshMin()} min`;
+    el.querySelector('#l-pricesum').textContent = `${L(`sell within ${daysTxt(d)}`, `sprzedaż w ${daysTxt(d)}`)}${n > 1 ? L(' · skipping underpriced', ' · pomijam zaniżone') : ''} · ${L(`refresh every ${refreshMin()} min`, `odświeżanie co ${refreshMin()} min`)}`;
   };
   priceSum();
   autoBtn();
@@ -194,7 +196,7 @@ export const show = () => {};
 /** the automat's main switch (toolbar and dialog show the same state) */
 function setAuto(on) {
   settings.autoRelist = on;
-  ui.log(on ? 'Automat włączony.' : 'Automat wyłączony.', 'ok');
+  ui.log(on ? L('Automation on.', 'Automat włączony.') : L('Automation off.', 'Automat wyłączony.'), 'ok');
   auto.reschedule();
   updateAuto();
   render();
@@ -205,22 +207,22 @@ function autoBtn() {
   if (!b) return;
   const on = !!settings.autoRelist;
   b.classList.toggle('on', on);
-  b.innerHTML = `<i class="adot"></i>Automat: <b>${on ? 'wł.' : 'wył.'}</b>`;
+  b.innerHTML = `<i class="adot"></i>${L('Auto', 'Automat')}: <b>${on ? L('on', 'wł.') : L('off', 'wył.')}</b>`;
 }
 /** ⚙ next to the switch: how often, raising the price, the undercut; every change is saved right away */
 function autoDialog() {
-  ui.ask('Automat', `
+  ui.ask(L('Automation', 'Automat'), `
     <div class="row2" style="padding:0 0 6px">
-      <label>Co ile minut<input type="number" min="2" id="l-every" value="${settings.autoRelistEvery}" style="width:70px"></label>
-      <label title="O tyle taniej od najtańszej innej oferty automat ustawia cenę (i opcja „Najniższa − podcięcie” w oknie Wystaw)">Podcinaj o (zł)<input class="p" id="l-under" value="${toInput(settings.undercut)}" style="width:70px"></label>
+      <label>${L(`Every (minutes)`, `Co ile minut`)}<input type="number" min="2" id="l-every" value="${settings.autoRelistEvery}" style="width:70px"></label>
+      <label title="${L('How much cheaper than the cheapest other listing the automation sets the price (also the “Lowest − undercut” option in the List window)', 'O tyle taniej od najtańszej innej oferty automat ustawia cenę (i opcja „Najniższa − podcięcie” w oknie Wystaw)')}">${L('Undercut by (zł)', 'Podcinaj o (zł)')}<input class="p" id="l-under" value="${toInput(settings.undercut)}" style="width:70px"></label>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;margin-top:12px"><button class="b" id="l-autonow">Sprawdź teraz</button><span class="sub" id="l-autoinfo"></span></div>
-    <div class="sub" style="margin-top:12px;line-height:1.5">Automat włączasz i wyłączasz przyciskiem „Automat” na pasku. Co kilka minut ustawia ofertom cenę o podcięcie niższą od najtańszej konkurencji. Gdy reszta jest droższa, podnosi cenę, ale najwyżej do proponowanej (wyżej przedmiot raczej się nie sprzeda). Obejmuje tylko oferty, przy których w „⚙” zaznaczysz „Automat pilnuje tej oferty” i ustawisz <b>najniższą cenę</b>, poniżej niej nigdy nie zejdzie. Każdą zmianę i tak potwierdzasz w aplikacji Steam.</div>`, {
-    ok: 'Zamknij', cancel: null,
+    <div style="display:flex;gap:8px;align-items:center;margin-top:12px"><button class="b" id="l-autonow">${L(`Check now`, `Sprawdź teraz`)}</button><span class="sub" id="l-autoinfo"></span></div>
+    <div class="sub" style="margin-top:12px;line-height:1.5">${L(`You turn the automation on and off with the "Auto" button on the bar. Every few minutes it sets listings to the undercut below the cheapest competitor. When the rest are pricier, it raises the price, but at most to the suggested one (above it the item would hardly sell). It only touches listings where you tick "Automation watches this listing" in "⚙" and set a <b>lowest price</b>, and it never goes below it. You still confirm every change in the Steam app.`, `Automat włączasz i wyłączasz przyciskiem „Automat” na pasku. Co kilka minut ustawia ofertom cenę o podcięcie niższą od najtańszej konkurencji. Gdy reszta jest droższa, podnosi cenę, ale najwyżej do proponowanej (wyżej przedmiot raczej się nie sprzeda). Obejmuje tylko oferty, przy których w „⚙” zaznaczysz „Automat pilnuje tej oferty” i ustawisz <b>najniższą cenę</b>, poniżej niej nigdy nie zejdzie. Każdą zmianę i tak potwierdzasz w aplikacji Steam.`)}</div>`, {
+    ok: L('Close', 'Zamknij'), cancel: null,
     onOpen: (m) => {
       m.querySelector('#l-every').onchange = (e) => { settings.autoRelistEvery = Math.max(2, +e.target.value || 10); e.target.value = settings.autoRelistEvery; auto.reschedule(); updateAuto(); };
       m.querySelector('#l-under').onchange = (e) => { const v = parsePrice(e.target.value); settings.undercut = isNaN(v) ? 1 : v; e.target.value = toInput(settings.undercut); priceSum(); render(); };
-      m.querySelector('#l-autonow').onclick = () => { auto.runNow(); ui.log('Automat: sprawdzam teraz.'); };
+      m.querySelector('#l-autonow').onclick = () => { auto.runNow(); ui.log(L('Automation: checking now.', 'Automat: sprawdzam teraz.')); };
       updateAuto();
     },
   });
@@ -247,9 +249,13 @@ function onInput(e) {
  * proposed price: one cent (the undercut) below the cheapest other seller, within your min/max, and compared with
  * what the item actually sold for in the last days (if the competition dumps far below that, say so)
  */
-const fmtWait = (d) => (d < 1 / 24 ? 'mniej niż godzinę' : d < 1 ? `ok. ${Math.round(d * 24)} godz.` : `ok. ${d.toFixed(1).replace('.', ',')} dnia`);
+// warnings shared by both ways of suggesting a price
+const NEAR_INSTANT = (r) => L(`you'd get almost the same right away (buy order ${steam.fmt(r.h.highestBuy)})`, `prawie tyle samo dostaniesz od ręki (zlecenie kupna ${steam.fmt(r.h.highestBuy)})`);
+const PLAIN_COPY = () => L('priced like a plain copy, float and stickers aren\'t included', 'cena jak za zwykły egzemplarz, float i naklejki nie są wliczone');
+const fmtWait = (d) => (d < 1 / 24 ? L('less than an hour', 'mniej niż godzinę') : d < 1 ? L(`about ${Math.round(d * 24)} h`, `ok. ${Math.round(d * 24)} godz.`) : L(`about ${d.toFixed(1).replace('.', ',')} days`, `ok. ${d.toFixed(1).replace('.', ',')} dnia`));
 /** "1 tańsza oferta", "3 tańsze oferty", "5 tańszych ofert" */
-const aheadTxt = (n) => (n === 1 ? '1 tańsza oferta' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? `${n} tańsze oferty` : `${n} tańszych ofert`);
+const aheadTxt = (n) => L(n === 1 ? '1 cheaper listing' : `${n} cheaper listings`,
+  n === 1 ? '1 tańsza oferta' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? `${n} tańsze oferty` : `${n} tańszych ofert`);
 /** the sell graph without my own listings (or "one cent under the cheapest" would undercut myself) */
 function othersGraph(r) { return graphWithout(r.h.sellGraph, myPriceMap(r.hash)); }
 /** a cumulative sell graph with my listings (price → how many) taken out */
@@ -281,12 +287,12 @@ function suggest(r) {
     if (fa) {
       price = real(rule.max != null ? Math.min(fa.price, rule.max) : fa.price);
       const days = daysTxt(fa.horizon);
-      why = fa.instantBest ? `sprzedaj od razu do zlecenia kupna (${steam.fmt(fa.price)}), czekanie średnio nie da więcej` : `szansa sprzedaży w ${days}: ${Math.round(fa.chance * 100)}% (z historii przedmiotu z ostatniego miesiąca)`;
-      if (fa.lowChance) warn = 'nawet przy niższej cenie szansa jest poniżej 50%, rynek słabo bierze';
-      if (fa.falling) warn = (warn ? warn + '; ' : '') + 'po kilku dniach cena była zwykle niższa, nie przeciągaj';
-      if (rule.max != null && fa.price > rule.max) warn = (warn ? warn + '; ' : '') + 'ograniczone Twoim maksimum';
-      if (r.h.highestBuy && steam.receivedFromBuyer(price, r.pub) <= steam.receivedFromBuyer(r.h.highestBuy + 1, r.pub)) warn = (warn ? warn + '; ' : '') + `prawie tyle samo dostaniesz od ręki (zlecenie kupna ${steam.fmt(r.h.highestBuy)})`;
-      if (unique) warn = (warn ? warn + '; ' : '') + 'cena jak za zwykły egzemplarz, float i naklejki nie są wliczone';
+      why = fa.instantBest ? L(`sell right away to the buy order (${steam.fmt(fa.price)}), waiting won't give more on average`, `sprzedaj od razu do zlecenia kupna (${steam.fmt(fa.price)}), czekanie średnio nie da więcej`) : L(`chance to sell within ${days}: ${Math.round(fa.chance * 100)}% (from the item's history of the last month)`, `szansa sprzedaży w ${days}: ${Math.round(fa.chance * 100)}% (z historii przedmiotu z ostatniego miesiąca)`);
+      if (fa.lowChance) warn = L('even at a lower price the chance is below 50%, the market is slow', 'nawet przy niższej cenie szansa jest poniżej 50%, rynek słabo bierze');
+      if (fa.falling) warn = (warn ? warn + '; ' : '') + L('after a few days the price was usually lower, don\'t wait too long', 'po kilku dniach cena była zwykle niższa, nie przeciągaj');
+      if (rule.max != null && fa.price > rule.max) warn = (warn ? warn + '; ' : '') + L('limited by your maximum', 'ograniczone Twoim maksimum');
+      if (r.h.highestBuy && steam.receivedFromBuyer(price, r.pub) <= steam.receivedFromBuyer(r.h.highestBuy + 1, r.pub)) warn = (warn ? warn + '; ' : '') + NEAR_INSTANT(r);
+      if (unique) warn = (warn ? warn + '; ' : '') + PLAIN_COPY();
       return { price, why, warn, typ };
     }
   }
@@ -308,27 +314,27 @@ function suggest(r) {
     const rare = sold && sold.total >= 3 && sold.n * 2 < sold.total;
     const rate = perDay >= 1 ? `~${Math.round(perDay)}` : `~${perDay.toFixed(1).replace('.', ',')}`;
     why = rare
-      ? `w ${sold.days} dni po tej cenie lub drożej sprzedano tylko ${sold.n} z ${sold.total} szt.${opt.ahead ? `, przed Tobą ${aheadTxt(opt.ahead)}` : ''}`
-      : `sprzeda się w ${fmtWait(opt.waitDays)}${opt.ahead ? ` (przed Tobą ${aheadTxt(opt.ahead)}, z ofert schodzi ${rate}/dzień)` : ''}`;
-    if (r.comp != null && price > r.comp) why += ` · ${steam.fmt(price - r.comp)} więcej niż najtańsza oferta`;
-    if (falling) warn = 'cena spada, skróciłem czas czekania o połowę';
-    if (opt.belowMin) warn = (warn ? warn + '; ' : '') + 'Twoje minimum jest wyżej niż rynek, może się długo nie sprzedać';
-    if (r.h.highestBuy && steam.receivedFromBuyer(price) <= steam.receivedFromBuyer(r.h.highestBuy + 1)) warn = (warn ? warn + '; ' : '') + `prawie tyle samo dostaniesz od ręki (zlecenie kupna ${steam.fmt(r.h.highestBuy)})`;
-    if (unique) warn = (warn ? warn + '; ' : '') + 'cena jak za zwykły egzemplarz, float i naklejki nie są wliczone';
+      ? L(`in ${sold.days} days only ${sold.n} of ${sold.total} units sold at this price or more${opt.ahead ? `, ${aheadTxt(opt.ahead)} ahead of you` : ''}`, `w ${sold.days} dni po tej cenie lub drożej sprzedano tylko ${sold.n} z ${sold.total} szt.${opt.ahead ? `, przed Tobą ${aheadTxt(opt.ahead)}` : ''}`)
+      : L(`sells in ${fmtWait(opt.waitDays)}${opt.ahead ? ` (${aheadTxt(opt.ahead)} ahead of you, listings go at ${rate}/day)` : ''}`, `sprzeda się w ${fmtWait(opt.waitDays)}${opt.ahead ? ` (przed Tobą ${aheadTxt(opt.ahead)}, z ofert schodzi ${rate}/dzień)` : ''}`);
+    if (r.comp != null && price > r.comp) why += ` · ${L(`${steam.fmt(price - r.comp)} more than the cheapest listing`, `${steam.fmt(price - r.comp)} więcej niż najtańsza oferta`)}`;
+    if (falling) warn = L('the price is falling, I halved the waiting time', 'cena spada, skróciłem czas czekania o połowę');
+    if (opt.belowMin) warn = (warn ? warn + '; ' : '') + L('your minimum is above the market, it may not sell for a long time', 'Twoje minimum jest wyżej niż rynek, może się długo nie sprzedać');
+    if (r.h.highestBuy && steam.receivedFromBuyer(price) <= steam.receivedFromBuyer(r.h.highestBuy + 1)) warn = (warn ? warn + '; ' : '') + NEAR_INSTANT(r);
+    if (unique) warn = (warn ? warn + '; ' : '') + PLAIN_COPY();
     return { price, why, warn, typ };
   }
   if (r.comp != null) {
     const t = relistTarget({ current: -1, competitor: r.comp, rule: { ...rule, undercut: settings.undercut, raise: true }, snap });
     price = t.price;
     const raw = r.comp - settings.undercut;
-    why = rule.min != null && raw < rule.min ? 'Twoje minimum' : rule.max != null && raw > rule.max ? 'Twoje maksimum'
-      : `o ${steam.fmt(r.comp - price)} taniej niż najtańsza konkurencja${r.comp - price > settings.undercut ? ' (bliższej ceny Steam nie pozwala ustawić)' : ''}`;
-    if (typ?.d7 && r.comp < typ.d7 * 0.85) warn = `konkurencja jest ${Math.round((1 - r.comp / typ.d7) * 100)}% poniżej typowej ceny, możesz poczekać`;
+    why = rule.min != null && raw < rule.min ? L('your minimum', 'Twoje minimum') : rule.max != null && raw > rule.max ? L('your maximum', 'Twoje maksimum')
+      : L(`${steam.fmt(r.comp - price)} cheaper than the cheapest competitor`, `o ${steam.fmt(r.comp - price)} taniej niż najtańsza konkurencja`) + (r.comp - price > settings.undercut ? L(' (Steam doesn\'t allow a closer price)', ' (bliższej ceny Steam nie pozwala ustawić)') : '');
+    if (typ?.d7 && r.comp < typ.d7 * 0.85) warn = L(`the competition is ${Math.round((1 - r.comp / typ.d7) * 100)}% below the typical price, you can wait`, `konkurencja jest ${Math.round((1 - r.comp / typ.d7) * 100)}% poniżej typowej ceny, możesz poczekać`);
   } else if (typ?.d7) {
     price = real(rule.max ?? Math.round(typ.d7));
-    why = rule.max != null ? 'nikt inny nie sprzedaje, Twoje maksimum' : 'nikt inny nie sprzedaje, średnia z ostatnich 7 dni';
+    why = rule.max != null ? L('nobody else sells, your maximum', 'nikt inny nie sprzedaje, Twoje maksimum') : L('nobody else sells, the average of the last 7 days', 'nikt inny nie sprzedaje, średnia z ostatnich 7 dni');
   }
-  if (unique && price != null) warn = (warn ? warn + '; ' : '') + 'masz unikalny egzemplarz (float/naklejki), najtańsza oferta może być gorsza od Twojej';
+  if (unique && price != null) warn = (warn ? warn + '; ' : '') + L('you have a unique copy (float/stickers), the cheapest listing may be worse than yours', 'masz unikalny egzemplarz (float/naklejki), najtańsza oferta może być gorsza od Twojej');
   return { price, why, warn, typ };
 }
 
@@ -340,7 +346,7 @@ function suggest(r) {
 function floatSub(r) {
   const it = { float: r.item.float, hash: r.hash };
   const k = floatRankOf(it);
-  const title = k ? `Niższy float ma tylko ${shareTxt(k.lower)} egzemplarzy w stanie ${k.wear}. Kliknij, żeby porównać z ofertami na rynku.` : 'Kliknij, żeby porównać float z ofertami na rynku.';
+  const title = k ? L(`Only ${shareTxt(k.lower)} of copies in ${k.wear} have a lower float. Click to compare with market listings.`, `Niższy float ma tylko ${shareTxt(k.lower)} egzemplarzy w stanie ${k.wear}. Kliknij, żeby porównać z ofertami na rynku.`) : L('Click to compare the float with market listings.', 'Kliknij, żeby porównać float z ofertami na rynku.');
   return `<span data-fl="${esc(r.listingid)}" title="${esc(title)}" style="cursor:pointer;border-bottom:1px dotted currentColor;${k && k.lower <= 0.05 ? 'color:#e5b84c' : ''}">float ${r.item.float.toFixed(4)}</span>${floatMarks(it, k)}${r.item.seed != null ? ` · seed ${r.item.seed} ${patternChip(patternFor(r.hash, r.item.seed))}` : ''}`;
 }
 
@@ -351,17 +357,17 @@ function evalListing(r, s = null) {
   const c = sellChance(t, N, r.buyer, r.h ? othersGraph(r) : null);
   if (c == null) return null;
   const days = daysTxt(N);
-  if (c < 0.25) return { c, days, k: 'high', label: 'za drogo', cls: 'err' };
-  if (c < 0.5) return { c, days, k: 'pricey', label: 'drogo', cls: 'warn' };
-  if (s?.price != null && s.price > r.buyer && c >= 0.9) return { c, days, k: 'cheap', label: 'tanio, możesz więcej', cls: 'warn' };
-  return { c, days, k: 'ok', label: 'w porządku', cls: 'ok' };
+  if (c < 0.25) return { c, days, k: 'high', label: L('too pricey', 'za drogo'), cls: 'err' };
+  if (c < 0.5) return { c, days, k: 'pricey', label: L('pricey', 'drogo'), cls: 'warn' };
+  if (s?.price != null && s.price > r.buyer && c >= 0.9) return { c, days, k: 'cheap', label: L('cheap, you can ask more', 'tanio, możesz więcej'), cls: 'warn' };
+  return { c, days, k: 'ok', label: L('fine', 'w porządku'), cls: 'ok' };
 }
 
 function chip(r) {
-  if (r.comp == null) return r.lowest != null ? '<span class="chipst mut">nikt inny nie sprzedaje</span>' : compRunning ? '<span class="chipst mut">sprawdzam…</span>' : '<span class="chipst mut">-</span>';
-  if (r.comp > r.buyer) return '<span class="chipst ok">najtańsza</span>';
-  if (r.comp === r.buyer) return '<span class="chipst mid">remis</span>';
-  return `<span class="chipst bad">ktoś taniej o ${steam.fmt(r.buyer - r.comp)}</span>`;
+  if (r.comp == null) return r.lowest != null ? `<span class="chipst mut">${L('nobody else sells', 'nikt inny nie sprzedaje')}</span>` : compRunning ? `<span class="chipst mut">${L('checking…', 'sprawdzam…')}</span>` : '<span class="chipst mut">-</span>';
+  if (r.comp > r.buyer) return `<span class="chipst ok">${L('cheapest', 'najtańsza')}</span>`;
+  if (r.comp === r.buyer) return `<span class="chipst mid">${L('tie', 'remis')}</span>`;
+  return `<span class="chipst bad">${L(`someone is ${steam.fmt(r.buyer - r.comp)} cheaper`, `ktoś taniej o ${steam.fmt(r.buyer - r.comp)}`)}</span>`;
 }
 
 function render() {
@@ -375,60 +381,62 @@ function render() {
   pendingRender = false;
   const sel = rows.filter((r) => r.checked);
   el.querySelector('#l-bulk').hidden = !sel.length;
-  el.querySelector('#l-bulkn').textContent = `Zaznaczono ${sel.length}:`;
-  if (!rows.length && !pend.length && !plans.length) { tb.innerHTML = '<tr><td colspan="6" class="empty">Nie masz wystawionych przedmiotów. Wystawiasz je w zakładce Ekwipunek.</td></tr>'; return; }
+  el.querySelector('#l-bulkn').textContent = L(`Selected ${sel.length}:`, `Zaznaczono ${sel.length}:`);
+  if (!rows.length && !pend.length && !plans.length) { tb.innerHTML = L('<tr><td colspan="6" class="empty">You have nothing listed. You list items in the Inventory tab.</td></tr>', '<tr><td colspan="6" class="empty">Nie masz wystawionych przedmiotów. Wystawiasz je w zakładce Ekwipunek.</td></tr>'); return; }
   const sorted = sort.apply([...rows, ...pend], { name: (r) => r.name, buyer: (r) => r.buyer, comp: (r) => (r.comp == null ? null : r.comp - r.buyer) });
   tb.innerHTML = sorted.map((r) => {
     if (r.pending) return pendingRow(r);
     const rule = r.rule || {};
     const s = suggest(r);
-    const sub = [wearShort(r.hash), r.item?.float != null ? floatSub(r) : '', r.item?.nameTag ? `🏷 „${esc(r.item.nameTag)}”` : '', `wystawiono ${timeAgo(r.created)}`, r.amount > 1 ? `${r.amount} szt.` : ''].filter(Boolean).join(' · ');
+    const sub = [wearShort(r.hash), r.item?.float != null ? floatSub(r) : '', r.item?.nameTag ? `🏷 „${esc(r.item.nameTag)}”` : '', L(`listed ${timeAgo(r.created)}`, `wystawiono ${timeAgo(r.created)}`), r.amount > 1 ? `${r.amount} ${L('pcs', 'szt.')}` : ''].filter(Boolean).join(' · ');
     const same = s.price != null && s.price === r.buyer;
     // "auto": this offer is in the automat's care; grey when the main switch is off (then nothing happens to it)
     const autoOff = !settings.autoRelist;
-    const autoTag = rule.auto ? `<span class="chipst ${autoOff ? 'mut' : rule.min != null ? 'ok' : 'mid'}" title="${rule.min == null ? 'Automat ma pilnować tej oferty, ale bez najniższej ceny ją pominie. Ustaw ją w ⚙.' : autoOff ? `Automat ma pilnować tej oferty (nie niżej niż ${steam.fmt(rule.min)}), ale jest wyłączony: włączysz go w „⚙ Automat” u góry.` : `Automat pilnuje ceny, nie zejdzie poniżej ${steam.fmt(rule.min)}`}">auto${autoOff ? ' (wył.)' : ''}</span>` : '';
+    const autoTag = rule.auto ? `<span class="chipst ${autoOff ? 'mut' : rule.min != null ? 'ok' : 'mid'}" title="${rule.min == null ? L('The automation should watch this listing, but without a lowest price it skips it. Set one in ⚙.', 'Automat ma pilnować tej oferty, ale bez najniższej ceny ją pominie. Ustaw ją w ⚙.') : autoOff ? L(`The automation should watch this listing (not below ${steam.fmt(rule.min)}), but it's off. Turn it on with "⚙ Auto" at the top.`, `Automat ma pilnować tej oferty (nie niżej niż ${steam.fmt(rule.min)}), ale jest wyłączony: włączysz go w „⚙ Automat” u góry.`) : L(`The automation watches the price and won't go below ${steam.fmt(rule.min)}`, `Automat pilnuje ceny, nie zejdzie poniżej ${steam.fmt(rule.min)}`)}">auto${autoOff ? L(' (off)', ' (wył.)') : ''}</span>` : '';
     const main = `<tr data-id="${r.listingid}">
       <td><input type="checkbox" data-f="chk" ${r.checked ? 'checked' : ''}></td>
       <td>${ui.itemCell({ ...r, sub })}</td>
-      <td><b>${steam.fmt(r.buyer)}</b><div class="sub">dostaniesz ${steam.fmt(r.recv)}</div>${(() => {
+      <td><b>${steam.fmt(r.buyer)}</b><div class="sub">${L(`you get`, `dostaniesz`)} ${steam.fmt(r.recv)}</div>${(() => {
         const e = evalListing(r, s);
-        return e ? `<div class="sub ${e.cls}" title="Szansa, że ktoś zapłaci Twoją obecną cenę w ciągu ${e.days}, z historii tego przedmiotu z ostatniego miesiąca, godzina po godzinie (tak samo liczona jest proponowana cena obok). Długość czekania ustawiasz w „sprzedaj w ciągu … dni”.">szansa w ${e.days}: ${Math.round(e.c * 100)}% · ${e.label}</div>` : '';
+        return e ? `<div class="sub ${e.cls}" title="${L(`The chance that someone pays your current price within ${e.days}, from this item's history of the last month, hour by hour (the suggested price next to it is calculated the same way). You set the waiting time in "sell within … days".`, `Szansa, że ktoś zapłaci Twoją obecną cenę w ciągu ${e.days}, z historii tego przedmiotu z ostatniego miesiąca, godzina po godzinie (tak samo liczona jest proponowana cena obok). Długość czekania ustawiasz w „sprzedaj w ciągu … dni”.`)}">${L('chance within', 'szansa w')} ${e.days}: ${Math.round(e.c * 100)}% · ${e.label}</div>` : '';
       })()}</td>
-      <td>${chip(r)} ${autoTag}<div class="sub" style="margin-top:3px">${r.comp != null ? `najtańsza inna: ${steam.fmt(r.comp)}` : ''}${r.stray != null ? ` <span title="Tańsze oferty są poniżej normalnej ceny tego przedmiotu i przy jego tempie sprzedaży zejdą w Twoim czasie na sprzedaż: bardziej opłaca się poczekać, niż schodzić do nich.">(pomijam zaniżone, najtańsza ${steam.fmt(r.stray)})</span>` : ''}${s.typ?.d7 ? `${r.comp != null ? ' · ' : ''}<span title="${esc(`Średnia cena, za jaką ten przedmiot faktycznie się sprzedał:
+      <td>${chip(r)} ${autoTag}<div class="sub" style="margin-top:3px">${r.comp != null ? `${L(`cheapest other`, `najtańsza inna`)}: ${steam.fmt(r.comp)}` : ''}${r.stray != null ? ` <span title="${L('The cheaper listings are below this item\'s normal price and at its sales pace they will sell within your selling time, so waiting pays more than going down to them.', 'Tańsze oferty są poniżej normalnej ceny tego przedmiotu i przy jego tempie sprzedaży zejdą w Twoim czasie na sprzedaż: bardziej opłaca się poczekać, niż schodzić do nich.')}">(${L('skipping underpriced, cheapest', 'pomijam zaniżone, najtańsza')} ${steam.fmt(r.stray)})</span>` : ''}${s.typ?.d7 ? `${r.comp != null ? ' · ' : ''}<span title="${esc(L(`The average price this item actually sold for:
+last 7 days: ${steam.fmt(Math.round(s.typ.d7))} (${s.typ.sold7} pcs)${s.typ.d30 ? `
+last 30 days: ${steam.fmt(Math.round(s.typ.d30))}` : ''}`, `Średnia cena, za jaką ten przedmiot faktycznie się sprzedał:
 ostatnie 7 dni: ${steam.fmt(Math.round(s.typ.d7))} (${s.typ.sold7} szt.)${s.typ.d30 ? `
-ostatnie 30 dni: ${steam.fmt(Math.round(s.typ.d30))}` : ''}`)}">sprzedaje się po ~${steam.fmt(Math.round(s.typ.d7))}</span>` : ''} · <a class="acc" target="_blank" href="${esc(ui.marketUrl(r.appid, r.hash))}">rynek ↗</a></div></td>
-      <td>${s.price != null ? `<b>${steam.fmt(s.price)}</b><div class="sub" title="${esc(s.why)}">dostaniesz ${steam.fmt(steam.receivedFromBuyer(s.price, r.pub))} · ${esc(s.why)}</div>${s.warn ? `<div class="sub warn">${esc(s.warn)}</div>` : ''}` : '<span class="sub">czekam na dane rynku…</span>'}${r.status ? `<div class="sub ${r.cls || ''}">${esc(r.status)}</div>` : ''}</td>
+ostatnie 30 dni: ${steam.fmt(Math.round(s.typ.d30))}` : ''}`))}">${L('sells at', 'sprzedaje się po')} ~${steam.fmt(Math.round(s.typ.d7))}</span>` : ''} · <a class="acc" target="_blank" href="${esc(ui.marketUrl(r.appid, r.hash))}">${L(`market`, `rynek`)} ↗</a></div></td>
+      <td>${s.price != null ? `<b>${steam.fmt(s.price)}</b><div class="sub" title="${esc(s.why)}">${L(`you get`, `dostaniesz`)} ${steam.fmt(steam.receivedFromBuyer(s.price, r.pub))} · ${esc(s.why)}</div>${s.warn ? `<div class="sub warn">${esc(s.warn)}</div>` : ''}` : L('<span class="sub">waiting for market data…</span>', '<span class="sub">czekam na dane rynku…</span>')}${r.status ? `<div class="sub ${r.cls || ''}">${esc(r.status)}</div>` : ''}</td>
       <td style="white-space:nowrap"><div class="acts" style="flex-wrap:nowrap;align-items:center">
-        ${s.price != null && !same ? `<button class="b ${s.price < r.buyer ? '' : 'go'}" data-a="set" data-id="${r.listingid}" title="Zdejmie ofertę i wystawi ją za ${steam.fmt(s.price)} (z potwierdzeniem)">Ustaw ${steam.fmt(s.price)}</button>` : same ? '<span class="sub ok" style="white-space:nowrap">cena OK</span>' : ''}
-        <button class="b red" data-a="rm" data-id="${r.listingid}" title="Zdejmij z rynku, wróci do ekwipunku">Zdejmij</button>
-        <button class="b ${openCfg === r.listingid ? 'on' : ''}" data-a="cfg" data-id="${r.listingid}" title="Własna cena, cena minimalna/maksymalna i automat">⚙</button>
+        ${s.price != null && !same ? `<button class="b ${s.price < r.buyer ? '' : 'go'}" data-a="set" data-id="${r.listingid}" title="${L(`Removes the listing and lists it again at ${steam.fmt(s.price)} (asks first)`, `Zdejmie ofertę i wystawi ją za ${steam.fmt(s.price)} (z potwierdzeniem)`)}">${L('Set', 'Ustaw')} ${steam.fmt(s.price)}</button>` : same ? `<span class="sub ok" style="white-space:nowrap">${L('price OK', 'cena OK')}</span>` : ''}
+        <button class="b red" data-a="rm" data-id="${r.listingid}" title="${L('Remove from the market, it goes back to the inventory', 'Zdejmij z rynku, wróci do ekwipunku')}">${L('Remove', 'Zdejmij')}</button>
+        <button class="b ${openCfg === r.listingid ? 'on' : ''}" data-a="cfg" data-id="${r.listingid}" title="${L(`Your own price, minimum/maximum price and automation`, `Własna cena, cena minimalna/maksymalna i automat`)}">⚙</button>
       </div></td></tr>`;
     if (openCfg !== r.listingid) return main;
     // two different things: a one-off price change now, and this item's lasting price limits (the proposal and the
     // automat stay inside them)
     return main + `<tr class="cfg" data-id="${r.listingid}"><td></td><td colspan="5"><div class="cfgbox">
       <div>
-        <div class="lb">Zmień cenę teraz</div>
+        <div class="lb">${L('Change the price now', 'Zmień cenę teraz')}</div>
         <div class="line">
-          <span>Cena</span><span class="inp"><input class="p" data-f="new" value="${toInput(r.newBuyer)}" placeholder="np. 150"><span>zł</span></span>
-          <button class="b go" data-a="setown" data-id="${r.listingid}" ${r.newBuyer == null ? 'disabled' : ''}>Wystaw za tę cenę</button>
+          <span>${L('Price', 'Cena')}</span><span class="inp"><input class="p" data-f="new" value="${toInput(r.newBuyer)}" placeholder="${L('e.g. 150', 'np. 150')}"><span>zł</span></span>
+          <button class="b go" data-a="setown" data-id="${r.listingid}" ${r.newBuyer == null ? 'disabled' : ''}>${L('List at this price', 'Wystaw za tę cenę')}</button>
         </div>
-        <div class="sub">jednorazowo: zdejmę ofertę i wystawię ją za tę cenę, potwierdzasz w aplikacji Steam</div>
+        <div class="sub">${L('one-off, I remove the listing and list it at this price, you confirm in the Steam app', 'jednorazowo: zdejmę ofertę i wystawię ją za tę cenę, potwierdzasz w aplikacji Steam')}</div>
       </div>
       <div>
-        <div class="lb">Granice ceny</div>
+        <div class="lb">${L('Price limits', 'Granice ceny')}</div>
         <div class="line">
-          <span>Cena od</span><span class="inp" title="Najniższa cena: proponowana cena i automat nigdy nie zejdą niżej"><input class="p" data-f="min" value="${toInput(rule.min)}" placeholder="brak"><span>zł</span></span>
-          <span>do</span><span class="inp" title="Najwyższa cena: automat nie podniesie wyżej, proponowana cena też nie będzie wyższa"><input class="p" data-f="max" value="${toInput(rule.max)}" placeholder="brak"><span>zł</span></span>
+          <span>${L('Price from', 'Cena od')}</span><span class="inp" title="${L('The lowest price, the suggested price and the automation never go below it', 'Najniższa cena: proponowana cena i automat nigdy nie zejdą niżej')}"><input class="p" data-f="min" value="${toInput(rule.min)}" placeholder="${L('none', 'brak')}"><span>zł</span></span>
+          <span>${L('to', 'do')}</span><span class="inp" title="${L('The highest price, the automation won\'t raise above it and the suggested price won\'t be higher either', 'Najwyższa cena: automat nie podniesie wyżej, proponowana cena też nie będzie wyższa')}"><input class="p" data-f="max" value="${toInput(rule.max)}" placeholder="${L('none', 'brak')}"><span>zł</span></span>
         </div>
-        <div class="sub">proponowana cena i automat zostają w tych granicach, puste pole = bez granicy</div>
-        <label class="tgl" style="margin-top:8px;padding-left:0"><input type="checkbox" data-f="auto" ${rule.auto ? 'checked' : ''}><span class="tr"></span>Automat pilnuje tej oferty</label>
-        <div class="sub">co kilka minut podcina tańszych, nie zejdzie poniżej minimum${settings.autoRelist ? '' : '. <span class="warn">Automat jest teraz wyłączony: włączysz go w „⚙ Automat” u góry</span>'}</div>
-        ${rule.auto && rule.min == null ? '<div class="warn sub">wpisz najniższą cenę („Cena od”), bez niej automat pominie tę ofertę</div>' : ''}
+        <div class="sub">${L('the suggested price and the automation stay within these limits, an empty field means no limit', 'proponowana cena i automat zostają w tych granicach, puste pole = bez granicy')}</div>
+        <label class="tgl" style="margin-top:8px;padding-left:0"><input type="checkbox" data-f="auto" ${rule.auto ? 'checked' : ''}><span class="tr"></span>${L('Automation watches this listing', 'Automat pilnuje tej oferty')}</label>
+        <div class="sub">${L('every few minutes it undercuts cheaper ones and never goes below the minimum', 'co kilka minut podcina tańszych, nie zejdzie poniżej minimum')}${settings.autoRelist ? '' : `. <span class="warn">${L('The automation is off now, turn it on with "⚙ Auto" at the top', 'Automat jest teraz wyłączony: włączysz go w „⚙ Automat” u góry')}</span>`}</div>
+        ${rule.auto && rule.min == null ? `<div class="warn sub">${L('enter the lowest price ("Price from"), without it the automation skips this listing', 'wpisz najniższą cenę („Cena od”), bez niej automat pominie tę ofertę')}</div>` : ''}
       </div>
     </div></td></tr>`;
-  }).join('') + (plans.length ? `<tr><td colspan="6" class="sub" style="padding:10px 8px 4px;font-weight:600">Zaplanowane (wystawią się po końcu blokady handlu)</td></tr>${plans.map(planRow).join('')}` : '');
-  el.querySelector('th[data-sort="name"]').textContent = 'Przedmiot' + sort.arrow('name');
+  }).join('') + (plans.length ? `<tr><td colspan="6" class="sub" style="padding:10px 8px 4px;font-weight:600">${L(`Planned (listed when the trade lock ends)`, `Zaplanowane (wystawią się po końcu blokady handlu)`)}</td></tr>${plans.map(planRow).join('')}` : '');
+  el.querySelector('th[data-sort="name"]').textContent = L('Item', 'Przedmiot') + sort.arrow('name');
 }
 
 function setBusy(b) {
@@ -444,38 +452,38 @@ const setStatus = (listing, text, cls = '') => {
 async function relistOne(r, price) {
   if (price == null) return;
   const recv = steam.receivedFromBuyer(price, r.pub);
-  const drop = price < r.buyer * 0.7 ? `<br><span class="err">To ${Math.round((1 - price / r.buyer) * 100)}% mniej niż teraz.</span>` : '';
-  if (!(await ui.ask('Zmienić cenę?', `${esc(r.name)}<br>${steam.fmt(r.buyer)} → <b>${steam.fmt(price)}</b> (dostaniesz ${steam.fmt(recv)})${drop}<br><span class="sub">Oferta zostanie zdjęta i wystawiona ponownie, potwierdzisz ją w aplikacji Steam.</span>`, { ok: 'Zmień cenę' }))) return;
+  const drop = price < r.buyer * 0.7 ? `<br><span class="err">${L(`That's ${Math.round((1 - price / r.buyer) * 100)}% less than now.`, `To ${Math.round((1 - price / r.buyer) * 100)}% mniej niż teraz.`)}</span>` : '';
+  if (!(await ui.ask(L('Change the price?', 'Zmienić cenę?'), `${esc(r.name)}<br>${steam.fmt(r.buyer)} → <b>${steam.fmt(price)}</b> (${L('you get', 'dostaniesz')} ${steam.fmt(recv)})${drop}<br><span class="sub">${L('The listing is removed and listed again, you confirm it in the Steam app.', 'Oferta zostanie zdjęta i wystawiona ponownie, potwierdzisz ją w aplikacji Steam.')}</span>`, { ok: L('Change price', 'Zmień cenę') }))) return;
   task = token();
   setBusy(true);
   await withLock('relist', async () => {
     const res = await relist([{ listing: r, price }], { onStatus: setStatus, log: ui.log, isCancelled: () => task.cancelled });
     rememberWaiting(res);
-    ui.log(res.ok ? `${r.name}: nowa cena ${steam.fmt(price)}${res.confirm ? ', potwierdź w aplikacji Steam' : ''}` : `${r.name}: nie udało się zmienić ceny`, res.ok ? 'ok' : 'err');
-  }).catch((e) => ui.log('Zmiana ceny przerwana: ' + e.message + ', sprawdź ekwipunek.', 'err'));
+    ui.log(res.ok ? L(`${r.name}: new price ${steam.fmt(price)}${res.confirm ? ', confirm in the Steam app' : ''}`, `${r.name}: nowa cena ${steam.fmt(price)}${res.confirm ? ', potwierdź w aplikacji Steam' : ''}`) : L(`${r.name}: couldn't change the price`, `${r.name}: nie udało się zmienić ceny`), res.ok ? 'ok' : 'err');
+  }).catch((e) => ui.log(L(`Price change stopped: ${e.message}, check the inventory.`, `Zmiana ceny przerwana: ${e.message}, sprawdź ekwipunek.`), 'err'));
   setBusy(false);
   setTimeout(refresh, 1500);
 }
 
 async function removeOne(r) {
-  if (!(await ui.ask('Zdjąć z rynku?', `${esc(r.name)} za ${steam.fmt(r.buyer)}<br>Przedmiot wróci do ekwipunku.`, { ok: 'Zdejmij', danger: true }))) return;
+  if (!(await ui.ask(L('Remove from the market?', 'Zdjąć z rynku?'), `${esc(r.name)} ${L('for', 'za')} ${steam.fmt(r.buyer)}<br>${L('The item goes back to the inventory.', 'Przedmiot wróci do ekwipunku.')}`, { ok: L('Remove', 'Zdejmij'), danger: true }))) return;
   const res = await steam.removeListing(r.listingid);
-  setStatus(r, res.ok ? 'zdjęto' : `błąd HTTP ${res.status}`, res.ok ? 'ok' : 'err');
+  setStatus(r, res.ok ? L('removed', 'zdjęto') : L(`HTTP error ${res.status}`, `błąd HTTP ${res.status}`), res.ok ? 'ok' : 'err');
   setTimeout(refresh, 1000);
 }
 
 async function bulkSet() {
   const sel = rows.filter((r) => r.checked);
   const jobs = sel.map((r) => ({ listing: r, price: suggest(r).price })).filter((j) => j.price != null && j.price !== j.listing.buyer);
-  if (!jobs.length) return ui.log('Zaznaczone oferty mają już proponowaną cenę (albo brak danych rynku).', 'warn');
-  if (!(await ui.ask('Zmienić ceny?', `${jobs.map((j) => `${esc(j.listing.name)}: ${steam.fmt(j.listing.buyer)} → <b>${steam.fmt(j.price)}</b>`).slice(0, 12).join('<br>')}${jobs.length > 12 ? `<br>… i ${jobs.length - 12} więcej` : ''}`, { ok: `Zmień ${jobs.length}` }))) return;
+  if (!jobs.length) return ui.log(L('The selected listings already have the suggested price (or there is no market data).', 'Zaznaczone oferty mają już proponowaną cenę (albo brak danych rynku).'), 'warn');
+  if (!(await ui.ask(L('Change the prices?', 'Zmienić ceny?'), `${jobs.map((j) => `${esc(j.listing.name)}: ${steam.fmt(j.listing.buyer)} → <b>${steam.fmt(j.price)}</b>`).slice(0, 12).join('<br>')}${jobs.length > 12 ? `<br>… ${L(`and ${jobs.length - 12} more`, `i ${jobs.length - 12} więcej`)}` : ''}`, { ok: L(`Change ${jobs.length}`, `Zmień ${jobs.length}`) }))) return;
   task = token();
   setBusy(true);
   await withLock('relist', async () => {
     const res = await relist(jobs, { onStatus: setStatus, log: ui.log, isCancelled: () => task.cancelled });
     rememberWaiting(res);
-    ui.log(`Zmiana cen: ${res.ok} OK, ${res.failed} błędów.`, res.failed ? 'warn' : 'ok');
-    if (res.confirm) ui.log(`${res.confirm} ofert czeka na potwierdzenie, w aplikacji Steam otwórz Potwierdzenia i kliknij „Potwierdź wszystkie”, żeby zatwierdzić je naraz.`, 'warn');
+    ui.log(L(`Price change: ${res.ok} OK, ${res.failed} errors.`, `Zmiana cen: ${res.ok} OK, ${res.failed} błędów.`), res.failed ? 'warn' : 'ok');
+    if (res.confirm) ui.log(L(`${res.confirm} listings wait for confirmation. In the Steam app open Confirmations and tap “Confirm all” to approve them at once.`, `${res.confirm} ofert czeka na potwierdzenie, w aplikacji Steam otwórz Potwierdzenia i kliknij „Potwierdź wszystkie”, żeby zatwierdzić je naraz.`), 'warn');
   }).catch((e) => ui.log('Przerwano: ' + e.message, 'err'));
   setBusy(false);
   setTimeout(refresh, 1500);
@@ -488,7 +496,7 @@ export async function refresh() {
   try { await load(); } finally { refreshing = false; tick(); }
 }
 async function load() {
-  if (!(await steam.ensureLogin())) { ui.log('Nie wykryto zalogowanej sesji Steam.', 'err'); return; }
+  if (!(await steam.ensureLogin())) { ui.log(L('No logged-in Steam session found.', 'Nie wykryto zalogowanej sesji Steam.'), 'err'); return; }
   try {
     const { listings, toConfirm, pending, pendingKnown } = await steam.myListings();
     pend = pendingRows(listings, pending || [], pendingKnown, toConfirm);
@@ -497,15 +505,15 @@ async function load() {
       const p = prev.get(l.listingid);
       return { ...l, rule: rules.get(l.hash) || {}, comp: p?.comp ?? null, lowest: prices.cached(l.appid, l.hash)?.lowest ?? null, newBuyer: p?.newBuyer ?? null, checked: p?.checked || false, status: p?.status || '', cls: p?.cls };
     });
-    el.querySelector('#l-note').innerHTML = toConfirm ? `<span class="warn" title="W aplikacji Steam otwórz Potwierdzenia i kliknij „Potwierdź wszystkie”">${toConfirm} ofert czeka na potwierdzenie w aplikacji, zatwierdź wszystkie naraz</span>` : '';
-    if (!lastComp) ui.log(`Wczytano ${rows.length} ofert sprzedaży.`);
+    el.querySelector('#l-note').innerHTML = toConfirm ? `<span class="warn" title="${L('In the Steam app open Confirmations and tap “Confirm all”', 'W aplikacji Steam otwórz Potwierdzenia i kliknij „Potwierdź wszystkie”')}">${toConfirm} ${L('listings wait for confirmation in the app, approve them all at once', 'ofert czeka na potwierdzenie w aplikacji, zatwierdź wszystkie naraz')}</span>` : '';
+    if (!lastComp) ui.log(L(`Loaded ${rows.length} sell listings.`, `Wczytano ${rows.length} ofert sprzedaży.`));
     render();
     autoComp();
     if (rows.some((x) => x.item?.float != null)) ensureFloatDb().then(() => render()); // float ranks
     sig.ensure([...rows, ...planList()].map((r) => ({ hash: r.hash, appid: r.appid })), { onEach: () => render() });
     checkPlans(); // planned sales: today's market for each
   } catch (e) {
-    ui.log('Błąd ładowania ofert: ' + e.message, 'err');
+    ui.log(L('Error loading listings: ', 'Błąd ładowania ofert: ') + e.message, 'err');
   }
 }
 
@@ -525,11 +533,11 @@ const clock = (t) => new Date(t).toLocaleTimeString('pl-PL', { hour: '2-digit', 
 function tick() {
   const box = el?.querySelector('#l-tick');
   if (!box) return;
-  if (busy()) { box.innerHTML = '<span class="acc">odświeżam…</span>'; return; }
+  if (busy()) { box.innerHTML = L('<span class="acc">refreshing…</span>', '<span class="acc">odświeżam…</span>'); return; }
   const last = Math.max(lastComp, lastTry);
   if (!last) { box.textContent = ''; return; }
   const left = Math.max(0, Math.ceil((nextAt() - Date.now()) / 1000));
-  box.textContent = `odświeżono ${clock(last)} · następne za ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  box.textContent = L(`refreshed ${clock(last)} · next in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, `odświeżono ${clock(last)} · następne za ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`);
 }
 
 async function autoComp() {
@@ -552,16 +560,16 @@ function summary(running = false) {
   const beaten = rows.filter((r) => r.comp != null && r.comp < r.buyer);
   const tied = rows.filter((r) => r.comp != null && r.comp === r.buyer);
   const parts = [];
-  if (beaten.length) parts.push(`<b class="err">${beaten.length} ${beaten.length === 1 ? 'oferta przebita' : 'ofert przebitych'}</b>`);
-  if (tied.length) parts.push(`<span class="warn">${tied.length} remis</span>`);
+  if (beaten.length) parts.push(`<b class="err">${beaten.length} ${beaten.length === 1 ? L('listing undercut', 'oferta przebita') : L('listings undercut', 'ofert przebitych')}</b>`);
+  if (tied.length) parts.push(`<span class="warn">${tied.length} ${L('tied', 'remis')}</span>`);
   // the new advice applied to listings priced before it: how many are unlikely to sell, how many are cheap
   const evals = rows.map((r) => evalListing(r, suggest(r))).filter(Boolean);
   const high = evals.filter((e) => e.k === 'high').length, cheap = evals.filter((e) => e.k === 'cheap').length;
-  if (high) parts.push(`<span class="err" title="Po obecnej cenie szansa sprzedaży poniżej 25%, zobacz proponowaną cenę">${high} za drogo wg historii</span>`);
-  if (cheap) parts.push(`<span class="warn" title="Sprzedadzą się prawie na pewno, a proponowana cena jest wyższa">${cheap} za tanio</span>`);
-  if (checked.length && !beaten.length && !tied.length && !running) parts.push('<span class="ok">wszystkie Twoje oferty są najtańsze</span>');
+  if (high) parts.push(`<span class="err" title="${L('At the current price the chance to sell is below 25%, see the suggested price', 'Po obecnej cenie szansa sprzedaży poniżej 25%, zobacz proponowaną cenę')}">${high} ${L('too pricey by the history', 'za drogo wg historii')}</span>`);
+  if (cheap) parts.push(`<span class="warn" title="${L('They will sell almost surely, and the suggested price is higher', 'Sprzedadzą się prawie na pewno, a proponowana cena jest wyższa')}">${cheap} ${L('too cheap', 'za tanio')}</span>`);
+  if (checked.length && !beaten.length && !tied.length && !running) parts.push(`<span class="ok">${L('all your listings are the cheapest', 'wszystkie Twoje oferty są najtańsze')}</span>`);
   box.innerHTML = parts.join(' · ');
-  ui.status('undercut', beaten.length ? `<b class="err">Przebite oferty: ${beaten.length}</b>` : null);
+  ui.status('undercut', beaten.length ? `<b class="err">${L(`Undercut listings`, `Przebite oferty`)}: ${beaten.length}</b>` : null);
 }
 
 
@@ -578,7 +586,7 @@ async function competitionFor(list, tk, { quiet = false } = {}) {
       rows.filter((x) => x.hash === r.hash).forEach((x) => {
         // log when someone newly undercuts us
         if (quiet && comp != null && comp < x.buyer && !(x.comp != null && x.comp < x.buyer)) {
-          ui.log(`Ktoś przebił: ${x.hash}, ${steam.fmt(comp)} (Twoja ${steam.fmt(x.buyer)})`, 'warn');
+          ui.log(L(`Someone undercut you: ${x.hash}, ${steam.fmt(comp)} (yours ${steam.fmt(x.buyer)})`, `Ktoś przebił: ${x.hash}, ${steam.fmt(comp)} (Twoja ${steam.fmt(x.buyer)})`), 'warn');
         }
         x.comp = comp;
         x.stray = raw != null && comp != null && raw < comp ? raw : null;
@@ -597,15 +605,15 @@ async function competitionFor(list, tk, { quiet = false } = {}) {
 
 async function doRemove() {
   const sel = rows.filter((r) => r.checked);
-  if (!sel.length) return ui.log('Zaznacz oferty.', 'warn');
-  if (!(await ui.ask('Zdjąć oferty?', `Zdjąć ${sel.length} ofert z rynku? Przedmioty wrócą do ekwipunku.`, { ok: 'Zdejmij', danger: true }))) return;
+  if (!sel.length) return ui.log(L('Select some listings.', 'Zaznacz oferty.'), 'warn');
+  if (!(await ui.ask(L('Remove the listings?', 'Zdjąć oferty?'), L(`Remove ${sel.length} listings from the market? The items go back to the inventory.`, `Zdjąć ${sel.length} ofert z rynku? Przedmioty wrócą do ekwipunku.`), { ok: L('Remove', 'Zdejmij'), danger: true }))) return;
   task = token();
   setBusy(true);
   await withLock('remove', async () => {
     for (const r of sel) {
       if (task.cancelled) break;
       const res = await steam.removeListing(r.listingid);
-      setStatus(r, res.ok ? 'zdjęto' : `błąd HTTP ${res.status}`, res.ok ? 'ok' : 'err');
+      setStatus(r, res.ok ? L('removed', 'zdjęto') : L(`HTTP error ${res.status}`, `błąd HTTP ${res.status}`), res.ok ? 'ok' : 'err');
     }
   });
   setBusy(false);
@@ -618,7 +626,7 @@ async function autoCycle() {
   await withLock('auto-relist', async () => {
     const { listings } = await steam.myListings();
     const ruled = listings.filter((l) => { const r = rules.get(l.hash); return r?.auto && r.min != null; });
-    if (!ruled.length) { lastAuto = { at: Date.now(), msg: 'brak ofert z regułą auto + min' }; return; }
+    if (!ruled.length) { lastAuto = { at: Date.now(), msg: L('no listings with auto + min', 'brak ofert z regułą auto + min') }; return; }
     const mine = {};
     for (const l of listings) (mine[l.hash] ||= {})[l.buyer] = (mine[l.hash][l.buyer] || 0) + 1;
     const jobs = [];
@@ -635,7 +643,7 @@ async function autoCycle() {
           const cap = raiseCap(l, h, mine[l.hash]);
           if (cap != null && t.price > cap) {
             const p = snap(cap, false);
-            t = p > l.buyer ? { price: p, reason: 'podnoszę do proponowanej ceny, wyżej raczej się nie sprzeda' } : { price: null, reason: 'wyżej raczej się nie sprzeda' };
+            t = p > l.buyer ? { price: p, reason: L('raising to the suggested price, it would hardly sell higher', 'podnoszę do proponowanej ceny, wyżej raczej się nie sprzeda') } : { price: null, reason: L('it would hardly sell higher', 'wyżej raczej się nie sprzeda') };
           }
         }
         const row = rows.find((x) => x.listingid === l.listingid);
@@ -652,10 +660,10 @@ async function autoCycle() {
     if (jobs.length) {
       const r = await relist(jobs, { onStatus: setStatus, log: ui.log });
       rememberWaiting(r);
-      lastAuto = { at: Date.now(), msg: `zmieniono ${r.ok}/${jobs.length}${r.failed ? `, błędy: ${r.failed}` : ''}` };
-      ui.log(`[auto] relist: ${r.ok} OK, ${r.failed} błędów.`, r.failed ? 'warn' : 'ok');
+      lastAuto = { at: Date.now(), msg: L(`changed ${r.ok}/${jobs.length}${r.failed ? `, errors: ${r.failed}` : ''}`, `zmieniono ${r.ok}/${jobs.length}${r.failed ? `, błędy: ${r.failed}` : ''}`) };
+      ui.log(L(`[auto] relist: ${r.ok} OK, ${r.failed} errors.`, `[auto] relist: ${r.ok} OK, ${r.failed} błędów.`), r.failed ? 'warn' : 'ok');
     } else {
-      lastAuto = { at: Date.now(), msg: `sprawdzono ${ruled.length}, bez zmian` };
+      lastAuto = { at: Date.now(), msg: L(`checked ${ruled.length}, no changes`, `sprawdzono ${ruled.length}, bez zmian`) };
     }
   });
   if (el && ui.isOpen()) refresh();
@@ -680,11 +688,11 @@ function raiseCap(l, h, mine) {
 
 function updateAuto(st) {
   const on = settings.autoRelist;
-  const info = !on ? 'wyłączony' : !isLeader() ? 'działa w innej karcie' : st?.running ? 'pracuje…' : `następne za ${Math.max(0, Math.round((auto.next - Date.now()) / 60000))} min`;
-  ui.status('autorelist', `Auto-relist: <b class="${on ? 'ok' : 'mut'}">${info}</b>${lastAuto ? ` · ostatnio ${timeAgo(lastAuto.at)}: ${esc(lastAuto.msg)}` : ''}`);
+  const info = !on ? L('off', 'wyłączony') : !isLeader() ? L('runs in another tab', 'działa w innej karcie') : st?.running ? L('working…', 'pracuje…') : L(`next in ${Math.max(0, Math.round((auto.next - Date.now()) / 60000))} min`, `następne za ${Math.max(0, Math.round((auto.next - Date.now()) / 60000))} min`);
+  ui.status('autorelist', `Auto-relist: <b class="${on ? 'ok' : 'mut'}">${info}</b>${lastAuto ? ` · ${L('last', 'ostatnio')} ${timeAgo(lastAuto.at)}: ${esc(lastAuto.msg)}` : ''}`);
   autoBtn();
   const i = document.getElementById('l-autoinfo');
-  if (i) i.textContent = info + (lastAuto ? ` · ostatnio: ${lastAuto.msg}` : '');
+  if (i) i.textContent = info + (lastAuto ? ` · ${L(`last`, `ostatnio`)}: ${lastAuto.msg}` : '');
 }
 
 export const auto = every('auto-relist', () => settings.autoRelistEvery, () => settings.autoRelist, autoCycle, updateAuto);

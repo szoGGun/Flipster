@@ -3,6 +3,7 @@
 import * as steam from '../core/steam.js';
 import * as store from '../core/store.js';
 import * as ui from '../core/ui.js';
+import { L } from '../core/i18n.js';
 
 // One history per game, each in its own store: CS2 (730, used everywhere) and, since 2026-11-20, every other game you
 // traded on the market (753 = Steam's own items: cards, backgrounds, emoticons; 252490 = Rust…), used only for where an
@@ -108,11 +109,11 @@ async function fetchPage(cursor, app = 730) {
   if (cursor) url += `&cursor%5Btime%5D=${cursor.time}&cursor%5Btime_frac%5D=${cursor.time_frac}&cursor%5Bs%5D=${cursor.s}`;
   const d = await steam.schedule('inv', async () => {
     const r = await fetch(url, { credentials: 'include' });
-    if (r.status === 429) throw new steam.HttpError(429, 'Steam: za dużo zapytań (429)');
+    if (r.status === 429) throw new steam.HttpError(429, L('Steam: too many requests (429)', 'Steam: za dużo zapytań (429)'));
     if (!r.ok) throw new steam.HttpError(r.status);
     return r.json();
   });
-  if (!d || d.success === false) throw new Error(d?.error || 'Steam nie zwrócił historii ekwipunku (zaloguj się)');
+  if (!d || d.success === false) throw new Error(d?.error || L('Steam returned no inventory history (log in)', 'Steam nie zwrócił historii ekwipunku (zaloguj się)'));
   return d;
 }
 
@@ -195,7 +196,7 @@ export async function checkOwner(href, hash) {
   ownerCache.set(key, { state: 'checking' });
   try {
     const id = await steamIdOf(href);
-    if (!id) throw new Error('nie rozpoznano profilu');
+    if (!id) throw new Error(L('profile not recognised', 'nie rozpoznano profilu'));
     const inv = await steam.inventory(id, 730, 2, { maxAgeMin: 60 });
     const n = inv.filter((i) => i.hash === hash).length;
     ownerCache.set(key, { state: n ? 'has' : 'no', n, at: Date.now() });

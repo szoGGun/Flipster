@@ -12,7 +12,8 @@ import * as flip from './features/flip.js';
 import * as cases from './features/cases.js';
 import * as trade from './features/trade.js';
 import * as settingsTab from './features/settings.js';
-import * as sellsignals from './features/sellsignals.js';
+import * as sellsignals from './features/sellsignals.js';
+import { L } from './core/i18n.js';
 
 function main() {
   if (window.top !== window.self) return;
@@ -23,12 +24,12 @@ function main() {
   let market = null;
   ui.tab({
     id: 'market',
-    title: 'Rynek',
+    title: L('Market', 'Rynek'),
     mount(root) {
       root.innerHTML = `
         <div class="htabs" style="margin-top:0">
-          <button data-mt="sell">Moje oferty <span class="cnt"></span></button>
-          <button data-mt="buy">Zlecenia kupna <span class="cnt"></span></button>
+          <button data-mt="sell">${L(`My listings`, `Moje oferty`)} <span class="cnt"></span></button>
+          <button data-mt="buy">${L(`Buy orders`, `Zlecenia kupna`)} <span class="cnt"></span></button>
         </div>
         <div data-sec="sell"></div><div data-sec="buy"></div>`;
       const showSub = (t) => {
@@ -44,11 +45,11 @@ function main() {
     },
     show(sub) { if (sub) market?.showSub(sub); listings.show(); buyorders.show(); },
   });
-  ui.tab({ id: 'inv', title: 'Ekwipunek', mount: inventory.mount, show: inventory.show });
-  ui.tab({ id: 'hist', title: 'Historia', mount: history.mount, show: history.show });
-  ui.tab({ id: 'flip', title: 'Okazje', mount: flip.mount, show: flip.show });
-  ui.tab({ id: 'cases', title: 'Czy warto otwierać?', mount: cases.mount, show: cases.show });
-  ui.tab({ id: 'set', title: 'Ustawienia', icon: '⚙', mount: settingsTab.mount });
+  ui.tab({ id: 'inv', title: L('Inventory', 'Ekwipunek'), mount: inventory.mount, show: inventory.show });
+  ui.tab({ id: 'hist', title: L('History', 'Historia'), mount: history.mount, show: history.show });
+  ui.tab({ id: 'flip', title: L('Deals', 'Okazje'), mount: flip.mount, show: flip.show });
+  ui.tab({ id: 'cases', title: L('Worth opening?', 'Czy warto otwierać?'), mount: cases.mount, show: cases.show });
+  ui.tab({ id: 'set', title: L('Settings', 'Ustawienia'), icon: '⚙', mount: settingsTab.mount });
 
   flip.setBuyOrderOpener((hash, price, appid) => {
     ui.open('market');
@@ -58,7 +59,7 @@ function main() {
 
   steam.bus.on('ratelimit', (lane, ms) => ui.log(`Steam ogranicza zapytania (${lane}), czekam ${Math.round(ms / 1000)} s…`, 'warn'));
 
-  steam.ensureLogin().then((ok) => { if (!ok) ui.log('Nie wykryto zalogowania, większość funkcji wymaga zalogowania na steamcommunity.com.', 'warn'); });
+  steam.ensureLogin().then((ok) => { if (!ok) ui.log(L('You don\'t seem to be logged in. Most features need you to be logged in on steamcommunity.com.', 'Nie wykryto zalogowania, większość funkcji wymaga zalogowania na steamcommunity.com.'), 'warn'); });
 
   const refreshFab = () => {
     const on = (settings.autoRelist || settings.autoBuy) && isLeader();

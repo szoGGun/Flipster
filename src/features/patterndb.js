@@ -3,6 +3,7 @@
 // storage, nothing of it is bundled; core/patterns.js (fromCatalog) turns it into the 💎 marks.
 import * as store from '../core/store.js';
 import { fromCatalog } from '../core/patterns.js';
+import { L } from '../core/i18n.js';
 
 const SRC = 'https://raw.githubusercontent.com/Helyux/cs2pattern/master/cs2pattern/pattern.json';
 const KEY = 'patternDB';
@@ -10,11 +11,11 @@ const WEEK = 7 * 86400000;
 
 function getJSON(url) {
   return new Promise((resolve, reject) => {
-    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error('GM_xmlhttpRequest niedostępne'));
+    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('GM_xmlhttpRequest unavailable', 'GM_xmlhttpRequest niedostępne')));
     GM_xmlhttpRequest({
       method: 'GET', url, timeout: 60000,
-      onload: (r) => { if (r.status >= 400) return reject(new Error(`HTTP ${r.status}`)); try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error('zła odpowiedź')); } },
-      onerror: () => reject(new Error('błąd sieci')),
+      onload: (r) => { if (r.status >= 400) return reject(new Error(`HTTP ${r.status}`)); try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('bad response', 'zła odpowiedź'))); } },
+      onerror: () => reject(new Error(L('network error', 'błąd sieci'))),
       ontimeout: () => reject(new Error('timeout')),
     });
   });

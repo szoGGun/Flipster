@@ -1,3 +1,4 @@
+import { L } from './i18n.js';
 // Pattern-priced skins: for a few finishes the community pays extra for certain paint seeds (Case Hardened "blue
 // gems", Marble Fade "Fire & Ice"...). Pure logic, no DOM: a starter list from public guides plus the user's own lines
 // from the settings. The guides disagree on tiers now and then, so a match means "worth a closer look", not a price.
@@ -13,14 +14,14 @@ export const STARTER = [
   {
     skin: 'AK-47 | Case Hardened', what: 'Blue gem', src: 'csdb.gg',
     tiers: [
-      { label: '#661 „Scar”, najlepszy', level: 'top', seeds: [661] },
+      { label: L('#661 "Scar", the best', '#661 „Scar”, najlepszy'), level: 'top', seeds: [661] },
       { label: 'Tier 1', level: 'high', seeds: [387, 321, 670, 955, 168] },
     ],
   },
   {
     skin: 'Five-SeveN | Case Hardened', what: 'Blue gem', src: 'csdb.gg',
     tiers: [
-      { label: 'czołówka', level: 'top', seeds: [278, 690, 648] },
+      { label: L('top', 'czołówka'), level: 'top', seeds: [278, 690, 648] },
       { label: 'Tier 1', level: 'high', seeds: [872, 363] },
     ],
   },
@@ -28,22 +29,22 @@ export const STARTER = [
     // picture patterns: at some seeds the Kami artwork lands as a recognisable shape (the famous one is #909)
     skin: 'Five-SeveN | Kami', what: 'Kami', src: 'skinscanner.gg, cyberquira.com',
     tiers: [
-      { label: '#909 „P**sy”, najlepszy', level: 'top', seeds: [909] },
-      { label: 'Tier 1, ten sam motyw', level: 'high', seeds: [590, 662] },
-      { label: '„Togepi”', level: 'mid', seeds: [906] },
-      { label: '„Sowie oczy”', level: 'mid', seeds: [403] },
-      { label: '„Wściekły kupiec”', level: 'mid', seeds: [376] },
-      { label: '„Wesoły ptak”', level: 'mid', seeds: [537] },
-      { label: '„Booba”', level: 'mid', seeds: [887] },
-      { label: '„Śpioch / grzybek”', level: 'mid', seeds: [439] },
-      { label: 'mem z numeru', level: 'low', seeds: [69, 420] },
-      { label: '„Robot”', level: 'low', seeds: [264, 702] },
+      { label: L('#909 "P**sy", the best', '#909 „P**sy”, najlepszy'), level: 'top', seeds: [909] },
+      { label: L('Tier 1, same motif', 'Tier 1, ten sam motyw'), level: 'high', seeds: [590, 662] },
+      { label: L('"Togepi"', '„Togepi”'), level: 'mid', seeds: [906] },
+      { label: L('"Owl eyes"', '„Sowie oczy”'), level: 'mid', seeds: [403] },
+      { label: L('"Angry merchant"', '„Wściekły kupiec”'), level: 'mid', seeds: [376] },
+      { label: L('"Happy bird"', '„Wesoły ptak”'), level: 'mid', seeds: [537] },
+      { label: L('"Booba"', '„Booba”'), level: 'mid', seeds: [887] },
+      { label: L('"Sleeper / mushroom"', '„Śpioch / grzybek”'), level: 'mid', seeds: [439] },
+      { label: L('meme number', 'mem z numeru'), level: 'low', seeds: [69, 420] },
+      { label: L('"Robot"', '„Robot”'), level: 'low', seeds: [264, 702] },
     ],
   },
   {
     skin: 'Karambit | Case Hardened', what: 'Blue gem', src: 'csdb.gg',
     tiers: [
-      { label: 'czołówka', level: 'top', seeds: [387, 442, 670, 463] },
+      { label: L('top', 'czołówka'), level: 'top', seeds: [387, 442, 670, 463] },
       { label: 'Tier 1', level: 'high', seeds: [269] },
     ],
   },
@@ -60,8 +61,8 @@ export const STARTER = [
       { label: '#8', level: 'mid', seeds: [5, 178, 188, 202, 337, 378, 406, 461, 539, 696, 702, 854, 966, 971] },
       { label: '#9', level: 'mid', seeds: [68, 121, 149, 165, 171, 206, 287, 370, 493, 499, 516, 637, 655, 656, 672, 706, 766, 817, 922, 959, 997] },
       { label: '#10', level: 'mid', seeds: [28, 156, 177, 238, 402, 545, 546, 553, 559, 589, 591, 725, 764, 791, 810, 844, 858, 868, 972, 977] },
-      { label: 'podróbka T1 (trochę żółtego)', level: 'low', seeds: [9, 27, 90, 110, 125, 183, 195, 203, 232, 254, 329, 351, 372, 397, 404, 441, 448, 459, 473, 483, 537, 561, 590, 626, 632, 647, 710, 727, 753, 756, 785, 805, 809, 818, 869, 909, 930, 941, 962, 976, 980, 989] },
-      { label: 'podróbka T2 (trochę żółtego)', level: 'low', seeds: [60, 62, 71, 98, 148, 170, 196, 216, 222, 234, 266, 304, 307, 309, 315, 321, 328, 333, 364, 368, 400, 411, 413, 415, 438, 445, 463, 485, 489, 496, 506, 535, 570, 582, 593, 605, 630, 663, 667, 670, 674, 691, 717, 723, 746, 794, 822, 845, 846, 931, 948, 958] },
+      { label: L('fake T1 (some yellow)', 'podróbka T1 (trochę żółtego)'), level: 'low', seeds: [9, 27, 90, 110, 125, 183, 195, 203, 232, 254, 329, 351, 372, 397, 404, 441, 448, 459, 473, 483, 537, 561, 590, 626, 632, 647, 710, 727, 753, 756, 785, 805, 809, 818, 869, 909, 930, 941, 962, 976, 980, 989] },
+      { label: L('fake T2 (some yellow)', 'podróbka T2 (trochę żółtego)'), level: 'low', seeds: [60, 62, 71, 98, 148, 170, 196, 216, 222, 234, 266, 304, 307, 309, 315, 321, 328, 333, 364, 368, 400, 411, 413, 415, 438, 445, 463, 485, 489, 496, 506, 535, 570, 582, 593, 605, 630, 663, 667, 670, 674, 691, 717, 723, 746, 794, 822, 845, 846, 931, 948, 958] },
     ],
   },
 ];
@@ -93,7 +94,7 @@ export function parseUser(text = '') {
       for (let s = a; s <= b; s++) seeds.push(s);
     }
     if (bad || !seeds.length) { errors.push(i + 1); return; }
-    entries.push({ skin: m[1].trim(), what: (m[3] || '').trim() || 'Twój wzór', src: 'Twoja lista', tiers: [{ label: '', level: 'user', seeds }] });
+    entries.push({ skin: m[1].trim(), what: (m[3] || '').trim() || L('Your pattern', 'Twój wzór'), src: L('Your list', 'Twoja lista'), tiers: [{ label: '', level: 'user', seeds }] });
   });
   return { entries, errors };
 }
@@ -105,8 +106,8 @@ export function parseUser(text = '') {
 const GROUP_LABEL = {
   gem_blue: 'Blue gem', gem_gold: 'Gold gem', gem_black: 'Black gem', gem_white: 'White gem', gem_green: 'Green gem',
   gem_red: 'Red gem', gem_purple: 'Purple gem', gem_pink: 'Pink gem', gem_orange: 'Orange gem', gem_diamond: 'Diamond gem',
-  blaze: 'Blaze', fade: 'Fade', fire_and_ice: 'Fire & Ice', white_scope: 'Biały celownik', blue_hive: 'Niebieski ul',
-  orange_hive: 'Pomarańczowy ul', star: 'Gwiazda', pussy: 'P**sy', golden_cat: 'Złoty kot', stoner_cat: 'Stoner cat', phoenix: 'Feniks',
+  blaze: 'Blaze', fade: 'Fade', fire_and_ice: 'Fire & Ice', white_scope: L('White scope', 'Biały celownik'), blue_hive: L('Blue hive', 'Niebieski ul'),
+  orange_hive: L('Orange hive', 'Pomarańczowy ul'), star: L('Star', 'Gwiazda'), pussy: 'P**sy', golden_cat: L('Golden cat', 'Złoty kot'), stoner_cat: 'Stoner cat', phoenix: L('Phoenix', 'Feniks'),
 };
 const groupLabel = (n = '') => GROUP_LABEL[n] || n.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 /** cs2pattern's pattern.json → entries; ranked groups: #1 gold, the best ~30% violet, the rest blue; unranked violet */
@@ -151,4 +152,4 @@ export function patternOf(hash, seed, userText = '', extra = null) {
 }
 
 /** the starter list in a few words, for the settings ("AK-47 | Case Hardened (Blue gem, 6 seedów)") */
-export const starterSummary = () => STARTER.map((e) => `${e.skin} (${e.what}, ${e.tiers.reduce((s, t) => s + t.seeds.length, 0)} seedów)`);
+export const starterSummary = () => STARTER.map((e) => `${e.skin} (${e.what}, ${e.tiers.reduce((s, t) => s + t.seeds.length, 0)} ${L('seeds', 'seedów')})`);

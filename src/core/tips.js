@@ -1,78 +1,172 @@
-// Explanations shown by the ⓘ icon next to card titles / column headers. Key = exact title text.
-// Plain language for anyone (no "median", "FIFO", "order book"): what the number means and what it's for, two or
-// three short sentences. "\n" starts a new paragraph (ui.js shows an empty line between). Rewritten 2026-11-20.
-// Colons only where Polish naturally wants one (the user finds them odd as a stand-in for a dash), no long dashes.
-export const TIPS = {
-  // ---- Okazje: analiza przedmiotu
-  'Wolumen': 'Ile sztuk sprzedało się w ostatniej dobie (i w tygodniu). Im więcej, tym łatwiej kupić i sprzedać.',
-  'Mediana 7d · śr. 30d': 'Za ile przedmiot zwykle się sprzedawał. Pierwsza liczba to środkowa cena z ostatniego tygodnia, druga to średnia z miesiąca.',
-  'Próg rentowności': 'Za ile najmniej musisz wystawić, żeby po prowizji Steama wyjść na zero przy tej cenie zakupu.',
+// Explanations shown by the ⓘ icon next to card titles / column headers, matched by the exact title text in the
+// current language. Plain language for anyone (no "median", "FIFO", "order book"): what the number means and what
+// it's for, two or three short sentences. "\n" starts a new paragraph (ui.js shows an empty line between).
+// The user dislikes long dashes, → arrows and colons used as a dash stand-in: write normal sentences.
+import { getLang } from './i18n.js';
 
-  // ---- Okazje: pola skanera
-  'Kategoria': 'Jakiego rodzaju przedmioty skaner ma przeglądać.',
-  'Szukaj': 'Tylko przedmioty z tym tekstem w nazwie (nazwy są po angielsku, np. „Case”).',
-  'Cena od': 'Najniższa cena przedmiotu do sprawdzenia. Poniżej ok. 1 zł prowizja Steama zjada prawie cały zysk.',
-  'do': 'Najwyższa cena jednej sztuki. Domyślnie tyle, ile masz dostępne w portfelu Steam, a jeśli wpiszesz własną kwotę, zostanie.',
-  'Min. ofert na rynku': 'Pomija przedmioty, które mało kto wystawia, bo ich ceny skaczą i trudno je potem sprzedać.',
-  'Ile sztuk chcę kupić': 'Dla tylu sztuk policzę, jakie zlecenie kupna ustawić i ile razem zapłacisz.',
-  'Ile przedmiotów sprawdzić': 'Ile przedmiotów przejrzeć. 40 sztuk to ok. 1-3 minuty.',
-  'Ile znaleźć': 'Skaner przegląda kolejne przedmioty, aż tyle z nich dostanie ocenę „Flip możliwy”, lista się skończy albo klikniesz Stop. Puste pole oznacza brak limitu.',
-  'Min. sprzedaży/24h': 'Przedmioty sprzedawane rzadziej są wyszarzone, bo długo czekałbyś na kupca.',
-  'Min. ROI %': 'Przedmioty z mniejszym zarobkiem (w procentach ceny zakupu) są wyszarzone. Rozsądny próg to 3-5%.',
+// [English title, Polish title, English text, Polish text]
+const ROWS = [
+  // ---- Deals: item analysis
+  ['Volume', 'Wolumen',
+    'How many units sold in the last day (and in the last week). The more, the easier it is to buy and sell.',
+    'Ile sztuk sprzedało się w ostatniej dobie (i w tygodniu). Im więcej, tym łatwiej kupić i sprzedać.'],
+  ['Median 7d · avg 30d', 'Mediana 7d · śr. 30d',
+    'What the item usually sold for. The first number is the middle price of the last week, the second is the average of the last month.',
+    'Za ile przedmiot zwykle się sprzedawał. Pierwsza liczba to środkowa cena z ostatniego tygodnia, druga to średnia z miesiąca.'],
+  ['Break-even', 'Próg rentowności',
+    'The lowest price you can list at and still come out even after Steam\'s fee, at this buy price.',
+    'Za ile najmniej musisz wystawić, żeby po prowizji Steama wyjść na zero przy tej cenie zakupu.'],
 
-  // ---- Okazje: kolumny tabeli
-  'Wolumen 24h': 'Ile sztuk sprzedało się w ostatniej dobie.',
+  // ---- Deals: scanner fields
+  ['Category', 'Kategoria', 'What kind of items the scanner goes through.', 'Jakiego rodzaju przedmioty skaner ma przeglądać.'],
+  ['Search', 'Szukaj',
+    'Only items with this text in their name (names are in English, e.g. "Case").',
+    'Tylko przedmioty z tym tekstem w nazwie (nazwy są po angielsku, np. „Case”).'],
+  ['Price from', 'Cena od',
+    'The lowest item price to check. Below about 1 zł the Steam fee eats almost all of the profit.',
+    'Najniższa cena przedmiotu do sprawdzenia. Poniżej ok. 1 zł prowizja Steama zjada prawie cały zysk.'],
+  ['to', 'do',
+    'The highest price of one unit. By default it\'s what you have available in your Steam wallet, and if you type your own amount, it stays.',
+    'Najwyższa cena jednej sztuki. Domyślnie tyle, ile masz dostępne w portfelu Steam, a jeśli wpiszesz własną kwotę, zostanie.'],
+  ['Min. listings', 'Min. ofert na rynku',
+    'Skips items that few people list, because their prices jump around and they are hard to sell later.',
+    'Pomija przedmioty, które mało kto wystawia, bo ich ceny skaczą i trudno je potem sprzedać.'],
+  ['Units to buy', 'Ile sztuk chcę kupić',
+    'For this many units Flipster works out which buy order to place and how much you pay in total.',
+    'Dla tylu sztuk policzę, jakie zlecenie kupna ustawić i ile razem zapłacisz.'],
+  ['Items to check', 'Ile przedmiotów sprawdzić',
+    'How many items to go through. 40 items take about 1-3 minutes.',
+    'Ile przedmiotów przejrzeć. 40 sztuk to ok. 1-3 minuty.'],
+  ['How many to find', 'Ile znaleźć',
+    'The scanner goes through items until this many get the "Flip possible" verdict, the list ends or you click Stop. Leave it empty for no limit.',
+    'Skaner przegląda kolejne przedmioty, aż tyle z nich dostanie ocenę „Flip możliwy”, lista się skończy albo klikniesz Stop. Puste pole oznacza brak limitu.'],
+  ['Min. sales/24h', 'Min. sprzedaży/24h',
+    'Items that sell less often are greyed out, because you would wait long for a buyer.',
+    'Przedmioty sprzedawane rzadziej są wyszarzone, bo długo czekałbyś na kupca.'],
+  ['Min. ROI %', 'Min. ROI %',
+    'Items that earn less (as a percentage of the buy price) are greyed out. A sensible threshold is 3-5%.',
+    'Przedmioty z mniejszym zarobkiem (w procentach ceny zakupu) są wyszarzone. Rozsądny próg to 3-5%.'],
 
-  // ---- Okazje: na dłużej
-  'Cena teraz': 'Najtańsza oferta na rynku Steam, czyli za ile kupisz od ręki.',
-  'Zimy (XI→V)': 'Ile razy w przeszłości opłaciło się kupić pod koniec listopada i sprzedać pół roku później (po prowizji). Najedź, żeby zobaczyć każdy rok.',
-  'Po roku': 'Jak często w przeszłości trzymanie przez rok dało zysk po prowizji i ile typowo wychodziło.',
-  'Po 2 latach': 'To samo dla dwóch lat trzymania.',
-  'vs śr. z roku': 'Czy teraz jest taniej, czy drożej niż średnio w ostatnim roku. Minus oznacza, że taniej niż zwykle.',
-  '30 dni': 'O ile zmieniła się cena w ostatnim miesiącu. Duży spadek (ponad 10%) to znak, żeby jeszcze poczekać z zakupem.',
-  'Ocena': 'Krótki werdykt Flipstera. „Kandydat” to np. skrzynia starsza niż 4 lata, której cena nie leci w dół i która się sprzedaje. Najedź na ocenę, żeby zobaczyć powód.',
+  // ---- Deals: table columns
+  ['Volume 24h', 'Wolumen 24h', 'How many units sold in the last day.', 'Ile sztuk sprzedało się w ostatniej dobie.'],
 
-  // ---- Okazje: szybki flip
-  'Kupno (zlecenie)': 'Za ile ustawić zlecenie kupna. To grosz więcej niż zlecenia innych, które naprawdę czekają na sprzedających.',
-  'Sprzedaż (transakcje)': 'Za ile ten przedmiot naprawdę się sprzedaje. Sprzedać możesz dopiero po 7 dniach od zakupu, więc jednodniowy skok ceny się nie liczy.',
-  'Zysk/szt.': 'Ile zarobisz na jednej sztuce po odjęciu prowizji Steama.',
-  'Zysk / szt. (flip)': 'Ile zarobisz na jednej sztuce po odjęciu prowizji Steama.',
-  'ROI': 'Zarobek w procentach ceny zakupu, po prowizji. Np. 5% oznacza, że z każdych 100 zł zostaje 5 zł.',
-  'Zmiana tyg.': 'O ile cena zwykle zmienia się w ciągu tygodnia. Przez tydzień nie możesz sprzedać, więc to Twoje ryzyko.',
-  'Szansa wejścia': 'Ile sztuk w ostatnim tygodniu sprzedano po cenie Twojego zlecenia albo taniej. Poniżej 10 zlecenie raczej będzie stało, a 0 oznacza, że nikt nie sprzedaje tak tanio.',
+  // ---- Deals: long term
+  ['Price now', 'Cena teraz',
+    'The cheapest listing on the Steam market, so what you pay to buy right away.',
+    'Najtańsza oferta na rynku Steam, czyli za ile kupisz od ręki.'],
+  ['Winters (Nov to May)', 'Zimy (XI→V)',
+    'How often in the past it paid off to buy at the end of November and sell half a year later (after the fee). Hover to see each year.',
+    'Ile razy w przeszłości opłaciło się kupić pod koniec listopada i sprzedać pół roku później (po prowizji). Najedź, żeby zobaczyć każdy rok.'],
+  ['After 1 year', 'Po roku',
+    'How often in the past holding for a year gave a profit after the fee, and what the typical result was.',
+    'Jak często w przeszłości trzymanie przez rok dało zysk po prowizji i ile typowo wychodziło.'],
+  ['After 2 years', 'Po 2 latach', 'The same for holding two years.', 'To samo dla dwóch lat trzymania.'],
+  ['vs 1-year avg', 'vs śr. z roku',
+    'Whether it\'s cheaper or pricier now than on average over the last year. Minus means cheaper than usual.',
+    'Czy teraz jest taniej, czy drożej niż średnio w ostatnim roku. Minus oznacza, że taniej niż zwykle.'],
+  ['30 days', '30 dni',
+    'How much the price changed in the last month. A big drop (over 10%) is a sign to wait before buying.',
+    'O ile zmieniła się cena w ostatnim miesiącu. Duży spadek (ponad 10%) to znak, żeby jeszcze poczekać z zakupem.'],
+  ['Verdict', 'Ocena',
+    'Flipster\'s short verdict. "Candidate" is, for example, a case older than 4 years whose price isn\'t falling and which keeps selling. Hover over the verdict to see why.',
+    'Krótki werdykt Flipstera. „Kandydat” to np. skrzynia starsza niż 4 lata, której cena nie leci w dół i która się sprzedaje. Najedź na ocenę, żeby zobaczyć powód.'],
 
-  // ---- Rynek: oferty sprzedaży i zlecenia kupna
-  'Nowa cena': 'Cena, na którą zmienisz ofertę. Wpisz ją albo kliknij gotową propozycję.',
-  'Otrzymasz': 'Ile wpadnie na saldo Steam po prowizji.',
-  'Twoja cena': 'Za ile wystawiłeś (tyle płaci kupujący) i ile z tego dostaniesz po prowizji.',
-  'Rynek': 'Czy Twoja oferta jest najtańsza, ile kosztuje najtańsza oferta innych i za ile przedmiot zwykle się sprzedaje.',
-  'Proponowana cena': 'Najwyższa cena, przy której przedmiot ma realną szansę zejść w czasie ustawionym w ⚙.\nFlipster sprawdza, jak często w ostatnim miesiącu cena utrzymywała się na takim poziomie. Przy rzadko sprzedawanych przedmiotach patrzy, ile tańszych ofert jest przed Tobą i po ile ostatnio sprzedawano.',
-  'Twoje zlecenie': 'Ile oferujesz za sztukę i ile sztuk jeszcze chcesz kupić.',
-  'Propozycja': 'Grosz więcej niż najwyższe zlecenie innych, żeby Twoje było pierwsze w kolejce (nie więcej niż Twoje maksimum).',
+  // ---- Deals: quick flip
+  ['Buy (order)', 'Kupno (zlecenie)',
+    'What to set your buy order at. That\'s a cent more than other people\'s orders that are really waiting for sellers.',
+    'Za ile ustawić zlecenie kupna. To grosz więcej niż zlecenia innych, które naprawdę czekają na sprzedających.'],
+  ['Sell (actual sales)', 'Sprzedaż (transakcje)',
+    'What the item really sells for. You can only sell 7 days after buying, so a one-day price spike doesn\'t count.',
+    'Za ile ten przedmiot naprawdę się sprzedaje. Sprzedać możesz dopiero po 7 dniach od zakupu, więc jednodniowy skok ceny się nie liczy.'],
+  ['Profit/unit', 'Zysk/szt.', 'What you earn on one unit after Steam\'s fee.', 'Ile zarobisz na jednej sztuce po odjęciu prowizji Steama.'],
+  ['Profit / unit (flip)', 'Zysk / szt. (flip)', 'What you earn on one unit after Steam\'s fee.', 'Ile zarobisz na jednej sztuce po odjęciu prowizji Steama.'],
+  ['ROI', 'ROI',
+    'Earnings as a percentage of the buy price, after the fee. For example 5% means 5 zł left from every 100 zł.',
+    'Zarobek w procentach ceny zakupu, po prowizji. Np. 5% oznacza, że z każdych 100 zł zostaje 5 zł.'],
+  ['Weekly swing', 'Zmiana tyg.',
+    'How much the price usually moves in a week. You can\'t sell for a week, so that\'s your risk.',
+    'O ile cena zwykle zmienia się w ciągu tygodnia. Przez tydzień nie możesz sprzedać, więc to Twoje ryzyko.'],
+  ['Fill chance', 'Szansa wejścia',
+    'How many units sold last week at your order price or cheaper. Below 10 the order will probably just sit, and 0 means nobody sells that cheap.',
+    'Ile sztuk w ostatnim tygodniu sprzedano po cenie Twojego zlecenia albo taniej. Poniżej 10 zlecenie raczej będzie stało, a 0 oznacza, że nikt nie sprzedaje tak tanio.'],
 
-  // ---- Historia: kolumny
-  'Cena zakupu / sprzedaży': 'Przy sprzedaży to kwota, którą dostałeś na rękę (po prowizji), a przy zakupie to, ile zapłaciłeś.\nKwoty w euro czy dolarach są przeliczone po kursie NBP z tamtego dnia.',
-  'Cena dziś': 'Za ile ten sam przedmiot sprzedaje się dziś (najtańsza oferta). Pod spodem widać, o ile więcej albo mniej to niż wtedy.',
-  'Zysk / strata': 'Ile na tym zarobiłeś albo straciłeś, czyli to, co dostałeś, minus to, ile Cię to kosztowało.\nKosztem jest cena zakupu, skrzynia z kluczem albo wartość tego, co oddałeś w wymianie. Drop i prezent nic nie kosztują.',
-  'Status': 'Co się stało z przedmiotem. Nadal go masz, sprzedałeś go albo oddałeś w wymianie.',
+  // ---- Market: listings and buy orders
+  ['New price', 'Nowa cena', 'The price your listing changes to. Type it or click a suggestion.', 'Cena, na którą zmienisz ofertę. Wpisz ją albo kliknij gotową propozycję.'],
+  ['You get', 'Otrzymasz', 'What lands in your Steam wallet after the fee.', 'Ile wpadnie na saldo Steam po prowizji.'],
+  ['Your price', 'Twoja cena',
+    'What you listed it for (what the buyer pays) and what you get from it after the fee.',
+    'Za ile wystawiłeś (tyle płaci kupujący) i ile z tego dostaniesz po prowizji.'],
+  ['Market', 'Rynek',
+    'Whether your listing is the cheapest, what the cheapest listing of others costs and what the item usually sells for.',
+    'Czy Twoja oferta jest najtańsza, ile kosztuje najtańsza oferta innych i za ile przedmiot zwykle się sprzedaje.'],
+  ['Suggested price', 'Proponowana cena',
+    'The highest price at which the item has a real chance to sell within the time set in ⚙.\nFlipster checks how often the price held at that level over the last month. For rarely sold items it looks at how many cheaper listings are ahead of you and what recent sales went for.',
+    'Najwyższa cena, przy której przedmiot ma realną szansę zejść w czasie ustawionym w ⚙.\nFlipster sprawdza, jak często w ostatnim miesiącu cena utrzymywała się na takim poziomie. Przy rzadko sprzedawanych przedmiotach patrzy, ile tańszych ofert jest przed Tobą i po ile ostatnio sprzedawano.'],
+  ['Your order', 'Twoje zlecenie', 'What you offer per unit and how many units you still want to buy.', 'Ile oferujesz za sztukę i ile sztuk jeszcze chcesz kupić.'],
+  ['Suggestion', 'Propozycja',
+    'A cent more than the highest order of others, so yours is first in line (never above your maximum).',
+    'Grosz więcej niż najwyższe zlecenie innych, żeby Twoje było pierwsze w kolejce (nie więcej niż Twoje maksimum).'],
 
-  // ---- Ekwipunek
-  'Przedmioty': 'Ile masz przedmiotów, licząc te w ekwipunku i te wystawione na rynku.',
-  'Wartość Steam': 'Ile byłoby warte wszystko razem po najniższych cenach na rynku Steam (tyle płaci kupujący).',
-  'Do sprzedania teraz': 'Przedmioty, które możesz wystawić od ręki (bez blokady handlu). „Otrzymasz” to kwota, którą dostaniesz po prowizji.',
-  'Na rynku': 'Twoje wystawione oferty. „Przebite” znaczy, że ktoś wystawił taniej niż Ty.',
-  'Zaznaczone': 'Ile sztuk zaznaczyłeś i ile są warte.',
+  // ---- History: columns
+  ['Buy / sell price', 'Cena zakupu / sprzedaży',
+    'For a sale, what you got after the fee. For a purchase, what you paid.\nAmounts in euro or dollars are converted at the NBP rate of that day.',
+    'Przy sprzedaży to kwota, którą dostałeś na rękę (po prowizji), a przy zakupie to, ile zapłaciłeś.\nKwoty w euro czy dolarach są przeliczone po kursie NBP z tamtego dnia.'],
+  ['Price today', 'Cena dziś',
+    'What the same item sells for today (the cheapest listing). Below it, how much more or less that is than back then.',
+    'Za ile ten sam przedmiot sprzedaje się dziś (najtańsza oferta). Pod spodem widać, o ile więcej albo mniej to niż wtedy.'],
+  ['Profit / loss', 'Zysk / strata',
+    'How much you made or lost on it, so what you got minus what it cost you.\nThe cost is the purchase price, a case with its key or the value of what you gave in a trade. Drops and gifts cost nothing.',
+    'Ile na tym zarobiłeś albo straciłeś, czyli to, co dostałeś, minus to, ile Cię to kosztowało.\nKosztem jest cena zakupu, skrzynia z kluczem albo wartość tego, co oddałeś w wymianie. Drop i prezent nic nie kosztują.'],
+  ['Status', 'Status',
+    'What happened to the item. You still have it, you sold it or you gave it away in a trade.',
+    'Co się stało z przedmiotem. Nadal go masz, sprzedałeś go albo oddałeś w wymianie.'],
 
-  // ---- Historia: karty
-  'Wydano na rynku': 'Ile w sumie zapłaciłeś za zakupy na rynku Steam (w okresie i grze wybranych u góry).',
-  'Otrzymano ze sprzedaży': 'Ile w sumie dostałeś ze sprzedaży na rynku, już po prowizji Steama.',
-  'Bilans': 'Otrzymano minus wydano. Plus znaczy, że handel na rynku powiększył Twoje saldo Steam, a minus, że je zmniejszył.',
-  'Zysk z flipów': 'Ile zarobiłeś na samym handlu, czyli na przedmiotach kupionych na rynku i potem sprzedanych. To kwota ze sprzedaży (po prowizji) minus to, ile za nie zapłaciłeś.\nNie liczy dropów, skrzyń, wymian ani tego, co nadal masz. Ile w sumie przybyło albo ubyło na saldzie, pokazuje Bilans.\n„Na plus” to część tych sprzedaży, które dały zysk (np. 10% to 1 na 10).',
+  // ---- Inventory
+  ['Items', 'Przedmioty',
+    'How many items you have, counting those in your inventory and those listed on the market.',
+    'Ile masz przedmiotów, licząc te w ekwipunku i te wystawione na rynku.'],
+  ['Steam value', 'Wartość Steam',
+    'What everything together would be worth at the lowest prices on the Steam market (what the buyer pays).',
+    'Ile byłoby warte wszystko razem po najniższych cenach na rynku Steam (tyle płaci kupujący).'],
+  ['Sellable now', 'Do sprzedania teraz',
+    'Items you can list right away (no trade lock). "You get" is what you get after the fee.',
+    'Przedmioty, które możesz wystawić od ręki (bez blokady handlu). „Otrzymasz” to kwota, którą dostaniesz po prowizji.'],
+  ['On the market', 'Na rynku',
+    'Your listings. "Undercut" means someone listed cheaper than you.',
+    'Twoje wystawione oferty. „Przebite” znaczy, że ktoś wystawił taniej niż Ty.'],
+  ['Selected', 'Zaznaczone', 'How many units you selected and what they are worth.', 'Ile sztuk zaznaczyłeś i ile są warte.'],
 
-  // ---- Historia: otwarte skrzynie
-  'Otwarcia': 'Ile skrzyń, kapsuł i terminali otworzyłeś. Pod spodem widać, ile z nich dało więcej, niż kosztowało.',
-  'Koszt otwarć': 'Ile kosztowały Cię otwarcia, czyli skrzynia (cena zakupu albo jej wartość, jeśli wypadła z gry) i klucz. Przy terminalu liczy się terminal i to, co zapłaciłeś w grze.',
-  'Wartość dropów': 'Ile jest warte to, co wypadło ze skrzyń (po prowizji).\nSprzedane liczą się po kwocie sprzedaży, wymienione po tym, co za nie dostałeś, a te, które nadal masz, po dzisiejszej cenie.',
-  'Zysk / strata na skrzyniach': 'Wartość dropów minus koszt otwarć. Terminale bez wpisanej kwoty zapłaconej w grze są pominięte.',
-  'Najlepszy drop': 'Najcenniejszy przedmiot, jaki Ci wypadł, z jego wartością i datą otwarcia.',
-};
+  // ---- History: cards
+  ['Spent on the market', 'Wydano na rynku',
+    'How much you paid in total for purchases on the Steam market (in the period and game picked at the top).',
+    'Ile w sumie zapłaciłeś za zakupy na rynku Steam (w okresie i grze wybranych u góry).'],
+  ['Received from sales', 'Otrzymano ze sprzedaży',
+    'How much you got in total from sales on the market, already after Steam\'s fee.',
+    'Ile w sumie dostałeś ze sprzedaży na rynku, już po prowizji Steama.'],
+  ['Balance', 'Bilans',
+    'Received minus spent. Plus means trading on the market grew your Steam wallet, minus means it shrank it.',
+    'Otrzymano minus wydano. Plus znaczy, że handel na rynku powiększył Twoje saldo Steam, a minus, że je zmniejszył.'],
+  ['Flip profit', 'Zysk z flipów',
+    'How much you made on trading alone, so on items bought on the market and later sold. That\'s the sale amount (after the fee) minus what you paid for them.\nDrops, cases, trades and what you still own don\'t count. How much your wallet grew or shrank overall is shown by Balance.\n"In profit" is the share of those sales that made money (e.g. 10% is 1 in 10).',
+    'Ile zarobiłeś na samym handlu, czyli na przedmiotach kupionych na rynku i potem sprzedanych. To kwota ze sprzedaży (po prowizji) minus to, ile za nie zapłaciłeś.\nNie liczy dropów, skrzyń, wymian ani tego, co nadal masz. Ile w sumie przybyło albo ubyło na saldzie, pokazuje Bilans.\n„Na plus” to część tych sprzedaży, które dały zysk (np. 10% to 1 na 10).'],
+
+  // ---- History: opened cases
+  ['Openings', 'Otwarcia',
+    'How many cases, capsules and terminals you opened. Below it, how many of them gave more than they cost.',
+    'Ile skrzyń, kapsuł i terminali otworzyłeś. Pod spodem widać, ile z nich dało więcej, niż kosztowało.'],
+  ['Opening cost', 'Koszt otwarć',
+    'What the openings cost you, so the case (its purchase price, or its value if it dropped in game) and the key. For a terminal, the terminal and what you paid in game.',
+    'Ile kosztowały Cię otwarcia, czyli skrzynia (cena zakupu albo jej wartość, jeśli wypadła z gry) i klucz. Przy terminalu liczy się terminal i to, co zapłaciłeś w grze.'],
+  ['Drop value', 'Wartość dropów',
+    'What the items you unboxed are worth (after the fee).\nSold ones count at the sale amount, traded ones at what you got for them, and the ones you still have at today\'s price.',
+    'Ile jest warte to, co wypadło ze skrzyń (po prowizji).\nSprzedane liczą się po kwocie sprzedaży, wymienione po tym, co za nie dostałeś, a te, które nadal masz, po dzisiejszej cenie.'],
+  ['Profit / loss on cases', 'Zysk / strata na skrzyniach',
+    'Drop value minus opening cost. Terminals without an amount paid in game are left out.',
+    'Wartość dropów minus koszt otwarć. Terminale bez wpisanej kwoty zapłaconej w grze są pominięte.'],
+  ['Best drop', 'Najlepszy drop',
+    'The most valuable item you unboxed, with its value and the opening date.',
+    'Najcenniejszy przedmiot, jaki Ci wypadł, z jego wartością i datą otwarcia.'],
+];
+
+/** title (in the current language) → its explanation */
+export const TIPS = Object.fromEntries(ROWS.map(([en, pl, te, tp]) => (getLang() === 'pl' ? [pl, tp] : [en, te])));

@@ -11,6 +11,10 @@ import { focusItem } from './inventory.js';
 import { baseName } from '../core/patterns.js';
 import { patternFor, patternChip } from './patternmark.js';
 import * as patterndb from './patterndb.js';
+import { L, locale } from '../core/i18n.js';
+
+/** the event kinds are stored as Polish codes (they are data); this is how they read to you */
+const kindName = (k) => ({ wymiana: L('trade', 'wymiana'), rynek: L('market', 'rynek'), skrzynia: L('case', 'skrzynia'), kontrakt: L('contract', 'kontrakt'), naklejka: L('sticker', 'naklejka'), otrzymane: L('received', 'otrzymane'), inne: L('other', 'inne') }[k] || k);
 
 let el;
 let task;
@@ -41,7 +45,7 @@ function renderPager(key, total) {
     html += `<button class="b ${i === p ? 'on' : ''}" data-pg="${key}" data-to="${i}">${i + 1}</button>`;
   });
   html += `<button class="b" data-pg="${key}" data-to="${p + 1}" ${p < n - 1 ? '' : 'disabled'}>›</button>`;
-  html += `<span class="sub" style="margin-left:8px">${p * PER_PAGE + 1}-${Math.min(total, (p + 1) * PER_PAGE)} z ${total}</span>`;
+  html += `<span class="sub" style="margin-left:8px">${p * PER_PAGE + 1}-${Math.min(total, (p + 1) * PER_PAGE)} ${L('of', 'z')} ${total}</span>`;
   box.innerHTML = html;
 }
 // three sub-tabs: Transakcje / Otwarte skrzynie / Historia ekwipunku
@@ -132,9 +136,9 @@ function rateFor(cur) {
     Promise.all([steam.priceOverview(FX_ITEM[0], FX_ITEM[1], cur), steam.priceOverview(FX_ITEM[0], FX_ITEM[1], w)])
       .then(([a, b]) => {
         const r = (b.median || b.lowest) / (a.median || a.lowest);
-        if (isFinite(r) && r > 0) { fx.set(String(cur), { r, at: Date.now() }); ui.log(`Kurs ${CUR_NAME[cur] || cur} → ${CUR_NAME[w] || w}: ${r.toFixed(3)} (wg cen Steama)`); invalidate(); render(); }
+        if (isFinite(r) && r > 0) { fx.set(String(cur), { r, at: Date.now() }); ui.log(L(`Rate ${CUR_NAME[cur] || cur} to ${CUR_NAME[w] || w}: ${r.toFixed(3)} (from Steam prices)`, `Kurs ${CUR_NAME[cur] || cur} → ${CUR_NAME[w] || w}: ${r.toFixed(3)} (wg cen Steama)`)); invalidate(); render(); }
       })
-      .catch((e) => ui.log(`Nie udało się ustalić kursu waluty ${CUR_NAME[cur] || cur}: ${e.message}`, 'warn'))
+      .catch((e) => ui.log(L(`Couldn't get the exchange rate of ${CUR_NAME[cur] || cur}: ${e.message}`, `Nie udało się ustalić kursu waluty ${CUR_NAME[cur] || cur}: ${e.message}`), 'warn'))
       .finally(() => fxLoading.delete(cur));
   }
   return c ? c.r : null; // stale rate is better than nothing
@@ -187,7 +191,7 @@ async function ensureNbp(trades) {
         while (i < tss.length && tss[i] <= to) i++;
       }
     }
-    ui.log('Historia: pobrano historyczne kursy walut z NBP.', 'ok');
+    ui.log(L('History: downloaded historical exchange rates from NBP.', 'Historia: pobrano historyczne kursy walut z NBP.'), 'ok');
   } finally { nbpBusy = false; }
   invalidate();
   render();
@@ -253,7 +257,7 @@ function estimate(appid, hash, ts) {
       render();
       renderInv();
       steam.bus.emit('estimated');
-    }).catch((e) => { if (e.status === 500 || e.status === 400 || /brak historii/i.test(e.message)) estFail.set(hash, Date.now()); else console.warn('[Flipster] szacowanie ceny', hash, e.message); (pendingEst.get(hash) || []).forEach((t) => estTried.add(`${hash}|${Math.floor(t / 3600000)}`)); })
+    }).catch((e) => { if (e.status === 500 || e.status === 400 || /brak historii|no price history/i.test(e.message)) estFail.set(hash, Date.now()); else console.warn('[Flipster] szacowanie ceny', hash, e.message); (pendingEst.get(hash) || []).forEach((t) => estTried.add(`${hash}|${Math.floor(t / 3600000)}`)); })
       .finally(() => estLoading.delete(hash));
   }
   (pendingEst.get(hash) || pendingEst.set(hash, new Set()).get(hash)).add(ts);
@@ -403,7 +407,7 @@ function exportHistory() {
     market, invHistory: inv, otherGamesHistory: steamInv, caseOpenings: opens, owned,
   };
   downloadText(`flipster-historia-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 1), 'application/json');
-  ui.log(`Historia: zapisano dane do analizy (${market.length} transakcji, ${inv.length} zdarzeń ekwipunku, ${opens.length} otwarć, ${owned.length} przedmiotów).`, 'ok');
+  ui.log(L(`History: saved the data for analysis (${market.length} trades, ${inv.length} inventory events, ${opens.length} openings, ${owned.length} items).`, `Historia: zapisano dane do analizy (${market.length} transakcji, ${inv.length} zdarzeń ekwipunku, ${opens.length} otwarć, ${owned.length} przedmiotów).`), 'ok');
 }
 /** how many of each item I actually own now (hash → count); null when the inventory was never loaded */
 function ownedNow() {
@@ -436,33 +440,33 @@ export function mount(root) {
       #stt .pg button{min-width:30px}
     </style>
     <div class="bar">
-      <button class="b" data-a="syncall" title="Dobiera nowe wpisy ze wszystkich trzech historii Steama: rynku, ekwipunku (CS2 i karty Steam) i zakupów w sklepie (ceny kluczy i zakupów w terminalu). Dzieje się też samo po otwarciu tej zakładki.">⟳ Synchronizuj</button>
-      <button class="b" data-a="fullall" title="Pobiera od nowa całą historię rynku i ekwipunku. Potrzebne rzadko, kosztuje dużo zapytań do Steama.">Pełna synchronizacja</button>
-      <button class="b dbg" data-a="dump" title="Zapisuje do pliku całą zapisaną historię (rynek, historia ekwipunku, otwarte skrzynie) i listę tego, co masz w ekwipunku, do wspólnego sprawdzenia, czy Flipster dobrze to liczy. Bez Twojego SteamID i linków do profili.">⬇ Dane do analizy</button>
-      <select id="h-per"><option value="7">7 dni</option><option value="30">30 dni</option><option value="90">90 dni</option><option value="365">rok</option><option value="0">cała historia</option></select>
-      <select id="h-game" title="Która gra: transakcje, podsumowanie i historia ekwipunku tylko dla niej (np. sam wynik na CS2, bez kart kolekcjonerskich)"><option value="all">wszystkie gry</option><option value="730">CS2</option>${otherApps().map((a) => `<option value="${a}">${esc(appName(a))}</option>`).join('')}</select>
-      <label class="tgl" title="Łączy takie same transakcje z jednego dnia (ten sam przedmiot, rodzaj, cena i stan) w jeden wiersz ×N; pojedynczy wiersz rozwiniesz, klikając ×N"><input type="checkbox" id="h-grp" ${store.get('histGroup', true) ? 'checked' : ''}><span class="tr"></span>Grupuj identyczne</label>
+      <button class="b" data-a="syncall" title="${L('Fetches new entries from all three Steam histories, the market, the inventory (CS2 and Steam cards) and store purchases (prices of keys and terminal purchases). It also happens by itself when you open this tab.', 'Dobiera nowe wpisy ze wszystkich trzech historii Steama: rynku, ekwipunku (CS2 i karty Steam) i zakupów w sklepie (ceny kluczy i zakupów w terminalu). Dzieje się też samo po otwarciu tej zakładki.')}">⟳ ${L('Sync', 'Synchronizuj')}</button>
+      <button class="b" data-a="fullall" title="${L('Downloads the whole market and inventory history again. Rarely needed, costs many requests to Steam.', 'Pobiera od nowa całą historię rynku i ekwipunku. Potrzebne rzadko, kosztuje dużo zapytań do Steama.')}">${L('Full sync', 'Pełna synchronizacja')}</button>
+      <button class="b dbg" data-a="dump" title="${L('Saves the whole stored history (market, inventory history, opened cases) and the list of what you have in your inventory to a file, to check together whether Flipster counts it right. Without your SteamID and profile links.', 'Zapisuje do pliku całą zapisaną historię (rynek, historia ekwipunku, otwarte skrzynie) i listę tego, co masz w ekwipunku, do wspólnego sprawdzenia, czy Flipster dobrze to liczy. Bez Twojego SteamID i linków do profili.')}">⬇ ${L('Data for analysis', 'Dane do analizy')}</button>
+      <select id="h-per"><option value="7">${L('7 days', '7 dni')}</option><option value="30">${L('30 days', '30 dni')}</option><option value="90">${L('90 days', '90 dni')}</option><option value="365">${L('year', 'rok')}</option><option value="0">${L('whole history', 'cała historia')}</option></select>
+      <select id="h-game" title="${L('Which game, the trades, summary and inventory history only for it (e.g. just the CS2 result, without trading cards)', 'Która gra: transakcje, podsumowanie i historia ekwipunku tylko dla niej (np. sam wynik na CS2, bez kart kolekcjonerskich)')}"><option value="all">${L('all games', 'wszystkie gry')}</option><option value="730">CS2</option>${otherApps().map((a) => `<option value="${a}">${esc(appName(a))}</option>`).join('')}</select>
+      <label class="tgl" title="${L('Joins identical trades of one day (same item, kind, price and state) into one ×N row, click ×N to expand it', 'Łączy takie same transakcje z jednego dnia (ten sam przedmiot, rodzaj, cena i stan) w jeden wiersz ×N; pojedynczy wiersz rozwiniesz, klikając ×N')}"><input type="checkbox" id="h-grp" ${store.get('histGroup', true) ? 'checked' : ''}><span class="tr"></span>${L('Group identical', 'Grupuj identyczne')}</label>
       <span class="sp"></span>
       <span class="sub" id="h-info"></span>
       <button class="b" data-a="stop" hidden>■ Stop</button>
     </div>
     <div class="htabs">
-      <button data-ht="tx" id="tx-h">Transakcje <span class="cnt"></span></button>
-      <button data-ht="cs" id="cs-h">Otwarte skrzynie <span class="cnt"></span></button>
-      <button data-ht="ih" id="ih-h">Historia ekwipunku <span class="cnt"></span></button>
+      <button data-ht="tx" id="tx-h">${L('Trades', 'Transakcje')} <span class="cnt"></span></button>
+      <button data-ht="cs" id="cs-h">${L('Opened cases', 'Otwarte skrzynie')} <span class="cnt"></span></button>
+      <button data-ht="ih" id="ih-h">${L('Inventory history', 'Historia ekwipunku')} <span class="cnt"></span></button>
     </div>
     <div class="sec-b" data-sec="tx">
     <div class="bar">
-      <select id="h-view" title="Każda transakcja osobno albo zsumowane dla każdego przedmiotu"><option value="tx">każda transakcja</option><option value="item">suma na przedmiot</option></select>
-      <input type="search" id="h-q" placeholder="Filtruj przedmiot…" style="width:180px">
+      <select id="h-view" title="${L('Every trade on its own or summed up per item', 'Każda transakcja osobno albo zsumowane dla każdego przedmiotu')}"><option value="tx">${L('every trade', 'każda transakcja')}</option><option value="item">${L('total per item', 'suma na przedmiot')}</option></select>
+      <input type="search" id="h-q" placeholder="${L('Filter items…', 'Filtruj przedmiot…')}" style="width:180px">
       <span class="sp"></span>
-      <button class="b pane" data-a="months" title="Pokaż / ukryj wynik w rozbiciu na miesiące: flipy, skrzynie, wydane i otrzymane">📅 Miesiące</button>
-      <button class="b pane" data-a="chart" title="Pokaż / ukryj wykres zysku z flipów">📈 Wykres</button>
+      <button class="b pane" data-a="months" title="${L('Show / hide the result month by month, flips, cases, spent and received', 'Pokaż / ukryj wynik w rozbiciu na miesiące: flipy, skrzynie, wydane i otrzymane')}">📅 ${L('Months', 'Miesiące')}</button>
+      <button class="b pane" data-a="chart" title="${L('Show / hide the flip profit chart', 'Pokaż / ukryj wykres zysku z flipów')}">📈 ${L('Chart', 'Wykres')}</button>
     </div>
     <div class="cards" id="h-cards" style="grid-template-columns:repeat(auto-fill,minmax(max(170px,calc(25% - 10px)),1fr))"></div>
     <div id="h-months" style="padding:0 14px"></div>
     <div id="h-chart" style="padding:0 14px"></div>
-    <div class="note">Zysk liczony metodą FIFO: każda sprzedaż jest parowana z najstarszym niesprzedanym zakupem tego samego przedmiotu. Kwoty sprzedaży są już po prowizji Steama. Sprzedaże bez zakupu na rynku (dropy, skrzynki, wymiany) są liczone osobno jako „przychód bez kosztu”.</div>
+    <div class="note">${L('Each sale is paired with the oldest unsold purchase of the same item. Sale amounts are already after Steam\'s fee. Sales without a market purchase (drops, cases, trades) are counted separately as “income without cost”.', 'Zysk liczony metodą FIFO: każda sprzedaż jest parowana z najstarszym niesprzedanym zakupem tego samego przedmiotu. Kwoty sprzedaży są już po prowizji Steama. Sprzedaże bez zakupu na rynku (dropy, skrzynki, wymiany) są liczone osobno jako „przychód bez kosztu”.')}</div>
     <table id="h-tbl"><thead></thead><tbody></tbody></table>
     <div class="pg" id="tx-pg"></div>
     </div>
@@ -476,11 +480,11 @@ export function mount(root) {
     </div>
     <div class="sec-b" data-sec="ih">
     <div class="bar" style="position:relative">
-      <select id="ih-kind"><option value="">wszystkie zdarzenia</option><option value="wymiana">wymiany</option><option value="rynek">rynek</option><option value="skrzynia">skrzynie</option><option value="kontrakt">kontrakty</option><option value="naklejka">naklejki</option><option value="otrzymane">otrzymane / dropy</option><option value="inne">inne</option></select>
-      <input type="search" id="ih-q" placeholder="Szukaj: przedmiot, gracz…" style="width:200px">
+      <select id="ih-kind"><option value="">${L('all events', 'wszystkie zdarzenia')}</option><option value="wymiana">${L('trades', 'wymiany')}</option><option value="rynek">${L('market', 'rynek')}</option><option value="skrzynia">${L('cases', 'skrzynie')}</option><option value="kontrakt">${L('contracts', 'kontrakty')}</option><option value="naklejka">${L('stickers', 'naklejki')}</option><option value="otrzymane">${L('received / drops', 'otrzymane / dropy')}</option><option value="inne">${L('other', 'inne')}</option></select>
+      <input type="search" id="ih-q" placeholder="${L('Search items, players…', 'Szukaj: przedmiot, gracz…')}" style="width:200px">
       <span class="sp"></span><span class="sub" id="ih-info"></span>
     </div>
-    <div class="note">Wszystko, co działo się z Twoimi przedmiotami: wymiany (z kim i co za co), rynek, otwarte skrzynie, kontrakty, dropy (także karty Steam za granie). Gra i okres jak w filtrach u góry. <span class="neg">−</span> oddane, <span class="pos">+</span> otrzymane.</div>
+    <div class="note">${L('Everything that happened to your items, trades (with whom and what for what), the market, opened cases, contracts, drops (also Steam cards for playing). Game and period as in the filters at the top.', 'Wszystko, co działo się z Twoimi przedmiotami: wymiany (z kim i co za co), rynek, otwarte skrzynie, kontrakty, dropy (także karty Steam za granie). Gra i okres jak w filtrach u góry.')} <span class="neg">−</span> ${L('given', 'oddane')}, <span class="pos">+</span> ${L('received', 'otrzymane')}.</div>
     <div id="ih-list"></div>
     <div class="pg" id="ih-pg"></div>
     </div>
@@ -548,7 +552,7 @@ export function mount(root) {
   // trades saved by older versions (no currency; fmt 4: wrong years on trades newer than 2023) → one full re-sync
   const trades = Object.values(loadTrades());
   if (trades.length && store.get('tradesFmt', 1) < TRADES_FMT) {
-    ui.log('Historia: jednorazowo pobieram całą historię rynku od nowa (daty transakcji, seedy wzorów)…', 'warn');
+    ui.log(L('History: one-time download of the whole market history again (trade dates, pattern seeds)…', 'Historia: jednorazowo pobieram całą historię rynku od nowa (daty transakcji, seedy wzorów)…'), 'warn');
     sync(true);
     return;
   }
@@ -568,10 +572,11 @@ const once = (busy, set, fn) => async (...a) => { if (busy()) return; set(true);
 const sync = once(() => mBusy, (v) => (mBusy = v), syncMarket);
 /** the three histories one after another: market, inventory (CS2 + Steam items), store purchases; full = market and inventory from scratch */
 async function syncAll(full) {
-  if (anyBusy()) return ui.log('Historia: synchronizacja już trwa.', 'warn');
-  if (full && !(await ui.ask('Pełna synchronizacja', 'Pobiorę od nowa całą historię rynku i całą historię ekwipunku (CS2 i karty Steam). To od kilkudziesięciu do kilkuset zapytań do Steama i kilka minut.<br><span class="sub">Zwykle wystarcza „Synchronizuj”: dobiera tylko nowe wpisy (i tak dzieje się samo po otwarciu tej zakładki).</span>', { ok: 'Pobierz wszystko' }))) return;
+  const busyMsg = L('History: a sync is already running.', 'Historia: synchronizacja już trwa.');
+  if (anyBusy()) return ui.log(busyMsg, 'warn');
+  if (full && !(await ui.ask(L('Full sync', 'Pełna synchronizacja'), L('I\'ll download the whole market history and the whole inventory history (CS2 and Steam cards) again. That\'s from a few dozen to a few hundred requests to Steam and a few minutes.<br><span class="sub">“Sync” is usually enough, it fetches only new entries (and runs by itself when you open this tab).</span>', 'Pobiorę od nowa całą historię rynku i całą historię ekwipunku (CS2 i karty Steam). To od kilkudziesięciu do kilkuset zapytań do Steama i kilka minut.<br><span class="sub">Zwykle wystarcza „Synchronizuj”: dobiera tylko nowe wpisy (i tak dzieje się samo po otwarciu tej zakładki).</span>'), { ok: L('Download everything', 'Pobierz wszystko') }))) return;
   // greyed out for the whole chain, not only during each part (a click in between could start it twice)
-  if (anyBusy()) return ui.log('Historia: synchronizacja już trwa.', 'warn');
+  if (anyBusy()) return ui.log(busyMsg, 'warn');
   chainBusy = true;
   syncUi();
   try {
@@ -584,7 +589,7 @@ async function syncAll(full) {
   }
 }
 async function syncMarket(full) {
-  if (!(await steam.ensureLogin())) return ui.log('Zaloguj się.', 'err');
+  if (!(await steam.ensureLogin())) return ui.log(L('Log in.', 'Zaloguj się.'), 'err');
   task = token();
   el.querySelector('[data-a="stop"]').hidden = false;
   const saved = loadTrades();
@@ -598,7 +603,7 @@ async function syncMarket(full) {
     const anchors = await loadAnchors();
     while (start < total && !task.cancelled) {
       const d = await steam.myHistoryHtmlPage(start, PAGE);
-      if (!d.success) throw new Error('Steam nie zwrócił historii');
+      if (!d.success) throw new Error(L('Steam returned no history', 'Steam nie zwrócił historii'));
       total = d.total_count || 0;
       const parse = (h) => new DOMParser().parseFromString(h, 'text/html');
       if (!dateOf) {
@@ -611,7 +616,7 @@ async function syncMarket(full) {
       const page = parseMyHistoryHtml(d, parse, new Date(), dateOf);
       if (start === 0) {
         const newest = [...page].sort((a, b) => b.t - a.t)[0];
-        if (newest) ui.log(`Historia: najnowsza transakcja na rynku, ${new Date(newest.t).toLocaleString()} ${newest.type === 'buy' ? 'kupno' : 'sprzedaż'} ${newest.hash}`);
+        if (newest) ui.log(`${L('History: newest market trade', 'Historia: najnowsza transakcja na rynku')}, ${new Date(newest.t).toLocaleString()} ${newest.type === 'buy' ? L('buy', 'kupno') : L('sale', 'sprzedaż')} ${newest.hash}`);
       }
       let fresh = 0;
       for (const t of page) {
@@ -625,7 +630,7 @@ async function syncMarket(full) {
       }
       const evs = (d.results_html || '').includes('history_row_') ? 1 : 0;
       ui.progress(Math.min(start + PAGE, total), total);
-      el.querySelector('#h-info').textContent = `pobrano ${Math.min(start + PAGE, total)}/${total} zdarzeń`;
+      el.querySelector('#h-info').textContent = L(`downloaded ${Math.min(start + PAGE, total)}/${total} events`, `pobrano ${Math.min(start + PAGE, total)}/${total} zdarzeń`);
       // incremental: stop when a whole page had nothing new
       if (!full && page.length && !fresh) break;
       if (!evs) break;
@@ -634,20 +639,21 @@ async function syncMarket(full) {
     }
     if (task.cancelled) {
       keep();
-      ui.log('Historia: przerwano, zapisałem to, co zdążyłem pobrać.', 'warn');
+      ui.log(L('History: stopped, I saved what I managed to download.', 'Historia: przerwano, zapisałem to, co zdążyłem pobrać.'), 'warn');
     } else {
       saveTrades(trades);
       store.set('tradesSyncedAt', Date.now());
       if (full || wasEmpty) store.set('tradesFmt', TRADES_FMT);
-      ui.log(`Historia: +${added} nowych transakcji (razem ${Object.keys(trades).length}).`, 'ok');
+      ui.log(L(`History: +${added} new trades (${Object.keys(trades).length} in total).`, `Historia: +${added} nowych transakcji (razem ${Object.keys(trades).length}).`), 'ok');
       // past items with a pattern seed: how many Steam still told, and which of them are a known pattern (💎)
       const all = Object.values(trades), withSeed = all.filter((x) => x.seed != null);
       const known = withSeed.filter((x) => patternFor(x.hash, x.seed));
-      if (full || known.length) ui.log(`Historia: seed znany dla ${withSeed.length} z ${all.length} transakcji${known.length ? `, 💎 znany wzór: ${known.length} (${[...new Set(known.map((x) => x.hash))].slice(0, 5).join(', ')}${known.length > 5 ? '…' : ''})` : ', żaden nie jest znanym rzadkim wzorem'}.`, known.length ? 'ok' : '');
+      const knownList = `${known.length} (${[...new Set(known.map((x) => x.hash))].slice(0, 5).join(', ')}${known.length > 5 ? '…' : ''})`;
+      if (full || known.length) ui.log(L(`History: seed known for ${withSeed.length} of ${all.length} trades${known.length ? `, 💎 known pattern ${knownList}` : ', none is a known rare pattern'}.`, `Historia: seed znany dla ${withSeed.length} z ${all.length} transakcji${known.length ? `, 💎 znany wzór: ${knownList}` : ', żaden nie jest znanym rzadkim wzorem'}.`), known.length ? 'ok' : '');
     }
   } catch (e) {
     keep();
-    ui.log('Historia: ' + e.message, 'err');
+    ui.log(L('History: ', 'Historia: ') + e.message, 'err');
   }
   ui.progress(0);
   el.querySelector('[data-a="stop"]').hidden = true;
@@ -731,8 +737,8 @@ function render(fast = false) {
   }
   const n = timedTrades().market.length;
   el.querySelector('#h-info').textContent = n
-    ? `${n} transakcji w bazie${pending ? ` · ${pending} czeka na kurs/szacowaną cenę` : ''}${owned ? '' : ' · otwórz Ekwipunek, żeby zweryfikować „trzymasz”'}`
-    : 'Brak danych, kliknij Synchronizuj';
+    ? L(`${n} trades stored${pending ? ` · ${pending} waiting for a rate / estimated price` : ''}${owned ? '' : ' · open Inventory to verify “you hold”'}`, `${n} transakcji w bazie${pending ? ` · ${pending} czeka na kurs/szacowaną cenę` : ''}${owned ? '' : ' · otwórz Ekwipunek, żeby zweryfikować „trzymasz”'}`)
+    : L('No data, click Sync', 'Brak danych, kliknij Synchronizuj');
   // drops from cases/capsules that were sold in the period: cost of the opening vs what the sale brought
   const dropInfo = new Map(); // hash -> {n, cost, value, cases:Set, unknown}
   const dropTx = new Map(); // hash|saleT -> {case, cost|null, value}
@@ -746,16 +752,16 @@ function render(fast = false) {
       if (r.caseCost == null || r.unknownPaid) x.unknown++;
       else { x.cost += Math.round(r.cost * share); x.value += d.value; }
       if (r.caseIt?.name) x.cases.add(r.caseIt.name);
-      dropTx.set(d.hash + '|' + d.saleT, { case: r.caseIt?.name || 'skrzynia', cost: r.caseCost == null ? null : Math.round(r.cost * share), value: d.value });
+      dropTx.set(d.hash + '|' + d.saleT, { case: r.caseIt?.name || L('case', 'skrzynia'), cost: r.caseCost == null ? null : Math.round(r.cost * share), value: d.value });
       dropInfo.set(d.hash, x);
     }
   }
   const floatsOf = (hash) => [...new Set(all.filter((t) => t.hash === hash && t.float != null).map((t) => t.float.toFixed(4)))];
   el.querySelector('#h-cards').innerHTML = `
-    <div class="card"><div class="k">Wydano na rynku</div><div class="v">${steam.fmt(spent)}</div></div>
-    <div class="card"><div class="k">Otrzymano ze sprzedaży</div><div class="v">${steam.fmt(recv)}</div></div>
-    <div class="card"><div class="k">Bilans</div><div class="v ${recv - spent >= 0 ? 'pos' : 'neg'}">${recv - spent >= 0 ? '+' : ''}${steam.fmt(recv - spent)}</div><div class="sub">otrzymano minus wydano</div></div>
-    <div class="card"><div class="k">Zysk z flipów</div><div class="v ${pnl >= 0 ? 'pos' : 'neg'}">${steam.fmt(pnl)}</div><div class="sub">${realizedP.length} flipów · ${realizedP.length ? pct(wins / realizedP.length, 0) : '-'} na plus</div></div>`;
+    <div class="card"><div class="k">${L('Spent on the market', 'Wydano na rynku')}</div><div class="v">${steam.fmt(spent)}</div></div>
+    <div class="card"><div class="k">${L('Received from sales', 'Otrzymano ze sprzedaży')}</div><div class="v">${steam.fmt(recv)}</div></div>
+    <div class="card"><div class="k">${L('Balance', 'Bilans')}</div><div class="v ${recv - spent >= 0 ? 'pos' : 'neg'}">${recv - spent >= 0 ? '+' : ''}${steam.fmt(recv - spent)}</div><div class="sub">${L('received minus spent', 'otrzymano minus wydano')}</div></div>
+    <div class="card"><div class="k">${L('Flip profit', 'Zysk z flipów')}</div><div class="v ${pnl >= 0 ? 'pos' : 'neg'}">${steam.fmt(pnl)}</div><div class="sub">${L(`${realizedP.length} flips · ${realizedP.length ? pct(wins / realizedP.length, 0) : '-'} in profit`, `${realizedP.length} flipów · ${realizedP.length ? pct(wins / realizedP.length, 0) : '-'} na plus`)}</div></div>`;
 
   // cumulative realized P&L chart
   let acc = 0;
@@ -767,8 +773,8 @@ function render(fast = false) {
   if (view === 'tx') return renderTx({ res, since, until, all, dropTx });
   // ---- per item: one row = "how did this item go for me" (bought → sold/held/gone → result)
   el.querySelector('#h-tbl thead').innerHTML = `<tr>
-      <th data-sort="name">Przedmiot</th><th data-sort="bought">Kupione</th><th data-sort="sold">Sprzedane</th>
-      <th data-sort="now">Status</th><th data-sort="result">Zysk / strata</th></tr>`;
+      <th data-sort="name">${L('Item', 'Przedmiot')}</th><th data-sort="bought">${L('Bought', 'Kupione')}</th><th data-sort="sold">${L('Sold', 'Sprzedane')}</th>
+      <th data-sort="now">Status</th><th data-sort="result">${L('Profit / loss', 'Zysk / strata')}</th></tr>`;
   const per = res.items.map((it) => {
     const rp = realizedP.filter((r) => r.hash === it.hash);
     const realized = rp.reduce((s, r) => s + r.pnl, 0);
@@ -791,34 +797,34 @@ function render(fast = false) {
   const money = (v) => `<span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${v > 0 ? '+' : ''}${steam.fmt(Math.round(v))}</span>`;
   el.querySelector('#h-tbl tbody').innerHTML = rows.length ? pageOf('tx', rows).map((x) => {
     const m = meta.get(x.hash) || {};
-    const est = estHashes.has(x.hash) || fxHashes.has(x.hash) ? ' <span class="warn" title="Część kwot oszacowana (brak ceny w historii Steama) albo przeliczona z innej waluty po kursie NBP">≈</span>' : '';
+    const est = estHashes.has(x.hash) || fxHashes.has(x.hash) ? ` <span class="warn" title="${L('Some amounts are estimated (no price in Steam\'s history) or converted from another currency at the NBP rate', 'Część kwot oszacowana (brak ceny w historii Steama) albo przeliczona z innej waluty po kursie NBP')}">≈</span>` : '';
     const fls = floatsOf(x.hash);
     // the English names carry the wear "(Field-Tested)": the subtitle keeps just the float
     const sub = fls.length ? `float ${fls.slice(0, 3).join(', ')}${fls.length > 3 ? '…' : ''}` : '';
     const di = dropInfo.get(x.hash);
     // bought
-    const buyCell = x.bought ? `${x.bought} × ${steam.fmt(Math.round(x.avgBuy))}${est}<div class="sub">razem ${steam.fmt(x.spent)}</div>` : '<span class="sub">nie kupowane</span>';
+    const buyCell = x.bought ? `${x.bought} × ${steam.fmt(Math.round(x.avgBuy))}${est}<div class="sub">${L('total', 'razem')} ${steam.fmt(x.spent)}</div>` : `<span class="sub">${L('not bought', 'nie kupowane')}</span>`;
     // sold
-    const sellCell = x.sold ? `${x.sold} × ${steam.fmt(Math.round(x.avgSell))}${est}<div class="sub">${x.unmatchedSells ? `${x.unmatchedSells} z dropu/wymiany · ` : ''}na rękę ${steam.fmt(x.received)}</div>` : '<span class="sub">-</span>';
+    const sellCell = x.sold ? `${x.sold} × ${steam.fmt(Math.round(x.avgSell))}${est}<div class="sub">${x.unmatchedSells ? `${x.unmatchedSells} ${L('from a drop/trade', 'z dropu/wymiany')} · ` : ''}${L('you got', 'na rękę')} ${steam.fmt(x.received)}</div>` : '<span class="sub">-</span>';
     // now: held / gone / all sold
     let nowCell;
     if (x.holdQty) {
       const val = x.todayLow != null ? steam.receivedFromBuyer(x.todayLow) * x.holdQty : null;
-      nowCell = `trzymasz ${x.holdQty}${val != null ? `<div class="sub">warte ${steam.fmt(val)} na rękę · ${steam.fmt(x.todayLow)}/szt.</div>` : '<div class="sub">brak ceny</div>'}`;
+      nowCell = `${L('you hold', 'trzymasz')} ${x.holdQty}${val != null ? `<div class="sub">${L(`worth ${steam.fmt(val)} to you · ${steam.fmt(x.todayLow)}/unit`, `warte ${steam.fmt(val)} na rękę · ${steam.fmt(x.todayLow)}/szt.`)}</div>` : `<div class="sub">${L('no price', 'brak ceny')}</div>`}`;
     } else if (x.goneQty) nowCell = goneCell(x);
-    else nowCell = `<span class="sub">wszystko sprzedane${x.todayLow != null ? ` · dziś ${steam.fmt(x.todayLow)}/szt.` : ''}</span>`;
+    else nowCell = `<span class="sub">${L('all sold', 'wszystko sprzedane')}${x.todayLow != null ? ` · ${L('today', 'dziś')} ${steam.fmt(x.todayLow)}/${L('unit', 'szt.')}` : ''}</span>`;
     if (x.holdQty && x.goneQty) nowCell += goneCell(x);
     // result
     const parts = [];
-    if (x.realizedP) parts.push(`sprzedaż ${money(x.realizedP)}`);
-    if (x.unrealP != null && x.holdQty) parts.push(`trzymane ${money(x.unrealP)}`);
+    if (x.realizedP) parts.push(`${L('sale', 'sprzedaż')} ${money(x.realizedP)}`);
+    if (x.unrealP != null && x.holdQty) parts.push(`${L('held', 'trzymane')} ${money(x.unrealP)}`);
     const resCell = x.realizedP || x.unrealP != null
-      ? `<b>${money(x.result)}</b>${x.roi != null ? ` <span class="sub">${pct(x.roi)}</span>` : ''}${parts.length > 1 ? `<div class="sub">${parts.join(' · ')}</div>` : x.unrealP != null && x.holdQty && !x.realizedP ? '<div class="sub">niezrealizowany</div>' : ''}`
-      : x.goneQty ? '<span class="sub" title="Przedmiot wyszedł z ekwipunku inaczej niż przez sprzedaż na rynku (wymiana, kontrakt, użycie), nie da się policzyć zysku">nieznany</span>' : '<span class="sub">-</span>';
-    const dropLine = di ? `<div class="sub" title="Przedmiot wypadł ze skrzyni/kapsuły. Koszt = skrzynia + klucz.">drop z ${esc([...di.cases].join(', ') || 'skrzyni')}${di.n - di.unknown ? `: ${money(di.value - di.cost)} vs koszt otwarcia` : ''}</div>` : '';
+      ? `<b>${money(x.result)}</b>${x.roi != null ? ` <span class="sub">${pct(x.roi)}</span>` : ''}${parts.length > 1 ? `<div class="sub">${parts.join(' · ')}</div>` : x.unrealP != null && x.holdQty && !x.realizedP ? `<div class="sub">${L('unrealised', 'niezrealizowany')}</div>` : ''}`
+      : x.goneQty ? `<span class="sub" title="${L('The item left the inventory some other way than a market sale (trade, contract, use), the profit can\'t be worked out', 'Przedmiot wyszedł z ekwipunku inaczej niż przez sprzedaż na rynku (wymiana, kontrakt, użycie), nie da się policzyć zysku')}">${L('unknown', 'nieznany')}</span>` : '<span class="sub">-</span>';
+    const dropLine = di ? `<div class="sub" title="${L('The item dropped from a case/capsule. Cost is the case plus the key.', 'Przedmiot wypadł ze skrzyni/kapsuły. Koszt = skrzynia + klucz.')}">${L('drop from', 'drop z')} ${esc([...di.cases].join(', ') || L('a case', 'skrzyni'))}${di.n - di.unknown ? `: ${money(di.value - di.cost)} ${L('vs the opening cost', 'vs koszt otwarcia')}` : ''}</div>` : '';
     return `<tr><td>${ui.itemCell({ ...m, hash: x.hash, name: m.name || x.hash, appid: m.appid || 730, sub })}</td>
       <td>${buyCell}</td><td>${sellCell}${dropLine}</td><td>${nowCell}</td><td>${resCell}</td></tr>`;
-  }).join('') : '<tr><td colspan="5" class="empty">Brak transakcji w tym okresie.</td></tr>';
+  }).join('') : `<tr><td colspan="5" class="empty">${L('No trades in this period.', 'Brak transakcji w tym okresie.')}</td></tr>`;
 }
 
 /** one row per market transaction (newest first by default) */
@@ -899,24 +905,25 @@ function unknownOrigin(x) {
   const line = (a, b, title) => `<div class="sub" title="${esc(title)}">${a}</div>${b ? `<div class="sub" style="color:#8f98a0" title="${esc(title)}">${b}</div>` : ''}`;
   // not CS2: that game's own inventory history was read too (allEvents) and had nothing either
   const app = String(x.appid || 730);
+  const none = L('not in Steam\'s history', 'brak w historii Steam');
   if (app !== '730') {
-    const what = app === '753' ? 'karta, tło albo emotka Steam' : appName(+app);
+    const what = app === '753' ? L('Steam card, background or emoticon', 'karta, tło albo emotka Steam') : appName(+app);
     const from = ih.oldest(+app);
-    if (!ih.syncedAt(+app)) return line('brak w historii Steam', what, `Historia ekwipunku dla ${appName(+app)} nie jest jeszcze pobrana (dzieje się to samo po otwarciu tej zakładki).`);
-    if (from && x.t < from) return line('brak w historii Steam', `${what}, starsze niż historia`, `Sprzedane ${day(x.t)}, a historia ekwipunku dla ${appName(+app)} zaczyna się ${day(from)}. Skąd się wziął, Steam już nie pokazuje.`);
-    return line('brak w historii Steam', what, `Ani historia rynku, ani historia ekwipunku dla ${appName(+app)} nie mówią, skąd ten przedmiot się wziął${app === '753' ? ' (karty zwykle wypadają za granie albo z paczek)' : ''}. Liczony jako przychód bez kosztu.`);
+    if (!ih.syncedAt(+app)) return line(none, what, L(`The inventory history of ${appName(+app)} isn't downloaded yet (it happens by itself when you open this tab).`, `Historia ekwipunku dla ${appName(+app)} nie jest jeszcze pobrana (dzieje się to samo po otwarciu tej zakładki).`));
+    if (from && x.t < from) return line(none, L(`${what}, older than the history`, `${what}, starsze niż historia`), L(`Sold ${day(x.t)}, and the inventory history of ${appName(+app)} starts ${day(from)}. Steam no longer shows where it came from.`, `Sprzedane ${day(x.t)}, a historia ekwipunku dla ${appName(+app)} zaczyna się ${day(from)}. Skąd się wziął, Steam już nie pokazuje.`));
+    return line(none, what, L(`Neither the market history nor the inventory history of ${appName(+app)} says where this item came from${app === '753' ? ' (cards usually drop for playing or come from booster packs)' : ''}. Counted as income without cost.`, `Ani historia rynku, ani historia ekwipunku dla ${appName(+app)} nie mówią, skąd ten przedmiot się wziął${app === '753' ? ' (karty zwykle wypadają za granie albo z paczek)' : ''}. Liczony jako przychód bez kosztu.`));
   }
-  if (first && x.t < first) return line('brak w historii Steam', 'starsze niż historia ekwipunku', `Sprzedane ${day(x.t)}, a historia ekwipunku na Steamie zaczyna się ${day(first)}. Skąd ten przedmiot się wziął, Steam już nie pokazuje.`);
+  if (first && x.t < first) return line(none, L('older than the inventory history', 'starsze niż historia ekwipunku'), L(`Sold ${day(x.t)}, and the Steam inventory history starts ${day(first)}. Steam no longer shows where this item came from.`, `Sprzedane ${day(x.t)}, a historia ekwipunku na Steamie zaczyna się ${day(first)}. Skąd ten przedmiot się wziął, Steam już nie pokazuje.`));
   const cases = casesWith(x.hash);
   const seen = firstSeen(x.hash, x.t);
   const opened = (memo?.co?.rows || []).filter((r) => r.caseIt?.hash && cases.includes(r.caseIt.hash) && r.e.t <= seen && r.e.t > seen - 14 * 86400000);
   if (opened.length) {
     const c = opened[0].caseIt.hash;
     const n = opened.filter((r) => r.caseIt.hash === c).length;
-    return line('brak w historii Steam', `prawdopodobnie ze skrzyni ${esc(c)}`, `Steam nie zapisał, skąd ten przedmiot się wziął: w historii ekwipunku pojawia się dopiero przy wystawieniu albo sprzedaży.\nTen skin jest w skrzyni ${c}, a w 14 dniach przed jego pierwszym pojawieniem się w historii (${day(seen)}) otwierałeś takie skrzynie (${n}×, ostatnio ${day(opened[0].e.t)}), więc najpewniej wypadł z otwarcia, którego Steam nie zapisał. Historia Steama z początku 2014 ma takie luki.\nKoszt nieznany, liczony jako przychód bez kosztu.`);
+    return line(none, L(`probably from the ${esc(c)}`, `prawdopodobnie ze skrzyni ${esc(c)}`), L(`Steam didn't record where this item came from, in the inventory history it shows up only when listed or sold.\nThis skin is in the ${c}, and in the 14 days before it first showed up in the history (${day(seen)}) you were opening such cases (${n}×, last ${day(opened[0].e.t)}), so it most likely dropped from an opening Steam didn't record. Steam's history from early 2014 has such gaps.\nCost unknown, counted as income without cost.`, `Steam nie zapisał, skąd ten przedmiot się wziął: w historii ekwipunku pojawia się dopiero przy wystawieniu albo sprzedaży.\nTen skin jest w skrzyni ${c}, a w 14 dniach przed jego pierwszym pojawieniem się w historii (${day(seen)}) otwierałeś takie skrzynie (${n}×, ostatnio ${day(opened[0].e.t)}), więc najpewniej wypadł z otwarcia, którego Steam nie zapisał. Historia Steama z początku 2014 ma takie luki.\nKoszt nieznany, liczony jako przychód bez kosztu.`));
   }
-  if (cases.length) return line('brak w historii Steam', `skin ze skrzyni ${esc(cases[0])}${cases.length > 1 ? ' (i innych)' : ''}`, `Steam nie zapisał, skąd ten przedmiot się wziął. Ten skin jest w skrzyni ${cases.join(', ')}, ale nie otwierałeś jej w 14 dniach przed jego pierwszym pojawieniem się w historii (${day(seen)}): mógł to być drop, wymiana albo otwarcie, którego Steam nie zapisał.`);
-  return line('brak w historii Steam', '', `Nie kupione na rynku, a w historii ekwipunku nie ma, skąd się wziął (drop, wymiana albo zdarzenie, którego Steam nie zapisał).${ih.isComplete() ? '' : '\nHistoria ekwipunku nie jest jeszcze pobrana do końca: zsynchronizuj ją w zakładce „Historia ekwipunku”, także starsze wpisy.'}`);
+  if (cases.length) return line(none, L(`skin from the ${esc(cases[0])}${cases.length > 1 ? ' (and others)' : ''}`, `skin ze skrzyni ${esc(cases[0])}${cases.length > 1 ? ' (i innych)' : ''}`), L(`Steam didn't record where this item came from. This skin is in the ${cases.join(', ')}, but you didn't open one in the 14 days before it first showed up in the history (${day(seen)}), it may have been a drop, a trade or an opening Steam didn't record.`, `Steam nie zapisał, skąd ten przedmiot się wziął. Ten skin jest w skrzyni ${cases.join(', ')}, ale nie otwierałeś jej w 14 dniach przed jego pierwszym pojawieniem się w historii (${day(seen)}): mógł to być drop, wymiana albo otwarcie, którego Steam nie zapisał.`));
+  return line(none, '', L(`Not bought on the market, and the inventory history doesn't say where it came from (a drop, a trade or an event Steam didn't record).${ih.isComplete() ? '' : '\nThe inventory history isn\'t fully downloaded yet, sync it in the “Inventory history” tab, older entries too.'}`, `Nie kupione na rynku, a w historii ekwipunku nie ma, skąd się wziął (drop, wymiana albo zdarzenie, którego Steam nie zapisał).${ih.isComplete() ? '' : '\nHistoria ekwipunku nie jest jeszcze pobrana do końca: zsynchronizuj ją w zakładce „Historia ekwipunku”, także starsze wpisy.'}`));
 }
 
 function renderTx({ res, since, until = Infinity, all, dropTx }) {
@@ -970,8 +977,8 @@ function renderTx({ res, since, until = Infinity, all, dropTx }) {
       ptr.set(ok, i + mine.length);
       if (mine.length) fatesOf.set(bk(t), mine);
     } }
-  el.querySelector('#h-tbl thead').innerHTML = `<tr><th data-sort="t">Data</th><th data-sort="name">Przedmiot</th><th data-sort="type">Typ</th>
-    <th data-sort="price">Cena zakupu / sprzedaży</th><th data-sort="today">Cena dziś</th><th data-sort="pnl">Zysk / strata</th></tr>`;
+  el.querySelector('#h-tbl thead').innerHTML = `<tr><th data-sort="t">${L('Date', 'Data')}</th><th data-sort="name">${L('Item', 'Przedmiot')}</th><th data-sort="type">${L('Type', 'Typ')}</th>
+    <th data-sort="price">${L('Buy / sell price', 'Cena zakupu / sprzedaży')}</th><th data-sort="today">${L('Price today', 'Cena dziś')}</th><th data-sort="pnl">${L('Profit / loss', 'Zysk / strata')}</th></tr>`;
   // FIFO result per sale: realized entries share the sale's hash + time
   const pnlOf = new Map();
   for (const r of res.realized) {
@@ -1004,32 +1011,33 @@ function renderTx({ res, since, until = Infinity, all, dropTx }) {
   const tradeEvAll = allEvents().filter((y) => y.kind === 'wymiana');
   const srcCost = (x) => {
     const e = x.src;
-    if (freeSrc(e)) return { cost: 0, why: 'Drop, nagroda albo prezent: nic nie kosztował, więc zysk to cała kwota na rękę.' };
+    if (freeSrc(e)) return { cost: 0, why: L('A drop, reward or gift, it cost nothing, so the profit is the whole amount you got.', 'Drop, nagroda albo prezent: nic nie kosztował, więc zysk to cała kwota na rękę.') };
     if (e.kind === 'wymiana' || e.kind === 'kontrakt') {
       const r = tradeCost(e, x.hash, tradeEvAll);
       const gave = r.outs.map((i) => i.name).join(', ');
-      if (r.cost === 0) return { cost: 0, why: 'Prezent: nic za niego nie oddałeś, więc zysk to cała kwota na rękę.' };
-      if (r.cost == null) return { cost: null, wait: true, why: `Koszt = wartość tego, co oddałeś (${gave}) z dnia ${e.kind === 'kontrakt' ? 'kontraktu' : 'wymiany'}; liczę ceny z tamtego dnia…` };
-      return { cost: r.cost, why: `Koszt = rynkowa wartość tego, co oddałeś (${gave}) z dnia ${e.kind === 'kontrakt' ? 'kontraktu' : 'wymiany'}, w przeliczeniu na ten przedmiot: ${steam.fmt(r.cost)}.` };
+      const day = e.kind === 'kontrakt' ? L('the contract', 'kontraktu') : L('the trade', 'wymiany');
+      if (r.cost === 0) return { cost: 0, why: L('A gift, you gave nothing for it, so the profit is the whole amount you got.', 'Prezent: nic za niego nie oddałeś, więc zysk to cała kwota na rękę.') };
+      if (r.cost == null) return { cost: null, wait: true, why: L(`Cost = the value of what you gave (${gave}) on the day of ${day}, I'm working out the prices of that day…`, `Koszt = wartość tego, co oddałeś (${gave}) z dnia ${day}; liczę ceny z tamtego dnia…`) };
+      return { cost: r.cost, why: L(`Cost = the market value of what you gave (${gave}) on the day of ${day}, converted to this item: ${steam.fmt(r.cost)}.`, `Koszt = rynkowa wartość tego, co oddałeś (${gave}) z dnia ${day}, w przeliczeniu na ten przedmiot: ${steam.fmt(r.cost)}.`) };
     }
     if (/store|purchased/i.test(e.desc)) {
       const p = sh.itemPaid(e.t, x.hash, storeConv);
-      return p ? { cost: p.price, why: `Kupione w sklepie Steam za ${steam.fmt(p.price)} (historia zakupów, ${new Date(p.row.t).toLocaleDateString()}).` }
-        : { cost: null, why: 'Kupione w sklepie Steam, ale tego zakupu nie ma w historii zakupów Steam, więc kwota nie jest znana.' };
+      return p ? { cost: p.price, why: L(`Bought in the Steam store for ${steam.fmt(p.price)} (purchase history, ${new Date(p.row.t).toLocaleDateString()}).`, `Kupione w sklepie Steam za ${steam.fmt(p.price)} (historia zakupów, ${new Date(p.row.t).toLocaleDateString()}).`) }
+        : { cost: null, why: L('Bought in the Steam store, but this purchase isn\'t in the Steam purchase history, so the amount is unknown.', 'Kupione w sklepie Steam, ale tego zakupu nie ma w historii zakupów Steam, więc kwota nie jest znana.') };
     }
-    return { cost: null, why: 'Koszt nieznany: to zdarzenie nie mówi, ile ten przedmiot kosztował.' };
+    return { cost: null, why: L('Cost unknown, this event doesn\'t say what the item cost.', 'Koszt nieznany: to zdarzenie nie mówi, ile ten przedmiot kosztował.') };
   };
   const srcLabel = (e) => {
     const d = new Date(e.t).toLocaleDateString();
-    if (e.kind === 'naklejka') return `zdjęta z przedmiotu ${d}`;
-    if (e.kind === 'wymiana') return `z wymiany ${d}${e.partner?.href ? ` od ${partnerLink(e)}` : ''}`;
-    if (e.kind === 'kontrakt') return `z kontraktu ${d}`;
-    if (e.kind === 'skrzynia') return `ze skrzyni / kapsuły ${d}`;
-    if (/gift/i.test(e.desc)) return `prezent ${d}`;
-    if (/discovery queue/i.test(e.desc)) return `za kolejkę odkryć w sklepie ${d}`;
-    if (/game ?play time/i.test(e.desc)) return `drop za granie ${d}`;
-    if (/store|purchased/i.test(e.desc)) return `ze sklepu Steam ${d}`;
-    if (/drop|earned|reward|level|rank|xp/i.test(e.desc)) return `drop za grę ${d}`;
+    if (e.kind === 'naklejka') return L(`taken off an item ${d}`, `zdjęta z przedmiotu ${d}`);
+    if (e.kind === 'wymiana') return L(`from a trade ${d}${e.partner?.href ? ` with ${partnerLink(e)}` : ''}`, `z wymiany ${d}${e.partner?.href ? ` od ${partnerLink(e)}` : ''}`);
+    if (e.kind === 'kontrakt') return L(`from a contract ${d}`, `z kontraktu ${d}`);
+    if (e.kind === 'skrzynia') return L(`from a case / capsule ${d}`, `ze skrzyni / kapsuły ${d}`);
+    if (/gift/i.test(e.desc)) return L(`gift ${d}`, `prezent ${d}`);
+    if (/discovery queue/i.test(e.desc)) return L(`for the store Discovery Queue ${d}`, `za kolejkę odkryć w sklepie ${d}`);
+    if (/game ?play time/i.test(e.desc)) return L(`drop for playing ${d}`, `drop za granie ${d}`);
+    if (/store|purchased/i.test(e.desc)) return L(`from the Steam store ${d}`, `ze sklepu Steam ${d}`);
+    if (/drop|earned|reward|level|rank|xp/i.test(e.desc)) return L(`drop for playing ${d}`, `drop za grę ${d}`);
     return `${esc(e.desc)} ${d}`;
   };
   const tx = all.filter((t) => t.t >= since && t.t <= until).map((t) => {
@@ -1066,7 +1074,7 @@ function renderTx({ res, since, until = Infinity, all, dropTx }) {
     groups.push(ng);
   }
   renderPager('tx', groups.length);
-  el.querySelector('#tx-h .cnt').textContent = `(${rows.length}${groups.length < rows.length ? ` w ${groups.length} wierszach` : ''})`;
+  el.querySelector('#tx-h .cnt').textContent = `(${rows.length}${groups.length < rows.length ? L(` in ${groups.length} rows`, ` w ${groups.length} wierszach`) : ''})`;
   const rowHtml = (g, child = false) => {
     const x = g.n > (g.x.q || 1) ? { ...g.x, pnl: g.pnl, unsold: g.unsold, gone: g.gone, fates: g.fates } : g.x;
     const many = g.n > 1;
@@ -1074,51 +1082,51 @@ function renderTx({ res, since, until = Infinity, all, dropTx }) {
     const meta1 = meta.get(x.hash) || {};
     const pm = x.seed != null ? patternFor(x.hash, x.seed) : null; // 💎 a known pattern seed
     const sub = [x.float != null ? `<span title="float: ${x.float.toFixed(6)}">float ${x.float.toFixed(4)}</span>` : '', x.seed != null ? `seed ${x.seed}` : '', pm ? patternChip(pm) : ''].filter(Boolean).join(' · ');
-    const mark = x.estimated ? ' <span class="warn" title="Cena oszacowana z historii cen rynku, Steam zapisał tę transakcję tylko w historii ekwipunku, bez kwoty.">≈</span>'
-      : x.fx ? ' <span class="warn" title="Przeliczone z innej waluty po kursie NBP z dnia transakcji.">≈</span>' : '';
+    const mark = x.estimated ? ` <span class="warn" title="${L('Price estimated from the market price history, Steam recorded this trade only in the inventory history, without an amount.', 'Cena oszacowana z historii cen rynku, Steam zapisał tę transakcję tylko w historii ekwipunku, bez kwoty.')}">≈</span>`
+      : x.fx ? ` <span class="warn" title="${L('Converted from another currency at the NBP rate of the trade day.', 'Przeliczone z innej waluty po kursie NBP z dnia transakcji.')}">≈</span>` : '';
     let typ, res1 = '<span class="sub">-</span>';
     if (x.type === 'buy') {
-      typ = '<span class="neg">kupno</span>';
+      typ = `<span class="neg">${L('buy', 'kupno')}</span>`;
       const it = items.get(x.hash);
-      if (!x.unsold) typ += '<div class="sub">sprzedane</div>';
+      if (!x.unsold) typ += `<div class="sub">${L('sold', 'sprzedane')}</div>`;
       else if (x.gone >= x.unsold) typ += goneCell(it, x.gone, x.fates, split);
-      else if (x.gone) typ += `<div class="sub">${invLink(x, meta1, `${x.unsold - x.gone} w ekwipunku`, !split && !many)}</div>${goneCell(it, x.gone, x.fates, split)}`;
-      else typ += `<div class="sub">${invLink(x, meta1, `w ekwipunku${many ? ` (${x.unsold})` : ''}`, !split && !many)}</div>`;
+      else if (x.gone) typ += `<div class="sub">${invLink(x, meta1, L(`${x.unsold - x.gone} in inventory`, `${x.unsold - x.gone} w ekwipunku`), !split && !many)}</div>${goneCell(it, x.gone, x.fates, split)}`;
+      else typ += `<div class="sub">${invLink(x, meta1, `${L('in inventory', 'w ekwipunku')}${many ? ` (${x.unsold})` : ''}`, !split && !many)}</div>`;
     }
     else {
-      typ = '<span class="pos">sprzedaż</span>';
+      typ = `<span class="pos">${L('sale', 'sprzedaż')}</span>`;
       if (x.m) {
-        typ += `<div class="sub">kupione za ${steam.fmt(Math.round(x.m.cost / x.m.qty))}</div>`;
+        typ += `<div class="sub">${L('bought for', 'kupione za')} ${steam.fmt(Math.round(x.m.cost / x.m.qty))}</div>`;
         res1 = `<b class="${x.pnl >= 0 ? 'pos' : 'neg'}">${x.pnl >= 0 ? '+' : ''}${steam.fmt(x.pnl)}</b>`;
       } else if (x.drop) {
-        typ += `<div class="sub" title="Koszt otwarcia = skrzynia + klucz">drop z ${esc(x.drop.case)}${x.drop.cost != null ? ` · koszt ${steam.fmt(x.drop.cost)}` : ''}</div>`;
-        if (x.pnl != null) res1 = `<span class="${x.pnl >= 0 ? 'pos' : 'neg'}" title="Sprzedaż minus koszt otwarcia skrzyni (${esc(steam.fmt(x.drop.cost))})">${x.pnl >= 0 ? '+' : ''}${steam.fmt(x.pnl)}</span>`;
+        typ += `<div class="sub" title="${L('Opening cost = the case + the key', 'Koszt otwarcia = skrzynia + klucz')}">${L('drop from', 'drop z')} ${esc(x.drop.case)}${x.drop.cost != null ? ` · ${L('cost', 'koszt')} ${steam.fmt(x.drop.cost)}` : ''}</div>`;
+        if (x.pnl != null) res1 = `<span class="${x.pnl >= 0 ? 'pos' : 'neg'}" title="${L('Sale minus the opening cost of the case', 'Sprzedaż minus koszt otwarcia skrzyni')} (${esc(steam.fmt(x.drop.cost))})">${x.pnl >= 0 ? '+' : ''}${steam.fmt(x.pnl)}</span>`;
       } else if (x.src) {
         // what it cost: a drop / reward / gift nothing, a store purchase its price (store history), a trade the value of
         // what you gave; the sale is known, so the result is sale − cost
         const sc = srcCost(x);
         const n = g.n || 1;
-        typ += `<div class="sub" title="${esc(`Nie kupione na rynku: ${x.src.desc} (${new Date(x.src.t).toLocaleString()}).\n${sc.why}`)}">${srcLabel(x.src)}${sc.cost ? ` · koszt ${steam.fmt(sc.cost)}` : ''}</div>`;
+        typ += `<div class="sub" title="${esc(`${L('Not bought on the market', 'Nie kupione na rynku')}: ${x.src.desc} (${new Date(x.src.t).toLocaleString()}).\n${sc.why}`)}">${srcLabel(x.src)}${sc.cost ? ` · ${L('cost', 'koszt')} ${steam.fmt(sc.cost)}` : ''}</div>`;
         if (sc.cost != null) {
           const pnl = (x.price - sc.cost) * n;
-          res1 = `<span class="${pnl >= 0 ? 'pos' : 'neg'}" title="${esc(`${sc.why}\nZysk = na rękę ${steam.fmt(x.price * n)} − koszt ${steam.fmt(sc.cost * n)}`)}">${pnl >= 0 ? '+' : ''}${steam.fmt(pnl)}</span>`;
+          res1 = `<span class="${pnl >= 0 ? 'pos' : 'neg'}" title="${esc(`${sc.why}\n${L(`Profit = you got ${steam.fmt(x.price * n)} − cost ${steam.fmt(sc.cost * n)}`, `Zysk = na rękę ${steam.fmt(x.price * n)} − koszt ${steam.fmt(sc.cost * n)}`)}`)}">${pnl >= 0 ? '+' : ''}${steam.fmt(pnl)}</span>`;
         } else if (sc.wait) res1 = `<span class="sub" title="${esc(sc.why)}">…</span>`;
         else res1 = `<span class="sub" title="${esc(sc.why)}">-</span>`;
       } else typ += unknownOrigin(x);
     }
-    const tip = x.low != null ? (x.type === 'sell' ? `Dziś na rękę (po prowizji): ${steam.fmt(x.now)}, kupujący zapłaciłby ${steam.fmt(x.low)}. Porównanie z tym, ile wtedy dostałeś na rękę.` : `Najniższa cena dziś (tyle zapłaciłbyś): ${steam.fmt(x.low)}, porównanie z ceną zakupu`) : '';
-    const d = new Date(x.t), hm = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const tip = x.low != null ? (x.type === 'sell' ? L(`Today you'd get (after the fee) ${steam.fmt(x.now)}, the buyer would pay ${steam.fmt(x.low)}. Compared with what you got then.`, `Dziś na rękę (po prowizji): ${steam.fmt(x.now)}, kupujący zapłaciłby ${steam.fmt(x.low)}. Porównanie z tym, ile wtedy dostałeś na rękę.`) : L(`Lowest price today (what you'd pay) ${steam.fmt(x.low)}, compared with the buy price`, `Najniższa cena dziś (tyle zapłaciłbyś): ${steam.fmt(x.low)}, porównanie z ceną zakupu`)) : '';
+    const d = new Date(x.t), hm = (t) => new Date(t).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
     return `<tr${child ? ' style="background:rgba(102,192,244,.04)"' : ''}><td title="${esc(g.t0 !== g.t1 ? `${new Date(g.t0).toLocaleString()} - ${new Date(g.t1).toLocaleString()}` : d.toLocaleString())}">${d.toLocaleDateString()}<div class="sub">${g.t0 !== g.t1 ? `${hm(g.t0)}-${hm(g.t1)}` : hm(x.t)}</div></td>
-      <td>${ui.itemCell({ ...meta1, hash: x.hash, name: meta1.name || x.hash, appid: meta1.appid || 730, sub: `${sub}${many ? `${sub ? ' · ' : ''}${split ? `<span data-txg="${esc(g.k)}" class="acc" style="cursor:pointer;font-weight:700" title="${g.n} takich samych transakcji tego dnia, kliknij, żeby ${txOpen.has(g.k) ? 'zwinąć' : 'rozwinąć'}">${txOpen.has(g.k) ? '▾' : '▸'} ×${g.n}</span>` : `<b class="acc">×${g.n}</b>`}` : ''}` })}</td>
+      <td>${ui.itemCell({ ...meta1, hash: x.hash, name: meta1.name || x.hash, appid: meta1.appid || 730, sub: `${sub}${many ? `${sub ? ' · ' : ''}${split ? `<span data-txg="${esc(g.k)}" class="acc" style="cursor:pointer;font-weight:700" title="${L(`${g.n} identical trades that day, click to ${txOpen.has(g.k) ? 'collapse' : 'expand'}`, `${g.n} takich samych transakcji tego dnia, kliknij, żeby ${txOpen.has(g.k) ? 'zwinąć' : 'rozwinąć'}`)}">${txOpen.has(g.k) ? '▾' : '▸'} ×${g.n}</span>` : `<b class="acc">×${g.n}</b>`}` : ''}` })}</td>
       <td>${typ}</td>
-      <td title="${x.type === 'sell' ? esc(`Na rękę (po prowizji Steama). Kupujący zapłacił ${steam.fmt(steam.buyerFromReceived(x.price))}.`) : 'Tyle zapłaciłeś'}">${steam.fmt(x.price)}${mark}${many ? `<div class="sub">× ${g.n} = ${steam.fmt(x.price * g.n)}</div>` : ''}${x.type === 'sell' ? '<div class="sub">na rękę</div>' : ''}${x.q > 1 ? `<div class="sub">×${x.q} = ${steam.fmt(x.price * x.q)}</div>` : ''}</td>
+      <td title="${x.type === 'sell' ? esc(L(`What you got (after Steam's fee). The buyer paid ${steam.fmt(steam.buyerFromReceived(x.price))}.`, `Na rękę (po prowizji Steama). Kupujący zapłacił ${steam.fmt(steam.buyerFromReceived(x.price))}.`)) : L('What you paid', 'Tyle zapłaciłeś')}">${steam.fmt(x.price)}${mark}${many ? `<div class="sub">× ${g.n} = ${steam.fmt(x.price * g.n)}</div>` : ''}${x.type === 'sell' ? `<div class="sub">${L('you got', 'na rękę')}</div>` : ''}${x.q > 1 ? `<div class="sub">×${x.q} = ${steam.fmt(x.price * x.q)}</div>` : ''}</td>
       <td title="${esc(tip + (many && x.low != null ? `
 
-Wszystkie ${g.n} szt. dziś: ${steam.fmt(x.now * g.n)}${x.type === 'buy' ? `, na rękę po sprzedaży ok. ${steam.fmt(steam.receivedFromBuyer(x.low) * g.n)}` : ''}` : ''))}">${x.low != null ? `${steam.fmt(x.now)}${x.today != null && isFinite(x.today) ? `<div class="sub ${x.today >= 0 ? 'pos' : 'neg'}">${x.today >= 0 ? '+' : ''}${pct(x.today, 0)}</div>` : ''}${many ? `<div class="sub">× ${g.n} = ${steam.fmt(x.now * g.n)}</div>` : ''}` : '<span class="sub">…</span>'}</td>
+${L(`All ${g.n} units today`, `Wszystkie ${g.n} szt. dziś`)}: ${steam.fmt(x.now * g.n)}${x.type === 'buy' ? L(`, about ${steam.fmt(steam.receivedFromBuyer(x.low) * g.n)} in hand after selling`, `, na rękę po sprzedaży ok. ${steam.fmt(steam.receivedFromBuyer(x.low) * g.n)}`) : ''}` : ''))}">${x.low != null ? `${steam.fmt(x.now)}${x.today != null && isFinite(x.today) ? `<div class="sub ${x.today >= 0 ? 'pos' : 'neg'}">${x.today >= 0 ? '+' : ''}${pct(x.today, 0)}</div>` : ''}${many ? `<div class="sub">× ${g.n} = ${steam.fmt(x.now * g.n)}</div>` : ''}` : '<span class="sub">…</span>'}</td>
       <td>${res1}</td></tr>`;
   };
   // an opened group: its transactions one by one under it
-  el.querySelector('#h-tbl tbody').innerHTML = groups.length ? pageOf('tx', groups).map((g) => rowHtml(g) + (g.items.length > 1 && txOpen.has(g.k) ? g.items.map((x) => rowHtml({ k: g.k, x, n: x.q, unsold: x.unsold || 0, gone: x.gone || 0, pnl: x.pnl, t0: x.t, t1: x.t, items: [x] }, true)).join('') : '')).join('') : '<tr><td colspan="6" class="empty">Brak transakcji w tym okresie.</td></tr>';
+  el.querySelector('#h-tbl tbody').innerHTML = groups.length ? pageOf('tx', groups).map((g) => rowHtml(g) + (g.items.length > 1 && txOpen.has(g.k) ? g.items.map((x) => rowHtml({ k: g.k, x, n: x.q, unsold: x.unsold || 0, gone: x.gone || 0, pnl: x.pnl, t0: x.t, t1: x.t, items: [x] }, true)).join('') : '')).join('') : `<tr><td colspan="6" class="empty">${L('No trades in this period.', 'Brak transakcji w tym okresie.')}</td></tr>`;
 }
 
 
@@ -1126,7 +1134,7 @@ Wszystkie ${g.n} szt. dziś: ${steam.fmt(x.now * g.n)}${x.type === 'buy' ? `, na
 /** "w ekwipunku" as a link: opens Ekwipunek scrolled to the item (the card with this purchase price first) */
 function invLink(x, m, text, exact = false) {
   // exact: one purchase of one copy → Ekwipunek ungrouped, that copy; otherwise the grouped cards of this price
-  return `<a href="#" class="acc" data-inv="${esc(x.hash)}" data-app="${m.appid || 730}" data-cost="${x.type === 'buy' ? x.price : ''}"${exact ? ` data-t="${x.t}"` : ''} title="${exact ? 'Pokaż ten egzemplarz w Ekwipunku (bez grupowania)' : 'Pokaż te przedmioty w Ekwipunku'}">${text} ↗</a>`;
+  return `<a href="#" class="acc" data-inv="${esc(x.hash)}" data-app="${m.appid || 730}" data-cost="${x.type === 'buy' ? x.price : ''}"${exact ? ` data-t="${x.t}"` : ''} title="${exact ? L('Show this copy in Inventory (ungrouped)', 'Pokaż ten egzemplarz w Ekwipunku (bez grupowania)') : L('Show these items in Inventory', 'Pokaż te przedmioty w Ekwipunku')}">${text} ↗</a>`;
 }
 function goneCell(x, n = x.goneQty, evs = null, brief = false) {
   // the events that took these copies (given per purchase), else the latest one for the item
@@ -1149,35 +1157,35 @@ function goneCell(x, n = x.goneQty, evs = null, brief = false) {
     const d = dated ? ` ${new Date(e.t).toLocaleDateString()}` : '', g = got(e);
     if (e.kind === 'skrzynia') {
       const tm = term(e);
-      if (tm) return `aktywowany${d}, ${tm.bought == null ? 'jeszcze nie użyty' : tm.bought.length ? `kupiono: ${tm.bought.join(', ')}` : 'nic nie kupiono'}`;
-      return `otwarte${d}${g.length ? `: ${g.join(', ')}` : ''}`;
+      if (tm) return L(`activated${d}, ${tm.bought == null ? 'not used yet' : tm.bought.length ? `bought: ${tm.bought.join(', ')}` : 'nothing bought'}`, `aktywowany${d}, ${tm.bought == null ? 'jeszcze nie użyty' : tm.bought.length ? `kupiono: ${tm.bought.join(', ')}` : 'nic nie kupiono'}`);
+      return L(`opened${d}${g.length ? `: ${g.join(', ')}` : ''}`, `otwarte${d}${g.length ? `: ${g.join(', ')}` : ''}`);
     }
-    if (e.kind === 'naklejka') return `naklejona${d}${g.length ? ` na ${g.join(', ')}` : ''}`;
-    if (e.kind === 'kontrakt') return `kontrakt${d}${g.length ? `, wyszło: ${g.join(', ')}` : ''}`;
-    if (e.kind === 'wymiana') return `wymienione${d}`;
-    return `${e.kind}${d}`;
+    if (e.kind === 'naklejka') return L(`applied${d}${g.length ? ` to ${g.join(', ')}` : ''}`, `naklejona${d}${g.length ? ` na ${g.join(', ')}` : ''}`);
+    if (e.kind === 'kontrakt') return L(`contract${d}${g.length ? `, got: ${g.join(', ')}` : ''}`, `kontrakt${d}${g.length ? `, wyszło: ${g.join(', ')}` : ''}`);
+    if (e.kind === 'wymiana') return L(`traded${d}`, `wymienione${d}`);
+    return `${kindName(e.kind)}${d}`;
   };
-  const short = (e) => (e.kind === 'skrzynia' ? (term(e) ? 'aktywowane' : 'otwarte') : { wymiana: 'wymienione', kontrakt: 'kontrakt', naklejka: 'naklejone' }[e.kind] || e.kind);
+  const short = (e) => (e.kind === 'skrzynia' ? (term(e) ? L('activated', 'aktywowane') : L('opened', 'otwarte')) : { wymiana: L('traded', 'wymienione'), kontrakt: L('contract', 'kontrakt'), naklejka: L('applied', 'naklejone') }[e.kind] || kindName(e.kind));
   // a merged row with several events: just what happened, the details are in its rows (▸ ×N)
   if (brief && list.length > 1) {
     const kinds = [...new Set(list.map(short))].join(', ');
-    return `<div class="sub" title="Szczegóły po rozwinięciu grupy (▸ ×N przy nazwie)">${n} poza ekwip. · <span class="acc">${esc(kinds)}</span></div>`;
+    return `<div class="sub" title="${L('Details after expanding the group (▸ ×N by the name)', 'Szczegóły po rozwinięciu grupy (▸ ×N przy nazwie)')}">${n} ${L('out of inv.', 'poza ekwip.')} · <span class="acc">${esc(kinds)}</span></div>`;
   }
   const what = f ? what1(f) + (list.length > 1 ? ` +${list.length - 1}` : '') : '';
   const line = (e) => {
     const g = got(e).join(', ');
-    const w = e.kind === 'wymiana' ? `wymienione${e.partner?.name ? ` z ${e.partner.name}` : ''}${g ? `, w zamian: ${g}` : ''}` : what1(e, false);
+    const w = e.kind === 'wymiana' ? L(`traded${e.partner?.name ? ` with ${e.partner.name}` : ''}${g ? `, got: ${g}` : ''}`, `wymienione${e.partner?.name ? ` z ${e.partner.name}` : ''}${g ? `, w zamian: ${g}` : ''}`) : what1(e, false);
     return `${new Date(e.t).toLocaleString()}: ${w}`;
   };
-  const title = f ? list.map(line).join('\n') : 'Kupione na rynku, ale nie ma ich już w ekwipunku. Zsynchronizuj historię ekwipunku (zakładka „Historia ekwipunku”), żeby zobaczyć, co się z nimi stało.';
-  return `<div class="sub" title="${esc(title)}">${n} poza ekwip.${what ? ` · <span class="acc">${esc(what)}</span>` : ''}${f?.partner ? ` z ${partnerLink(f)}${ownerBtn(f, x.hash)}` : ''}</div>`;
+  const title = f ? list.map(line).join('\n') : L('Bought on the market, but no longer in the inventory. Sync the inventory history (the “Inventory history” tab) to see what happened to them.', 'Kupione na rynku, ale nie ma ich już w ekwipunku. Zsynchronizuj historię ekwipunku (zakładka „Historia ekwipunku”), żeby zobaczyć, co się z nimi stało.');
+  return `<div class="sub" title="${esc(title)}">${n} ${L('out of inv.', 'poza ekwip.')}${what ? ` · <span class="acc">${esc(what)}</span>` : ''}${f?.partner ? ` ${L('with', 'z')} ${partnerLink(f)}${ownerBtn(f, x.hash)}` : ''}</div>`;
 }
 
 let ihTask = null;
 const syncInv = once(() => ihBusy, (v) => (ihBusy = v), syncInvNow);
 /** the games besides CS2 whose inventory history is read: Steam's own items always, plus every game in your market trades */
 const otherApps = () => [...new Set([753, ...Object.values(loadTrades()).map((t) => +t.appid).filter((a) => a && a !== 730)])];
-const appName = (app) => ({ 753: 'karty i tła Steam', 252490: 'Rust', 440: 'Team Fortress 2', 570: 'Dota 2' }[app] || `gra ${app}`);
+const appName = (app) => ({ 753: L('Steam cards and backgrounds', 'karty i tła Steam'), 252490: 'Rust', 440: 'Team Fortress 2', 570: 'Dota 2' }[app] || L(`game ${app}`, `gra ${app}`));
 /** CS2's inventory history + the other games' (deduplicated) */
 const allEvents = () => [...ih.all(), ...ih.allOf(otherApps())];
 async function syncInvNow(full) {
@@ -1185,10 +1193,10 @@ async function syncInvNow(full) {
   ihTask = token();
   const info = el.querySelector('#ih-info');
   try {
-    const n = await ih.sync({ full, isCancelled: () => ihTask.cancelled, onProgress: (cnt, pages, oldest) => { invalidate(); renderInv(); info.textContent = `pobieram… ${cnt} nowych zdarzeń (${pages} str.)${oldest ? ` · doszedłem do ${new Date(oldest).toLocaleDateString()}` : ''}`; } });
-    ui.log(`Historia ekwipunku: +${n} zdarzeń.`, 'ok');
+    const n = await ih.sync({ full, isCancelled: () => ihTask.cancelled, onProgress: (cnt, pages, oldest) => { invalidate(); renderInv(); info.textContent = L(`downloading… ${cnt} new events (${pages} pages)${oldest ? ` · reached ${new Date(oldest).toLocaleDateString()}` : ''}`, `pobieram… ${cnt} nowych zdarzeń (${pages} str.)${oldest ? ` · doszedłem do ${new Date(oldest).toLocaleDateString()}` : ''}`); } });
+    ui.log(L(`Inventory history: +${n} events.`, `Historia ekwipunku: +${n} zdarzeń.`), 'ok');
   } catch (e) {
-    ui.log('Historia ekwipunku: ' + e.message, 'err');
+    ui.log(L('Inventory history: ', 'Historia ekwipunku: ') + e.message, 'err');
   }
   // the other games you traded on the market (Steam's own items 753: card drops, badge crafting; Rust…): only for where
   // items came from (itemOrigins, the sources of sales); each in its own store, the CS2 history above isn't touched
@@ -1196,9 +1204,9 @@ async function syncInvNow(full) {
     if (ihTask.cancelled) break;
     try {
       const s = await ih.sync({ app, full, isCancelled: () => ihTask.cancelled });
-      if (s) ui.log(`Historia ekwipunku (${appName(app)}): +${s} zdarzeń, ${ih.isComplete(app) ? 'cała' : 'jeszcze nie cała'}.`, 'ok');
+      if (s) ui.log(L(`Inventory history (${appName(app)}): +${s} events, ${ih.isComplete(app) ? 'complete' : 'not complete yet'}.`, `Historia ekwipunku (${appName(app)}): +${s} zdarzeń, ${ih.isComplete(app) ? 'cała' : 'jeszcze nie cała'}.`), 'ok');
     } catch (e) {
-      ui.log(`Historia ekwipunku (${appName(app)}): ${e.message}`, 'warn');
+      ui.log(`${L('Inventory history', 'Historia ekwipunku')} (${appName(app)}): ${e.message}`, 'warn');
     }
   }
   invalidate();
@@ -1220,14 +1228,16 @@ function renderInv(listOnly = false) {
   // counts and completeness of the chosen game's history (all: CS2's, the main one)
   const gApp = game === 'all' ? 730 : +game;
   const gOld = src.length ? src[src.length - 1].t : null;
-  el.querySelector('#ih-info').textContent = ih.syncedAt(gApp) ? `${src.length} zdarzeń w bazie${gOld ? ` · od ${new Date(gOld).toLocaleDateString()}` : ''}${ih.isComplete(gApp) ? ' (cała historia)' : ' · starsze jeszcze niepobrane, dociągnę przy następnej synchronizacji'} · zsynchronizowano ${timeAgo(ih.syncedAt(gApp))}` : 'nie zsynchronizowano';
+  el.querySelector('#ih-info').textContent = ih.syncedAt(gApp)
+    ? L(`${src.length} events stored${gOld ? ` · since ${new Date(gOld).toLocaleDateString()}` : ''}${ih.isComplete(gApp) ? ' (whole history)' : ' · older ones not downloaded yet, I\'ll fetch them at the next sync'} · synced ${timeAgo(ih.syncedAt(gApp))}`, `${src.length} zdarzeń w bazie${gOld ? ` · od ${new Date(gOld).toLocaleDateString()}` : ''}${ih.isComplete(gApp) ? ' (cała historia)' : ' · starsze jeszcze niepobrane, dociągnę przy następnej synchronizacji'} · zsynchronizowano ${timeAgo(ih.syncedAt(gApp))}`)
+    : L('not synced', 'nie zsynchronizowano');
   const chip = (i, sign) => `<span class="tag" style="margin:1px 2px;border-color:${sign === '-' ? '#7a2b2b' : '#3d5a12'}"><span class="${sign === '-' ? 'neg' : 'pos'}">${sign === '-' ? '−' : '+'}</span> <span style="color:#${esc(i.color || 'c6d4df')}">${esc(i.name)}</span></span>`;
   renderPager('ih', evs.length);
-  el.querySelector('#ih-list').innerHTML = evs.length ? `<table><thead><tr><th>Data</th><th>Zdarzenie</th><th>Przedmioty</th></tr></thead><tbody>${pageOf('ih', evs).map((e) => `
+  el.querySelector('#ih-list').innerHTML = evs.length ? `<table><thead><tr><th>${L('Date', 'Data')}</th><th>${L('Event', 'Zdarzenie')}</th><th>${L('Items', 'Przedmioty')}</th></tr></thead><tbody>${pageOf('ih', evs).map((e) => `
     <tr><td style="white-space:nowrap">${new Date(e.t).toLocaleString()}</td>
-    <td><span class="tag">${e.kind}</span> ${e.partner?.name ? esc(e.desc).replace(esc(e.partner.name), partnerLink(e)) : esc(e.desc)}</td>
+    <td><span class="tag">${kindName(e.kind)}</span> ${e.partner?.name ? esc(e.desc).replace(esc(e.partner.name), partnerLink(e)) : esc(e.desc)}</td>
     <td>${e.minus.map((i) => chip(i, '-')).join('')}${e.plus.map((i) => chip(i, '+')).join('')}</td></tr>`).join('')}</tbody></table>`
-    : '<div class="empty">Brak zdarzeń w tym okresie' + (ih.syncedAt() ? '' : ', kliknij Synchronizuj') + '.</div>';
+    : `<div class="empty">${L('No events in this period', 'Brak zdarzeń w tym okresie')}${ih.syncedAt() ? '' : L(', click Sync', ', kliknij Synchronizuj')}.</div>`;
 }
 
 // ---------------------------------------------------------------- case openings: what dropped, what it cost, profit
@@ -1249,19 +1259,19 @@ function keyExpect(ts) {
 function keyPriceAt(ts) {
   // what you really paid for a key in your currency: nearest key purchase in your store history
   const near = sh.nearestKeyPrice(ts, CUR_NAME[steam.wallet().currency], keyExpect);
-  if (near && Math.abs(near.t - ts) < 400 * 86400000) return { price: near.price, src: 'jak Twój klucz z ' + new Date(near.t).toLocaleDateString() };
+  if (near && Math.abs(near.t - ts) < 400 * 86400000) return { price: near.price, src: L('like your key from ', 'jak Twój klucz z ') + new Date(near.t).toLocaleDateString() };
   const { r, src } = histRate(1, ts);
-  if (r && src === 'nbp') return { price: Math.round(249 * r), src: '≈ 2,49 USD po kursie z dnia, brak zakupu klucza w historii' };
-  return { price: keyPrice(), src: '2,49 USD po dzisiejszym kursie' };
+  if (r && src === 'nbp') return { price: Math.round(249 * r), src: L('≈ 2.49 USD at that day\'s rate, no key purchase in the history', '≈ 2,49 USD po kursie z dnia, brak zakupu klucza w historii') };
+  return { price: keyPrice(), src: L('2.49 USD at today\'s rate', '2,49 USD po dzisiejszym kursie') };
 }
 
 const syncStore = once(() => sBusy, (v) => (sBusy = v), syncStoreNow);
 async function syncStoreNow() {
-  el.querySelector('#cs-info').textContent = 'pobieram historię zakupów…';
+  el.querySelector('#cs-info').textContent = L('downloading the purchase history…', 'pobieram historię zakupów…');
   try {
-    const rows = await sh.sync({ onProgress: (n) => { el.querySelector('#cs-info').textContent = `historia zakupów: ${n}…`; } });
-    ui.log(`Historia zakupów Steam: ${rows.length} pozycji (${rows.filter(sh.isCS).length} zakupów w CS2).`, 'ok');
-  } catch (e) { ui.log('Historia zakupów Steam: ' + e.message, 'err'); }
+    const rows = await sh.sync({ onProgress: (n) => { el.querySelector('#cs-info').textContent = L(`purchase history: ${n}…`, `historia zakupów: ${n}…`); } });
+    ui.log(L(`Steam purchase history: ${rows.length} entries (${rows.filter(sh.isCS).length} CS2 purchases).`, `Historia zakupów Steam: ${rows.length} pozycji (${rows.filter(sh.isCS).length} zakupów w CS2).`), 'ok');
+  } catch (e) { ui.log(L('Steam purchase history: ', 'Historia zakupów Steam: ') + e.message, 'err'); }
   invalidate();
   render(); renderInv();
 }
@@ -1412,13 +1422,13 @@ function caseOpenings() {
       const kp = !b ? sh.keyPaid(e.t, shUsed, keyExpect(e.t), storeConv) : null;
       const ka = !b && !kp ? keyPriceAt(e.t) : null;
       keyCost = b ? b.price : kp ? kp.price : ka.price;
-      keySrc = b ? 'z rynku' : kp ? `historia zakupów ${new Date(kp.row.t).toLocaleDateString()}` : ka.src;
+      keySrc = b ? L('from the market', 'z rynku') : kp ? `${L('purchase history', 'historia zakupów')} ${new Date(kp.row.t).toLocaleDateString()}` : ka.src;
     }
     // what happened to each drop
     const drops = e.plus.map((d) => {
-      if (!d.hash) return { ...d, fate: 'nieznany', value: null };
+      if (!d.hash) return { ...d, fate: L('unknown', 'nieznany'), value: null };
       const s = take(sellsBy.get(d.hash) || [], (t) => t.t >= e.t - 60000);
-      if (s) return { ...d, fate: `sprzedany ${new Date(s.t).toLocaleDateString()}`, value: s.price, kind: 'sold', saleT: s.t };
+      if (s) return { ...d, fate: `${L('sold', 'sprzedany')} ${new Date(s.t).toLocaleDateString()}`, value: s.price, kind: 'sold', saleT: s.t };
      // one trade can carry several of your drops → don't consume it, just skip trades this drop already used
       const tr = tradesOut.find((o) => o.t >= e.t && o.minus.some((i) => i.hash === d.hash) && !used.has(o.id + '|' + d.hash));
       if (tr) {
@@ -1427,28 +1437,28 @@ function caseOpenings() {
         const est = (i) => (i.hash ? net(estimate('730', i.hash, tr.t)) : null);
         const mine = est(d);
         const gave = tr.minus.map(est), got = tr.plus.map(est);
-        let v = mine, how = 'cena rynkowa z dnia wymiany';
+        let v = mine, how = L('market price of the trade day', 'cena rynkowa z dnia wymiany');
         if (tr.plus.length && mine != null && gave.every((x) => x != null) && got.every((x) => x != null)) {
           const gaveSum = gave.reduce((a, b) => a + b, 0), gotSum = got.reduce((a, b) => a + b, 0);
-          if (gaveSum > 0) { v = Math.round((mine / gaveSum) * gotSum); how = `udział w tym, co dostałeś: ${steam.fmt(mine)} z ${steam.fmt(gaveSum)} oddanych → ${steam.fmt(gotSum)} otrzymanych`; }
+          if (gaveSum > 0) { v = Math.round((mine / gaveSum) * gotSum); how = L(`share of what you got: ${steam.fmt(mine)} of ${steam.fmt(gaveSum)} given, to ${steam.fmt(gotSum)} received`, `udział w tym, co dostałeś: ${steam.fmt(mine)} z ${steam.fmt(gaveSum)} oddanych → ${steam.fmt(gotSum)} otrzymanych`); }
         } else if (tr.plus.length && mine != null) waiting++;
         if (v == null) waiting++;
-        return { ...d, fate: `wymieniony ${new Date(tr.t).toLocaleDateString()}`, value: v, kind: 'traded', tr, title: `${tr.desc}${tr.plus.length ? '\nW zamian: ' + tr.plus.map((i) => i.name).join(', ') : '\nNic nie dostałeś w zamian (prezent?), liczona cena rynkowa'}\nWartość: ${how}` };
+        return { ...d, fate: `${L('traded', 'wymieniony')} ${new Date(tr.t).toLocaleDateString()}`, value: v, kind: 'traded', tr, title: `${tr.desc}${tr.plus.length ? L('\nIn return: ', '\nW zamian: ') + tr.plus.map((i) => i.name).join(', ') : L('\nYou got nothing in return (a gift?), market price counted', '\nNic nie dostałeś w zamian (prezent?), liczona cena rynkowa')}\n${L('Value', 'Wartość')}: ${how}` };
       }
       if ((owned.get(d.hash) || 0) > 0) {
         owned.set(d.hash, owned.get(d.hash) - 1);
         const low = prices.cached('730', d.hash)?.lowest;
-        return { ...d, fate: 'masz w ekwipunku', value: net(low), kind: 'owned' };
+        return { ...d, fate: L('in your inventory', 'masz w ekwipunku'), value: net(low), kind: 'owned' };
       }
       const v = net(estimate('730', d.hash, e.t));
       if (v == null) waiting++;
-      return { ...d, fate: 'nie ma w ekwipunku', value: v, kind: 'gone' };
+      return { ...d, fate: L('not in the inventory', 'nie ma w ekwipunku'), value: v, kind: 'gone' };
     });
     // terminal: the in-game payment isn't in any Steam history → entered by the user
     let paid = null, paidSrc = '';
     if (e.terminal && drops.length) {
       const manual = store.get('termPaid', {})[e.id];
-      if (manual != null) { paid = manual; paidSrc = 'wpisane'; }
+      if (manual != null) { paid = manual; paidSrc = 'wpisane'; } // codes, not texts: renderCases() compares them (see srcText)
       else { const tp = sh.terminalPaid(e.t, drops[0]?.name, shUsed, keyExpect(e.t), storeConv); if (tp) { paid = tp.price; paidSrc = 'historia zakupów'; } }
     }
     const cost = (caseCost ?? 0) + keyCost + (paid ?? 0);
@@ -1460,6 +1470,8 @@ function caseOpenings() {
   return { rows: rows.reverse(), waiting };
 }
 
+/** how a stored source code (caseSrc / paidSrc, kept in Polish because the code compares them) reads to you */
+const srcText = (s = '') => s.replace(/^(kupiona|z wymiany|z dropu|wpisane|historia zakupów)/, (m) => ({ kupiona: L('bought', 'kupiona'), 'z wymiany': L('from a trade', 'z wymiany'), 'z dropu': L('from a drop', 'z dropu'), wpisane: L('entered', 'wpisane'), 'historia zakupów': L('purchase history', 'historia zakupów') }[m]));
 function renderCases() {
   if (!el) return;
   const since = period ? Date.now() - period * 86400000 : 0;
@@ -1473,41 +1485,41 @@ function renderCases() {
   const best = [...rows].sort((a, b) => b.value - a.value)[0];
   const plus = done.filter((r) => r.profit > 0).length;
   el.querySelector('#cs-h .cnt').textContent = `(${rows.length})`;
-  el.querySelector('#cs-info').textContent = (period ? `okres: ostatnie ${period} dni (zmień u góry) · ` : '') + (waiting ? `szacuję ceny (${waiting})… · ` : '') + (ih.syncedAt() ? 'dane z historii ekwipunku' : 'zsynchronizuj historię ekwipunku (zakładka „Historia ekwipunku”)') + (sh.syncedAt() ? ` · historia zakupów: ${sh.all().filter(sh.isCS).length} zakupów CS2` : '');
+  el.querySelector('#cs-info').textContent = (period ? L(`period: last ${period} days (change it at the top) · `, `okres: ostatnie ${period} dni (zmień u góry) · `) : '') + (waiting ? L(`estimating prices (${waiting})… · `, `szacuję ceny (${waiting})… · `) : '') + (ih.syncedAt() ? L('data from the inventory history', 'dane z historii ekwipunku') : L('sync the inventory history (the “Inventory history” tab)', 'zsynchronizuj historię ekwipunku (zakładka „Historia ekwipunku”)')) + (sh.syncedAt() ? L(` · purchase history: ${sh.all().filter(sh.isCS).length} CS2 purchases`, ` · historia zakupów: ${sh.all().filter(sh.isCS).length} zakupów CS2`) : '');
   el.querySelector('#cs-cards').innerHTML = rows.length ? `
-    <div class="card"><div class="k">Otwarcia</div><div class="v">${rows.length}</div><div class="sub">${done.length ? `${plus}/${done.length} na plus` : 'liczę wynik…'}</div></div>
-    <div class="card"><div class="k">Koszt otwarć</div><div class="v">${steam.fmt(spent)}</div><div class="sub" title="${esc(`Skrzynie i klucze: ${steam.fmt(spent - spentTerm)}
-Terminale (terminal + zakup w grze): ${steam.fmt(spentTerm)}`)}">${spentTerm ? `skrzynie ${steam.fmt(spent - spentTerm)} · terminale ${steam.fmt(spentTerm)}` : "skrzynie + klucze"}</div></div>
-    <div class="card"><div class="k">Wartość dropów</div><div class="v">${steam.fmt(value)}</div><div class="sub">po prowizji</div></div>
-    <div class="card"><div class="k">Zysk / strata na skrzyniach</div><div class="v ${value - (spent - spentT) >= 0 ? 'pos' : 'neg'}">${steam.fmt(value - (spent - spentT))}</div><div class="sub">${spent - spentT ? pct((value - (spent - spentT)) / (spent - spentT)) : '-'}${spentT ? ' · bez terminali bez kwoty' : ''}</div></div>
-    ${best ? `<div class="card"><div class="k">Najlepszy drop</div><div class="v" style="font-size:14px;color:#${esc(best.drops[0]?.color || 'fff')}">${esc(best.drops[0]?.name || '')}</div><div class="sub">${steam.fmt(best.value)} · ${new Date(best.e.t).toLocaleDateString()}</div></div>` : ''}` : '';
+    <div class="card"><div class="k">${L('Openings', 'Otwarcia')}</div><div class="v">${rows.length}</div><div class="sub">${done.length ? L(`${plus}/${done.length} in profit`, `${plus}/${done.length} na plus`) : L('working out the result…', 'liczę wynik…')}</div></div>
+    <div class="card"><div class="k">${L('Opening cost', 'Koszt otwarć')}</div><div class="v">${steam.fmt(spent)}</div><div class="sub" title="${esc(`${L('Cases and keys', 'Skrzynie i klucze')}: ${steam.fmt(spent - spentTerm)}
+${L('Terminals (terminal + in-game purchase)', 'Terminale (terminal + zakup w grze)')}: ${steam.fmt(spentTerm)}`)}">${spentTerm ? L(`cases ${steam.fmt(spent - spentTerm)} · terminals ${steam.fmt(spentTerm)}`, `skrzynie ${steam.fmt(spent - spentTerm)} · terminale ${steam.fmt(spentTerm)}`) : L('cases + keys', 'skrzynie + klucze')}</div></div>
+    <div class="card"><div class="k">${L('Drop value', 'Wartość dropów')}</div><div class="v">${steam.fmt(value)}</div><div class="sub">${L('after the fee', 'po prowizji')}</div></div>
+    <div class="card"><div class="k">${L('Profit / loss on cases', 'Zysk / strata na skrzyniach')}</div><div class="v ${value - (spent - spentT) >= 0 ? 'pos' : 'neg'}">${steam.fmt(value - (spent - spentT))}</div><div class="sub">${spent - spentT ? pct((value - (spent - spentT)) / (spent - spentT)) : '-'}${spentT ? L(' · without terminals with no amount', ' · bez terminali bez kwoty') : ''}</div></div>
+    ${best ? `<div class="card"><div class="k">${L('Best drop', 'Najlepszy drop')}</div><div class="v" style="font-size:14px;color:#${esc(best.drops[0]?.color || 'fff')}">${esc(best.drops[0]?.name || '')}</div><div class="sub">${steam.fmt(best.value)} · ${new Date(best.e.t).toLocaleDateString()}</div></div>` : ''}` : '';
   renderPager('cs', rows.length);
-  el.querySelector('#cs-list').innerHTML = rows.length ? `<table><thead><tr><th>Data</th><th>Skrzynia / terminal</th><th>Koszt</th><th>Drop / zakup</th><th>Co się z nim stało</th><th>Wartość</th><th>Zysk / strata</th></tr></thead><tbody>${pageOf('cs', rows).map((r) => `
+  el.querySelector('#cs-list').innerHTML = rows.length ? `<table><thead><tr><th>${L('Date', 'Data')}</th><th>${L('Case / terminal', 'Skrzynia / terminal')}</th><th>${L('Cost', 'Koszt')}</th><th>${L('Drop / purchase', 'Drop / zakup')}</th><th>${L('What happened to it', 'Co się z nim stało')}</th><th>${L('Value', 'Wartość')}</th><th>${L('Profit / loss', 'Zysk / strata')}</th></tr></thead><tbody>${pageOf('cs', rows).map((r) => `
     <tr><td style="white-space:nowrap">${new Date(r.e.t).toLocaleString()}</td>
-    <td><span class="tag" style="margin-right:5px;${r.terminal ? 'border-color:#8a6d1f;color:#e6c35c' : ''}" title="${r.terminal ? 'Terminal: po odpieczętowaniu można kupić przedmiot u Arms Dealera za pieniądze z portfela Steam' : 'Skrzynia otwarta kluczem'}">${r.terminal ? 'terminal' : 'skrzynia'}</span>${esc((r.caseIt?.name || '?').replace(/^Sealed /, ''))}${r.terminal && r.drops.length && r.paidSrc !== 'historia zakupów' ? `<label class="sub" style="display:flex;gap:4px;align-items:center;margin-top:2px">zapłacono <input class="p" data-termpaid="${esc(r.e.id)}" value="${r.paidSrc === 'wpisane' ? toInput(r.paid) : ''}" placeholder="${r.paidSrc === 'historia zakupów' ? esc(toInput(r.paid)) : 'kwota'}" style="width:64px;padding:2px 5px"></label>` : ''}</td>
-    <td>${steam.fmt(r.cost)}<div class="sub">${r.paid != null ? `zakup w grze ${steam.fmt(r.paid)} (${r.paidSrc}) · ` : ''}${r.caseIt ? `${r.terminal ? 'terminal' : 'skrzynia'} ${r.caseCost != null ? steam.fmt(r.caseCost) : '…'} (${r.caseSrc})` : ''}${r.keyIt ? ` · klucz ${steam.fmt(r.keyCost)} (${r.keySrc})` : ''}</div></td>
-    <td>${r.terminal && !r.drops.length ? '<span class="sub">nic nie kupiono</span>' : ''}${r.drops.map((d) => `<span style="color:#${esc(d.color || 'c6d4df')}">${esc(displayName(d.hash, d.name))}</span>`).join('<br>')}</td>
-    <td>${r.drops.map((d) => `<span class="sub ${d.kind === 'owned' ? 'acc' : ''}" title="${esc(d.title || '')}">${esc(d.fate)}</span>${d.tr?.partner ? ` <span class="sub">z ${partnerLink(d.tr)}</span>${ownerBtn(d.tr, d.hash)}` : ''}`).join('<br>')}</td>
+    <td><span class="tag" style="margin-right:5px;${r.terminal ? 'border-color:#8a6d1f;color:#e6c35c' : ''}" title="${r.terminal ? L('Terminal: once unsealed you can buy an item from the Arms Dealer with money from your Steam wallet', 'Terminal: po odpieczętowaniu można kupić przedmiot u Arms Dealera za pieniądze z portfela Steam') : L('A case opened with a key', 'Skrzynia otwarta kluczem')}">${r.terminal ? 'terminal' : L('case', 'skrzynia')}</span>${esc((r.caseIt?.name || '?').replace(/^Sealed /, ''))}${r.terminal && r.drops.length && r.paidSrc !== 'historia zakupów' ? `<label class="sub" style="display:flex;gap:4px;align-items:center;margin-top:2px">${L('paid', 'zapłacono')} <input class="p" data-termpaid="${esc(r.e.id)}" value="${r.paidSrc === 'wpisane' ? toInput(r.paid) : ''}" placeholder="${r.paidSrc === 'historia zakupów' ? esc(toInput(r.paid)) : L('amount', 'kwota')}" style="width:64px;padding:2px 5px"></label>` : ''}</td>
+    <td>${steam.fmt(r.cost)}<div class="sub">${r.paid != null ? `${L('in-game purchase', 'zakup w grze')} ${steam.fmt(r.paid)} (${srcText(r.paidSrc)}) · ` : ''}${r.caseIt ? `${r.terminal ? 'terminal' : L('case', 'skrzynia')} ${r.caseCost != null ? steam.fmt(r.caseCost) : '…'} (${srcText(r.caseSrc)})` : ''}${r.keyIt ? ` · ${L('key', 'klucz')} ${steam.fmt(r.keyCost)} (${r.keySrc})` : ''}</div></td>
+    <td>${r.terminal && !r.drops.length ? `<span class="sub">${L('nothing bought', 'nic nie kupiono')}</span>` : ''}${r.drops.map((d) => `<span style="color:#${esc(d.color || 'c6d4df')}">${esc(displayName(d.hash, d.name))}</span>`).join('<br>')}</td>
+    <td>${r.drops.map((d) => `<span class="sub ${d.kind === 'owned' ? 'acc' : ''}" title="${esc(d.title || '')}">${esc(d.fate)}</span>${d.tr?.partner ? ` <span class="sub">${L('with', 'z')} ${partnerLink(d.tr)}</span>${ownerBtn(d.tr, d.hash)}` : ''}`).join('<br>')}</td>
     <td>${r.drops.map((d) => (d.value != null ? steam.fmt(d.value) : '…') + (d.kind !== 'owned' ? nowCmp(d.hash, d.value) : '')).join('')}</td>
-    <td class="${r.profit > 0 ? 'pos' : r.profit < 0 ? 'neg' : ''}">${r.profit != null ? steam.fmt(r.profit) : r.unknownPaid ? '<span class="sub warn" title="Wpisz kwotę zapłaconą w terminalu (pole „zapłacono” w kolumnie Skrzynia)">wpisz kwotę</span>' : '…'}</td></tr>`).join('')}</tbody></table>`
-    : `<div class="empty">Brak otwartych skrzyń w tym okresie${ih.syncedAt() ? '' : ', najpierw zsynchronizuj historię ekwipunku'}.</div>`;
+    <td class="${r.profit > 0 ? 'pos' : r.profit < 0 ? 'neg' : ''}">${r.profit != null ? steam.fmt(r.profit) : r.unknownPaid ? `<span class="sub warn" title="${L('Enter the amount paid in the terminal (the “paid” field in the Case column)', 'Wpisz kwotę zapłaconą w terminalu (pole „zapłacono” w kolumnie Skrzynia)')}">${L('enter amount', 'wpisz kwotę')}</span>` : '…'}</td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">${L('No opened cases in this period', 'Brak otwartych skrzyń w tym okresie')}${ih.syncedAt() ? '' : L(', sync the inventory history first', ', najpierw zsynchronizuj historię ekwipunku')}.</div>`;
 }
 
 // ---------------------------------------------------------------- partner links, "does he still have it", today's price
 function partnerLink(e) {
   if (!e?.partner?.href) return '';
-  return `<a href="${esc(e.partner.href)}" target="_blank" class="acc" title="Profil partnera wymiany">${esc(e.partner.name || 'profil')}</a>`;
+  return `<a href="${esc(e.partner.href)}" target="_blank" class="acc" title="${L('Trade partner\'s profile', 'Profil partnera wymiany')}">${esc(e.partner.name || L('profile', 'profil'))}</a>`;
 }
 function ownerBtn(e, hash) {
   if (!e?.partner?.href || !hash) return '';
   const st = ih.ownerState(e.partner.href, hash);
-  if (!st) return ` <button class="b s" data-owner="${esc(e.partner.href)}" data-hash="${esc(hash)}" title="Sprawdza publiczny ekwipunek partnera (1 zapytanie)">czy nadal ma?</button>`;
+  if (!st) return ` <button class="b s" data-owner="${esc(e.partner.href)}" data-hash="${esc(hash)}" title="${L('Checks the partner\'s public inventory (1 request)', 'Sprawdza publiczny ekwipunek partnera (1 zapytanie)')}">${L('does he still have it?', 'czy nadal ma?')}</button>`;
   return {
-    checking: ' <span class="sub">sprawdzam…</span>',
-    has: ` <span class="ok" title="Ten przedmiot (ta sama nazwa i stan) jest w jego ekwipunku">✔ nadal ma${st.n > 1 ? ` (${st.n})` : ''}</span>`,
-    no: ' <span class="warn" title="Nie ma go w jego ekwipunku, sprzedał lub wymienił dalej">✘ już nie ma</span>',
-    private: ' <span class="mut" title="Ekwipunek partnera jest prywatny">🔒 prywatny ekwipunek</span>',
-    error: ` <span class="err" title="${esc(st.msg || '')}">błąd sprawdzania</span>`,
+    checking: ` <span class="sub">${L('checking…', 'sprawdzam…')}</span>`,
+    has: ` <span class="ok" title="${L('This item (same name and state) is in their inventory', 'Ten przedmiot (ta sama nazwa i stan) jest w jego ekwipunku')}">✔ ${L('still has it', 'nadal ma')}${st.n > 1 ? ` (${st.n})` : ''}</span>`,
+    no: ` <span class="warn" title="${L('It isn\'t in their inventory, they sold or traded it on', 'Nie ma go w jego ekwipunku, sprzedał lub wymienił dalej')}">✘ ${L('no longer has it', 'już nie ma')}</span>`,
+    private: ` <span class="mut" title="${L('The partner\'s inventory is private', 'Ekwipunek partnera jest prywatny')}">🔒 ${L('private inventory', 'prywatny ekwipunek')}</span>`,
+    error: ` <span class="err" title="${esc(st.msg || '')}">${L('check failed', 'błąd sprawdzania')}</span>`,
   }[st.state] || '';
 }
 
@@ -1538,8 +1550,8 @@ function nowCmp(hash, ref, { net = true } = {}) {
   if (low == null) return '';
   const today = net ? steam.receivedFromBuyer(low) : low;
   const d = ref ? (today - ref) / ref : null;
-  const tip = net ? `Najniższa cena dziś: ${steam.fmt(low)} (na rękę po prowizji ${steam.fmt(today)})` : `Najniższa cena dziś: ${steam.fmt(low)}`;
-  return `<div class="sub" title="${esc(tip)}">dziś ${steam.fmt(low)}${d != null && isFinite(d) ? ` <span class="${d >= 0 ? 'pos' : 'neg'}">(${d >= 0 ? '+' : ''}${pct(d, 0)})</span>` : ''}</div>`;
+  const tip = net ? L(`Lowest price today: ${steam.fmt(low)} (${steam.fmt(today)} in hand after the fee)`, `Najniższa cena dziś: ${steam.fmt(low)} (na rękę po prowizji ${steam.fmt(today)})`) : L(`Lowest price today: ${steam.fmt(low)}`, `Najniższa cena dziś: ${steam.fmt(low)}`);
+  return `<div class="sub" title="${esc(tip)}">${L('today', 'dziś')} ${steam.fmt(low)}${d != null && isFinite(d) ? ` <span class="${d >= 0 ? 'pos' : 'neg'}">(${d >= 0 ? '+' : ''}${pct(d, 0)})</span>` : ''}</div>`;
 }
 
 // ---------------------------------------------------------------- result per month (optional, 📅 Miesiące)
@@ -1560,17 +1572,17 @@ function drawMonths(res, all, inR) {
   for (const t of all) if (inR(t.t)) { const x = row(t.t); if (t.type === 'buy') x.spent += t.price * t.amount; else x.recv += t.price * t.amount; }
   for (const r of memo?.co?.rows || []) if (inR(r.e.t)) { const x = row(r.e.t); x.open++; if (r.profit != null) { x.cases += r.profit; x.nc++; } }
   const rows = [...m.values()].sort((a, b) => b.k.localeCompare(a.k));
-  if (!rows.length) { box.innerHTML = '<div class="sub" style="padding:6px 0">Brak transakcji w tym okresie.</div>'; return; }
+  if (!rows.length) { box.innerHTML = `<div class="sub" style="padding:6px 0">${L('No trades in this period.', 'Brak transakcji w tym okresie.')}</div>`; return; }
   const money = (v) => `<span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${v > 0 ? '+' : ''}${steam.fmt(Math.round(v))}</span>`;
   const sum = rows.reduce((s, x) => { for (const k of ['flip', 'nf', 'wins', 'cases', 'nc', 'open', 'spent', 'recv']) s[k] += x[k]; return s; }, { flip: 0, nf: 0, wins: 0, cases: 0, nc: 0, open: 0, spent: 0, recv: 0 });
-  const name = (x) => { const [y, mo] = x.k.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' }); };
+  const name = (x) => { const [y, mo] = x.k.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(locale(), { month: 'long', year: 'numeric' }); };
   const line = (x, label, strong = false) => `<tr${strong ? ' style="font-weight:600;border-top:2px solid var(--ln)"' : ''}><td>${label}</td>
-    <td>${x.nf ? `${money(x.flip)} <span class="sub">${x.nf} · ${Math.round((x.wins / x.nf) * 100)}% na plus</span>` : '<span class="sub">-</span>'}</td>
-    <td>${x.open ? `${x.nc ? money(x.cases) : '<span class="sub">…</span>'} <span class="sub">${x.open} otw.${x.nc < x.open ? `, ${x.open - x.nc} bez wyniku` : ''}</span>` : '<span class="sub">-</span>'}</td>
+    <td>${x.nf ? `${money(x.flip)} <span class="sub">${x.nf} · ${Math.round((x.wins / x.nf) * 100)}% ${L('in profit', 'na plus')}</span>` : '<span class="sub">-</span>'}</td>
+    <td>${x.open ? `${x.nc ? money(x.cases) : '<span class="sub">…</span>'} <span class="sub">${x.open} ${L('open.', 'otw.')}${x.nc < x.open ? L(`, ${x.open - x.nc} without a result`, `, ${x.open - x.nc} bez wyniku`) : ''}</span>` : '<span class="sub">-</span>'}</td>
     <td>${steam.fmt(x.spent)}</td><td>${steam.fmt(x.recv)}</td><td><b>${money(x.flip + x.cases)}</b></td></tr>`;
-  box.innerHTML = `<div class="sub" style="display:flex;gap:10px;align-items:baseline;margin:6px 0 2px"><b style="color:#c6d4df;font-size:13px">Wynik w miesiącach</b><span>flipy i skrzynie z wynikiem, wydane i otrzymane na rynku (po prowizji)</span></div>
-    <table style="margin-bottom:8px"><thead><tr><th>Miesiąc</th><th>Zysk z flipów</th><th>Skrzynie</th><th>Wydano</th><th>Otrzymano</th><th>Razem</th></tr></thead>
-    <tbody>${rows.map((x) => line(x, name(x))).join('')}${rows.length > 1 ? line(sum, 'Razem', true) : ''}</tbody></table>`;
+  box.innerHTML = `<div class="sub" style="display:flex;gap:10px;align-items:baseline;margin:6px 0 2px"><b style="color:#c6d4df;font-size:13px">${L('Result by month', 'Wynik w miesiącach')}</b><span>${L('flips and cases with a result, spent and received on the market (after the fee)', 'flipy i skrzynie z wynikiem, wydane i otrzymane na rynku (po prowizji)')}</span></div>
+    <table style="margin-bottom:8px"><thead><tr><th>${L('Month', 'Miesiąc')}</th><th>${L('Flip profit', 'Zysk z flipów')}</th><th>${L('Cases', 'Skrzynie')}</th><th>${L('Spent', 'Wydano')}</th><th>${L('Received', 'Otrzymano')}</th><th>${L('Total', 'Razem')}</th></tr></thead>
+    <tbody>${rows.map((x) => line(x, name(x))).join('')}${rows.length > 1 ? line(sum, L('Total', 'Razem'), true) : ''}</tbody></table>`;
 }
 
 // ---------------------------------------------------------------- P&L chart (optional, zoomable by dragging)
@@ -1582,7 +1594,7 @@ function drawChart() {
   if (!box) return;
   const on = store.get('histChart', false);
   el.querySelector('[data-a="chart"]')?.classList.toggle('on', on);
-  if (!on || chartPts.length < 2) { box.innerHTML = on ? '<div class="sub" style="padding:6px 0">Za mało sprzedaży, żeby narysować wykres.</div>' : ''; return; }
+  if (!on || chartPts.length < 2) { box.innerHTML = on ? `<div class="sub" style="padding:6px 0">${L('Too few sales to draw a chart.', 'Za mało sprzedaży, żeby narysować wykres.')}</div>` : ''; return; }
   let p = chartPts;
   if (chartZoom) {
     const [a, b] = chartZoom;
@@ -1597,11 +1609,11 @@ function drawChart() {
   const delta = chartZoom ? p[p.length - 1][1] - p[0][1] : endV;
   box.innerHTML = `
     <div class="sub" style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0 2px">
-      <b style="color:#c6d4df;font-size:13px">Zysk z flipów narastająco</b>
-      <span>${chartZoom ? `tabela i karty pokazują tylko ${new Date(x0).toLocaleDateString()} - ${new Date(x1).toLocaleDateString()}: ` : 'razem: '}<b class="${delta >= 0 ? 'pos' : 'neg'}">${delta >= 0 ? '+' : ''}${steam.fmt(Math.round(delta))}</b></span>
+      <b style="color:#c6d4df;font-size:13px">${L('Cumulative flip profit', 'Zysk z flipów narastająco')}</b>
+      <span>${chartZoom ? L(`the table and cards show only ${new Date(x0).toLocaleDateString()} - ${new Date(x1).toLocaleDateString()}: `, `tabela i karty pokazują tylko ${new Date(x0).toLocaleDateString()} - ${new Date(x1).toLocaleDateString()}: `) : L('total: ', 'razem: ')}<b class="${delta >= 0 ? 'pos' : 'neg'}">${delta >= 0 ? '+' : ''}${steam.fmt(Math.round(delta))}</b></span>
       <span class="sp" style="flex:1"></span>
       <span id="h-ch-tip" style="color:#c6d4df"></span>
-      ${chartZoom ? '<button class="b" data-a="chartreset">pokaż całość</button>' : '<span>przeciągnij myszą po wykresie, żeby przybliżyć</span>'}
+      ${chartZoom ? `<button class="b" data-a="chartreset">${L('show all', 'pokaż całość')}</button>` : `<span>${L('drag the mouse over the chart to zoom in', 'przeciągnij myszą po wykresie, żeby przybliżyć')}</span>`}
     </div>
     <div id="h-ch-wrap" style="position:relative;cursor:crosshair;user-select:none">
       ${ui.lineChart([{ points: p, color: endV >= 0 ? '#a4d007' : '#ff6b6b' }], { fmtY: (v) => steam.fmt(Math.round(v)), fmtX: (v) => (short ? new Date(v).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : new Date(v).toLocaleDateString()), height: 180, zero: true })}
@@ -1691,12 +1703,12 @@ export function itemOrigins() {
         }
         if (x.kind === 'wymiana' || x.kind === 'kontrakt') {
           const { cost, outs } = tradeCost(x, hash, tradeEv);
-          const who = x.partner?.name ? ` od ${x.partner.name}` : '';
+          const who = x.partner?.name ? ` ${L('from', 'od')} ${x.partner.name}` : '';
           acq.push({ t: x.t, hash, src: x.kind === 'kontrakt' ? 'z kontraktu' : 'z wymiany', detail: x.kind === 'kontrakt' ? '' : who, cost, wait: cost == null, gave: outs.map((i) => i.name) });
           continue;
         }
         // a Steam item ("730-SWAT": a card, background, emoticon) from playing or a booster pack
-        acq.push({ t: x.t, hash, src: 'drop', detail: /^\d+-/.test(hash) ? `Steam: drop z gry (${x.desc})` : x.desc, cost: 0 });
+        acq.push({ t: x.t, hash, src: 'drop', detail: /^\d+-/.test(hash) ? `Steam: ${L('a game drop', 'drop z gry')} (${x.desc})` : x.desc, cost: 0 });
       }
     }
   }

@@ -2,6 +2,7 @@
 // which skins are in each case (incl. the knife/glove pool) and each skin's min/max float.
 // Downloaded once a week via GM_xmlhttpRequest and stored in a compact form.
 import * as store from '../core/store.js';
+import { L } from '../core/i18n.js';
 
 const BASE = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/';
 const KEY = 'caseDB';
@@ -10,11 +11,11 @@ const RARITY_TIER = { rarity_rare_weapon: 'mil', rarity_mythical_weapon: 'res', 
 
 function getJSON(url) {
   return new Promise((resolve, reject) => {
-    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error('GM_xmlhttpRequest niedostępne'));
+    if (typeof GM_xmlhttpRequest !== 'function') return reject(new Error(L('GM_xmlhttpRequest unavailable', 'GM_xmlhttpRequest niedostępne')));
     GM_xmlhttpRequest({
       method: 'GET', url, timeout: 90000,
-      onload: (r) => { if (r.status >= 400) return reject(new Error(`HTTP ${r.status}`)); try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error('zła odpowiedź')); } },
-      onerror: () => reject(new Error('błąd sieci (dodaj @connect raw.githubusercontent.com w nagłówku skryptu)')),
+      onload: (r) => { if (r.status >= 400) return reject(new Error(`HTTP ${r.status}`)); try { resolve(JSON.parse(r.responseText)); } catch { reject(new Error(L('bad response', 'zła odpowiedź'))); } },
+      onerror: () => reject(new Error(L('network error (add @connect raw.githubusercontent.com to the script header)', 'błąd sieci (dodaj @connect raw.githubusercontent.com w nagłówku skryptu)'))),
       ontimeout: () => reject(new Error('timeout')),
     });
   });
@@ -54,7 +55,7 @@ export async function load() {
     return mem;
   } catch (e) {
     if (saved) return (mem = saved); // old data is still good
-    throw new Error('dane o zawartości skrzyń: ' + e.message);
+    throw new Error(L('case contents data: ', 'dane o zawartości skrzyń: ') + e.message);
   }
 }
 

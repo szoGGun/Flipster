@@ -1,39 +1,43 @@
 # Flipster
 
-Userscript (Tampermonkey) do handlu na Rynku Steam, głównie przedmiotami z CS2. Działa w Twojej przeglądarce, na Twojej sesji Steam, bez serwera, logowania i subskrypcji.
+A Tampermonkey userscript for trading on the Steam Community Market, mostly CS2 items. It runs in your browser on your own Steam session, with no server, no login and no subscription.
 
-## Co robi
+> **Note:** this is a vibe-coded hobby project, built for fun and for my own needs. It comes with no guarantees. Use it at your own risk and check what it does before you trust it with your Steam account.
 
-| Zakładka | Co robi |
+## What it does
+
+| Tab | What it does |
 |---|---|
-| Rynek | Twoje oferty sprzedaży i zlecenia kupna. Podcina konkurencję w granicach min/max (także automatycznie w tle) i podpowiada cenę, przy której przedmiot realnie się sprzeda. |
-| Ekwipunek | Wycena wszystkiego, co masz, znaczki „z zyskiem” / „drogo teraz” / „cena spada”, float, rzadkie wzory 💎 i masowa sprzedaż. Na zwykłej stronie ekwipunku Steam pokazuje ceny i float na przedmiotach. |
-| Historia | Ile naprawdę zarobiłeś albo straciłeś na zakupach, sprzedażach, dropach, wymianach i otwartych skrzyniach. |
-| Okazje | Skaner przedmiotów do szybkiego flipu (kupno zleceniem, sprzedaż po 7 dniach blokady) i ocena, co warto trzymać na dłużej. |
-| Czy warto otwierać? | Ile średnio wraca z otwarcia każdej skrzyni. |
+| Market | Your sell listings and buy orders. Undercuts the competition within your min/max (also automatically in the background) and suggests a price at which the item will really sell. |
+| Inventory | Values everything you own, shows "in profit" / "pricey now" / "price falling" badges, float, rare patterns 💎 and bulk selling. On the regular Steam inventory page it shows prices and float on the items. |
+| History | How much you really made or lost on purchases, sales, drops, trades and opened cases. |
+| Deals | A scanner for quick flips (buy with an order, sell after the 7-day trade lock) and a verdict on what is worth holding longer. |
+| Worth opening? | How much opening each case returns on average. |
 
-Na stronie oferty wymiany pokazuje wartość obu stron.
+On a trade offer page it shows the value of both sides.
 
-## Instalacja
+The interface is in English or Polish. By default it follows your browser language, and you can change it in ⚙ Settings.
 
-1. Chrome, rozszerzenie **Tampermonkey**. W `chrome://extensions` → Tampermonkey → Szczegóły włącz **„Zezwalaj na skrypty użytkownika”** i **„Zezwalaj na dostęp do adresów URL plików”**.
-2. `npm install` i `npm run build`.
-3. W Tampermonkey utwórz nowy skrypt i wklej zawartość `dist/flipster-dev.user.js`. To mały loader, który wczytuje zbudowany plik `dist/flipster.user.js` z dysku, więc po każdym `npm run build` wystarczy odświeżyć stronę.
-4. Wejdź na steamcommunity.com i kliknij przycisk **Flipster** w lewym dolnym rogu.
+## Installation
 
-## Ważne
+1. Chrome with the **Tampermonkey** extension. Open `chrome://extensions`, click Details on Tampermonkey and turn on **Allow user scripts** and **Allow access to file URLs**.
+2. `npm install` and `npm run build`.
+3. In Tampermonkey create a new script and paste the contents of `dist/flipster-dev.user.js`. It's a small loader that reads the built `dist/flipster.user.js` from disk, so after every `npm run build` you only reload the page.
+4. Go to steamcommunity.com and click the **Flipster** button in the bottom left corner.
 
-- Każdą nową ofertę sprzedaży potwierdzasz w aplikacji Steam (Steam Guard). Skrypt nie ma dostępu do authenticatora i tak ma zostać.
-- Automaty działają tylko z otwartą kartą steamcommunity.com i tylko w jednej karcie naraz. Obejmują wyłącznie przedmioty z ustawioną ceną min (sprzedaż) albo max (zlecenia).
-- Steam ogranicza liczbę zapytań. Flipster sam zwalnia po błędzie 429 i pamięta ceny przez kilka minut.
+## Good to know
 
-## Rozwój
+- You confirm every new sell listing in the Steam mobile app (Steam Guard). The script has no access to your authenticator and that's how it should stay.
+- Automations only run while a steamcommunity.com tab is open, and only in one tab at a time. They only touch items with a min price set (selling) or a max price set (buy orders).
+- Steam limits the number of requests. Flipster slows down by itself after a 429 error and remembers prices for a few minutes.
+
+## Development
 
 ```
 npm install
-npm run build     # -> dist/flipster.user.js i loader dist/flipster-dev.user.js
-npm test          # testy logiki (prowizje, ceny, szansa sprzedaży, FIFO, wzory)
-npm run smoke     # cały skrypt w headless Chrome na zamockowanym Steamie
+npm run build     # builds dist/flipster.user.js and the loader dist/flipster-dev.user.js
+npm test          # logic tests (fees, prices, sell chance, FIFO, patterns)
+npm run smoke     # the whole script in headless Chrome against a mocked Steam
 ```
 
-Logo w różnych wersjach jest w `src/assets/logo`.
+The logo in its different versions is in `src/assets/logo`.

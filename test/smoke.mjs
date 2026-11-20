@@ -67,6 +67,8 @@ const histJson = () => ({ success: true, total_count: 2, events: [
 
 // inventory history: a market purchase newer than the market history, an opened case, a trade
 const ihDate = (t) => { const d = new Date(t); return `${d.getDate()} ${MON[d.getMonth()]}, ${d.getFullYear()}`; };
+// the clock time of the event as Steam prints it ("3:41pm"): the "30 minutes from now" purchase must really be later today than the sync
+const ihTime = (t) => { const d = new Date(t), h = d.getHours(); return `${h % 12 || 12}:${String(d.getMinutes()).padStart(2, '0')}${h >= 12 ? 'pm' : 'am'}`; };
 const IH = [
   // a purchase made after the market history was last read (Flipster takes only those from here: older ones are in the
   // market history with their real price) → "30 minutes from now", the test reaches Historia well before that
@@ -79,7 +81,7 @@ const ihItem = (n) => `<a class="history_item" data-appid="730" data-classid="c$
 const ihGroup = (sign, list) => (list.length ? `<div class="tradehistory_items"><div class="tradehistory_items_plusminus">${sign}</div><div class="tradehistory_items_group">${list.map(ihItem).join('')}</div></div>` : '');
 const invHistory = () => ({
   success: true,
-  html: IH.map((e) => `<div class="tradehistoryrow"><div class="tradehistory_date">${ihDate(e.t)}<div class="tradehistory_timestamp">3:41pm</div></div>
+  html: IH.map((e) => `<div class="tradehistoryrow"><div class="tradehistory_date">${ihDate(e.t)}<div class="tradehistory_timestamp">${ihTime(e.t)}</div></div>
     <div class="tradehistory_content"><div class="tradehistory_event_description">${e.desc}</div>${ihGroup('-', e.minus)}${ihGroup('+', e.plus)}</div></div>`).join(''),
   descriptions: { 730: Object.fromEntries(ihNames.map((n, i) => [`c${i}_0`, { market_hash_name: n, name: n, icon_url: 'x', name_color: 'D2D2D2' }])) },
 });
