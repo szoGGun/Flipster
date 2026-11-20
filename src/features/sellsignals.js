@@ -36,7 +36,7 @@ export function prune(days = 14) {
 
 // the fill table's version: an entry saved by an older fillTable (no `fv`, or a lower one) is fetched once more,
 // or the 12 h cache keeps showing the old chances after an update (2026-11-20: 63% stayed on the cards after F5)
-const FILL_V = 4; // 4: the last half year (rt) for the trend chip, 2026-11-20
+const FILL_V = 5; // 5: the "held" run is half a day of trading for busy items (fillTable), 2026-11-20
 // items too thin for a fill table keep their sales of the last 30 days (`p`, see soldAt); an entry without them is
 // fetched once more
 const fresh = (hash) => { const h = hist.get(hash); return h && 'f' in h && h.fv === FILL_V && (h.f || 'p' in h) && Date.now() - h.at < TTL ? h : null; };

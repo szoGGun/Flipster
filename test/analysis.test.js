@@ -295,9 +295,13 @@ test('fillTable: a lone dearer sale is somebody\'s chosen copy, not the market r
   assert.equal(t.ref, 100);
   assert.equal(t.P[1][A.FILL_K.indexOf(1)], 1);    // its own price: every day
   assert.equal(t.P[1][A.FILL_K.indexOf(1.13)], 0); // the 1,30 spikes don't make +13% "reachable"
-  // the same, but the price really moves up to 1,30 for 6 hours a day: that counts
-  const real = Array.from({ length: 720 }, (_, i) => ({ t: now - (719 - i) * 3600000, price: i % 24 >= 12 && i % 24 < 18 ? 130 : 100, vol: 1 }));
+  // the same, but the price really moves up to 1,30 for half a day (12 of its 24 sales): that counts
+  const real = Array.from({ length: 720 }, (_, i) => ({ t: now - (719 - i) * 3600000, price: i % 24 >= 12 ? 130 : 100, vol: 1 }));
   assert.equal(A.fillTable(real).P[1][A.FILL_K.indexOf(1.3)], 1);
+  // 6 dear hours of 24 sales a day are not "held": the run is half a day of the item's own trading
+  const brief = Array.from({ length: 720 }, (_, i) => ({ t: now - (719 - i) * 3600000, price: i % 24 >= 12 && i % 24 < 18 ? 130 : 100, vol: 1 }));
+  assert.equal(A.fillTable(brief).run, 12);
+  assert.equal(A.fillTable(brief).P[1][A.FILL_K.indexOf(1.3)], 0);
 });
 
 test('anchorTable: the price now is checked against today\'s listings', () => {
@@ -332,13 +336,15 @@ test('fillTable with binary-searched windows gives exactly the numbers of the pl
       for (const p of before) { if (p.t <= t - DAY && got.reduce((x, q) => x + q.vol, 0) >= 5) break; got.push(p); }
       return got.reduce((x, q) => x + q.vol, 0) >= 5 ? vw(got) : null;
     };
-    // held: the highest vw-median of 5 units in a row (fewer in the whole window: all of them)
+    // held: the highest vw-median of RUN units in a row (fewer in the whole window: all of them);
+    // RUN = 5 units or half a day of the last 7 days' trading, whichever is more
+    const RUN = Math.max(5, Math.round(hr.filter((p) => p.t > end - 7 * DAY).reduce((x, p) => x + p.vol, 0) / 7 * 0.5));
     const held = (next) => {
       let top = -Infinity;
       for (let i = 0; i < next.length; i++) {
         const run = []; let u = 0;
-        for (let j = i; j < next.length && u < 5; j++) { run.push(next[j]); u += next[j].vol; }
-        if (u < 5 && i > 0) break;
+        for (let j = i; j < next.length && u < RUN; j++) { run.push(next[j]); u += next[j].vol; }
+        if (u < RUN && i > 0) break;
         top = Math.max(top, vw(run));
       }
       return top;
@@ -365,7 +371,7 @@ test('fillTable with binary-searched windows gives exactly the numbers of the pl
       D[N] = Math.round((dsum / starts) * 1000) / 1000;
       if (N === 2) n = starts;
     }
-    return Object.keys(P).length ? { ref: r0, P, D, n } : null;
+    return Object.keys(P).length ? { ref: r0, P, D, n, run: RUN } : null;
   };
   let seed = 7;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
@@ -404,6 +410,10 @@ test('lone offers in front of a wall are not the competition (minQty)', () => {
   assert.equal(qc(50, [{ price: 80, ahead: 0 }, { price: 112, ahead: 25 }]), 112); // 25 dumped well below normal: a fast market eats them, no unit limit
   assert.equal(qc(5, [{ price: 80, ahead: 0 }, { price: 112, ahead: 25 }]), 80);   // 25 at 5 sales a day won't go in 2 days: that's the price now
   assert.equal(A.queueChoice({ table: null, perDay: 50, levels: lone, net }), null); // no history: the cheapest counts
+  // USP-S | Silent Shot FN, 2026-11-20: 46 units at the market price in front, 82 buyers of listings a day. The
+  // queue at the market price refills, they aren't "dumped": undercut the cheapest, don't wait behind them
+  assert.equal(qc(82, [{ price: 111, ahead: 0 }, { price: 112, ahead: 20 }, { price: 113, ahead: 46 }]), 111);
+  assert.equal(qc(82, [{ price: 111, ahead: 0 }, { price: 112, ahead: 4 }]), 112); // a few that go within the hour: still fine
   assert.equal(A.competitorSell(sells, { 112: 80 }, 2), 116); // our own 80 at 1,12 aren't competition either
   assert.equal(A.competitorSell([[300, 1]], {}, 2), 300);     // a thin book: the only listing still counts
   const buys = [[56, 1], [52, 52], [48, 89]];            // 1 × 0,56 then 51 × 0,52

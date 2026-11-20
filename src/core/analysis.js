@@ -431,18 +431,24 @@ export function floatRank(f, range = null) {
 export const FILL_K = [0.97, 1, 1.02, 1.04, 1.06, 1.08, 1.1, 1.13, 1.16, 1.2, 1.25, 1.3];
 export const FILL_N = [1, 2, 4, 7];
 export const FILL_RUN = 5;
+// ...and at least half a day of the item's own trading. 5 units is a day for an item selling 5-20 a day, but under an
+// hour for one selling 136 (USP-S | Silent Shot FN, 2026-11-20: 8,20 zł "57% in a day" with ~47 units listed cheaper).
+// On the 800-item market sample (2026-11-20, 676 items with hourly data) the highest price held over the last day,
+// against the cheapest listing at the export: 5 units gave 1,000 for 5-20 sales a day but 1,083 for 60-150 and 1,082
+// above 150 (the run caught one dear hour, the listings never got there); half a day's units gave 1,000 / 1,000 / 1,020.
+export const FILL_RUN_DAY = 0.5;
 const REF_UNITS = 5;
 /** the waiting time as the fill table knows it: the first of 1, 2, 4, 7 days that is at least maxWaitDays */
 export const horizonOf = (maxWaitDays = 2) => FILL_N.find((x) => x >= maxWaitDays) ?? FILL_N[FILL_N.length - 1];
 const HOUR_MS = 3600000;
 
-/** the highest price the market held: the volume-weighted median of every run of hours with ≥ FILL_RUN units */
-function heldTop(next) {
+/** the highest price the market held: the volume-weighted median of every run of hours with ≥ run units */
+function heldTop(next, run = FILL_RUN) {
   let top = -Infinity;
   for (let i = 0; i < next.length; i++) {
     let u = 0, j = i;
-    while (j < next.length && u < FILL_RUN) u += next[j++].vol;
-    if (u < FILL_RUN && i > 0) break; // the tail is part of the run before it (a window with fewer units: all of them)
+    while (j < next.length && u < run) u += next[j++].vol;
+    if (u < run && i > 0) break; // the tail is part of the run before it (a window with fewer units: all of them)
     const m = vwMedian(next.slice(i, j));
     if (m > top) top = m;
   }
@@ -456,13 +462,16 @@ function heldTop(next) {
  * day ÷ r (what selling "at the market" then gave). ref (returned) = the same price now, the table is applied
  * relative to it (anchorTable caps it by today's listings). null when there are too few hours.
  */
-export function fillTable(points, { minStarts = 24 } = {}) {
+export function fillTable(points, { minStarts = 24, runDay = FILL_RUN_DAY } = {}) {
   if (!points?.length) return null;
   const end = points[points.length - 1].t;
   const hr = points.filter((p) => p.t > end - 30 * DAY_MS && p.vol > 0);
   if (hr.length < 120) return null; // too thin for hour-by-hour statistics
   // the hours in time order (Steam sends them so; sorted just in case), windows (a, b] by binary search
   const hs = hr.every((p, i) => !i || hr[i - 1].t <= p.t) ? hr : [...hr].sort((a, b) => a.t - b.t);
+  // the run that counts as "held": FILL_RUN units, or half a day of this item's trading (last 7 days) when that's more
+  const daily = hs.filter((p) => p.t > end - 7 * DAY_MS).reduce((s, p) => s + p.vol, 0) / 7;
+  const run = Math.max(FILL_RUN, Math.round(daily * runDay));
   const after = (x) => { let lo = 0, hi = hs.length; while (lo < hi) { const m = (lo + hi) >> 1; if (hs[m].t <= x) lo = m + 1; else hi = m; } return lo; };
   const win = (a, b) => hs.slice(after(a), after(b));
   const priceAt = (t) => {
@@ -484,7 +493,7 @@ export function fillTable(points, { minStarts = 24 } = {}) {
       const r = rOf.get(t);
       const next = win(t, t + N * DAY_MS);
       if (!r || !next.length) continue;
-      const top = heldTop(next) / r;
+      const top = heldTop(next, run) / r;
       FILL_K.forEach((k, i) => { if (top >= k) hits[i]++; });
       const lastDay = next.filter((p) => p.t > t + (N - 1) * DAY_MS);
       dsum += (vwMedian(lastDay.length ? lastDay : next) || r) / r;
@@ -495,7 +504,7 @@ export function fillTable(points, { minStarts = 24 } = {}) {
     D[N] = Math.round((dsum / starts) * 1000) / 1000;
     if (N === 2) n = starts;
   }
-  return Object.keys(P).length ? { ref, P, D, n } : null;
+  return Object.keys(P).length ? { ref, P, D, n, run } : null;
 }
 
 /**
@@ -539,7 +548,14 @@ const CHANCE_FIT = 0.92;
  * chance (MIN_CHANCE): waiting costs nothing in money terms, so without that bar it would always win.
  * → the chosen level's price, or null (no price history / no sales: the cheapest counts).
  */
-export function queueChoice({ table, perDay, levels: lv, net, undercut = 1, maxWaitDays = 2 }) {
+// Listings clearly under the sales price (under DUMP_K × it) are "dumped": any number of them may be left in front
+// when the market eats them within the wait. Listings AT the market price are the market itself, sellers keep adding
+// more there, so waiting behind them only pays for the few that go within MARKET_QUEUE_DAYS of trading (a lone one in
+// front of a wall). USP-S | Silent Shot FN, 2026-11-20: 46 units at 7,85-8,17 zł were skipped as "bought within a day
+// anyway" (82 buyers of listings a day) while the sales median was 7,68 zł.
+export const DUMP_K = 0.95;
+export const MARKET_QUEUE_DAYS = 2 / 24;
+export function queueChoice({ table, perDay, levels: lv, net, undercut = 1, maxWaitDays = 2, dumpK = DUMP_K }) {
   const N = horizonOf(maxWaitDays);
   if (!table?.P?.[N] || !(perDay > 0) || !lv?.length) return null;
   const x = perDay * N;
@@ -547,8 +563,12 @@ export function queueChoice({ table, perDay, levels: lv, net, undercut = 1, maxW
   const atLeast = (m) => { let term = Math.exp(-x), cdf = 0; for (let i = 0; i < m; i++) { cdf += term; term *= x / (i + 1); } return 1 - cdf; };
   const one = atLeast(1);
   const later = net(Math.round(table.ref * table.D[N]));
-  let best = null;
+  let best = null, prev = null, atMarket = 0;
   for (const l of lv) {
+    // units in front at the market price: they must go within a couple of hours, the queue there refills
+    if (prev && prev.price >= table.ref * dumpK) atMarket += l.ahead - prev.ahead;
+    if (atMarket > perDay * MARKET_QUEUE_DAYS) break;
+    prev = l;
     const behind = l.ahead ? (one > 0 ? atLeast(l.ahead + 1) / one : 0) : 1;
     if (l.ahead && behind < MIN_CHANCE) break; // this many won't all be bought in time: from here on it's the market
     const p = realPrice(Math.max(MIN_BUYER, l.price - undercut), net);
