@@ -3876,7 +3876,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "22.11.2026, 22:41:44" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "22.11.2026, 22:41:46" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -4136,6 +4136,36 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     const url = marketUrl(appid, hash || "");
     return `<div class="it">${ic ? `<img loading="lazy" src="https://community.cloudflare.steamstatic.com/economy/image/${esc(ic)}/62fx62f">` : ""}
     <div><a href="${esc(url)}" target="_blank" style="color:#${esc(color || "c6d4df")}">${esc(displayName(hash, name))}</a>${sub ? `<div class="sub">${sub}</div>` : ""}</div></div>`;
+  }
+  var patched = /* @__PURE__ */ new WeakMap();
+  function clearRows(tb) {
+    patched.delete(tb);
+  }
+  function patchRows(tb, blocks) {
+    if (!patched.has(tb)) tb.textContent = "";
+    const old = patched.get(tb) || /* @__PURE__ */ new Map(), next = /* @__PURE__ */ new Map();
+    const tpl = document.createElement("template");
+    for (const { key, html } of blocks) {
+      const o = old.get(key);
+      if (o?.html === html) {
+        next.set(key, o);
+        continue;
+      }
+      tpl.innerHTML = html;
+      const nodes = [...tpl.content.children];
+      if (o) {
+        o.nodes[0].before(...nodes);
+        o.nodes.forEach((n) => n.remove());
+      }
+      next.set(key, { html, nodes });
+    }
+    for (const [k, o] of old) if (!next.has(k)) o.nodes.forEach((n) => n.remove());
+    let at = tb.firstElementChild;
+    for (const { key } of blocks) for (const n of next.get(key).nodes) {
+      if (n === at) at = at.nextElementSibling;
+      else tb.insertBefore(n, at);
+    }
+    patched.set(tb, next);
   }
   function sorter(defaultKey, defaultDir = -1) {
     let key = defaultKey, dir = defaultDir;
@@ -10499,7 +10529,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     for (const p of planList()) {
       try {
         planMarket.set(p.hash, await hist(p.appid, p.hash, 10 * 6e4));
-        render3();
+        renderSoon();
       } catch {
       }
     }
@@ -10508,7 +10538,27 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   var task3 = null;
   var lastAuto = null;
   var sort2 = sorter("name", 1);
+  var pass = null;
+  var inPass = (fn) => {
+    if (pass) return fn();
+    pass = { mine: null, others: /* @__PURE__ */ new Map(), sug: /* @__PURE__ */ new Map() };
+    try {
+      return fn();
+    } finally {
+      pass = null;
+    }
+  };
   var myPriceMap = (hash) => {
+    if (pass) {
+      if (!pass.mine) {
+        pass.mine = /* @__PURE__ */ new Map();
+        for (const r of rows) {
+          const m2 = pass.mine.get(r.hash) || pass.mine.set(r.hash, {}).get(r.hash);
+          m2[r.buyer] = (m2[r.buyer] || 0) + 1;
+        }
+      }
+      return pass.mine.get(hash) || {};
+    }
     const m = {};
     for (const r of rows) if (r.hash === hash) m[r.buyer] = (m[r.buyer] || 0) + 1;
     return m;
@@ -10737,7 +10787,9 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   var fmtWait2 = (d) => d < 1 / 24 ? L("listings.lessThanAnHour") : d < 1 ? L("listings.aboutH", { d: Math.round(d * 24) }) : L("listings.aboutDays", { d: dec(d, 1) });
   var aheadTxt = (n) => L("listings.cheaperListings", { count: n });
   function othersGraph(r) {
-    return graphWithout(r.h.sellGraph, myPriceMap(r.hash));
+    if (!pass) return graphWithout(r.h.sellGraph, myPriceMap(r.hash));
+    if (!pass.others.has(r.hash)) pass.others.set(r.hash, graphWithout(r.h.sellGraph, myPriceMap(r.hash)));
+    return pass.others.get(r.hash);
   }
   function graphWithout(sellGraph, mine = {}) {
     const left = { ...mine };
@@ -10751,6 +10803,12 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     return others;
   }
   function suggest(r) {
+    if (!pass) return suggestNow(r);
+    const k = [r.appid, r.hash, r.pub, r.comp, r.item?.float != null || r.item?.stickers?.length ? 1 : 0].join("|");
+    if (!pass.sug.has(k)) pass.sug.set(k, suggestNow(r));
+    return pass.sug.get(k);
+  }
+  function suggestNow(r) {
     const rule = r.rule || {};
     const typ = typical(r.hash);
     const unique = r.item?.float != null || r.item?.stickers?.length;
@@ -10833,7 +10891,26 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     if (r.comp === r.buyer) return `<span class="chipst mid">${L("listings.tie")}</span>`;
     return `<span class="chipst bad">${L("listings.someoneIsCheaper", { buyer: fmt(r.buyer - r.comp) })}</span>`;
   }
+  var drawTimer = 0;
+  var sumNext = null;
+  function flushDraw() {
+    clearTimeout(drawTimer);
+    drawTimer = 0;
+    const s = sumNext;
+    sumNext = null;
+    inPass(() => {
+      render3();
+      if (s) summary(s.running);
+    });
+  }
+  function renderSoon(sum = null) {
+    if (sum) sumNext = sum;
+    if (!drawTimer) drawTimer = setTimeout(flushDraw, 400);
+  }
   function render3() {
+    inPass(drawTable);
+  }
+  function drawTable() {
     if (!el3) return;
     const tb = el3.querySelector("tbody");
     const cnt = document.querySelector('#stt [data-mt="sell"] .cnt');
@@ -10849,11 +10926,12 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     el3.querySelector("#l-bulk").hidden = !sel2.length;
     el3.querySelector("#l-bulkn").textContent = L("listings.selected", { sel: sel2.length });
     if (!rows.length && !pend.length && !plans.length) {
+      clearRows(tb);
       tb.innerHTML = L("listings.youHaveNothingListedYou");
       return;
     }
     const sorted = sort2.apply([...rows, ...pend], { name: (r) => r.name, buyer: (r) => r.buyer, comp: (r) => r.comp == null ? null : r.comp - r.buyer });
-    tb.innerHTML = sorted.map((r) => {
+    const rowHtml = (r) => {
       if (r.pending) return pendingRow(r);
       const rule = r.rule || {};
       const s = suggest(r);
@@ -10897,7 +10975,19 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
         ${rule.auto && rule.min == null ? `<div class="warn sub">${L("listings.enterTheLowestPricePrice")}</div>` : ""}
       </div>
     </div></td></tr>`;
-    }).join("") + (plans.length ? `<tr><td colspan="6" class="sub" style="padding:10px 8px 4px;font-weight:600">${L("listings.plannedListedWhenTheTrade")}</td></tr>${plans.map(planRow).join("")}` : "");
+    };
+    const seen = /* @__PURE__ */ new Map();
+    const once2 = (k) => {
+      const n = seen.get(k) || 0;
+      seen.set(k, n + 1);
+      return n ? `${k}#${n}` : k;
+    };
+    const blocks = sorted.map((r) => ({ key: once2(r.pending ? `p|${r.hash}|${r.recv}` : r.listingid), html: rowHtml(r) }));
+    if (plans.length) {
+      blocks.push({ key: "plans", html: `<tr><td colspan="6" class="sub" style="padding:10px 8px 4px;font-weight:600">${L("listings.plannedListedWhenTheTrade")}</td></tr>` });
+      for (const p of plans) blocks.push({ key: once2(`plan|${p.hash}`), html: planRow(p) });
+    }
+    patchRows(tb, blocks);
     el3.querySelector('th[data-sort="name"]').textContent = L("listings.item") + sort2.arrow("name");
   }
   function setBusy(b) {
@@ -10969,16 +11059,24 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       const { listings, toConfirm, pending, pendingKnown } = await myListings();
       pend = pendingRows(listings, pending || [], pendingKnown, toConfirm);
       const prev = new Map(rows.map((r) => [r.listingid, r]));
+      const myPrices = (list2) => {
+        const m = /* @__PURE__ */ new Map();
+        for (const x of list2) (m.get(x.hash) || m.set(x.hash, []).get(x.hash)).push(x.buyer);
+        for (const [k, a] of m) m.set(k, a.sort((x, y) => x - y).join());
+        return m;
+      };
+      const was = myPrices(rows), now = myPrices(listings), market = /* @__PURE__ */ new Map();
+      for (const r of rows) if (r.h && !market.has(r.hash) && was.get(r.hash) === now.get(r.hash)) market.set(r.hash, r);
       rows = listings.map((l) => {
-        const p = prev.get(l.listingid);
-        return { ...l, rule: rules.get(l.hash) || {}, comp: p?.comp ?? null, lowest: cached2(l.appid, l.hash)?.lowest ?? null, newBuyer: p?.newBuyer ?? null, checked: p?.checked || false, status: p?.status || "", cls: p?.cls };
+        const p = prev.get(l.listingid), m = market.get(l.hash);
+        return { ...l, rule: rules.get(l.hash) || {}, comp: m ? m.comp : p?.comp ?? null, stray: m?.stray ?? null, h: m?.h, lowest: m?.lowest ?? cached2(l.appid, l.hash)?.lowest ?? null, newBuyer: p?.newBuyer ?? null, checked: p?.checked || false, status: p?.status || "", cls: p?.cls };
       });
       el3.querySelector("#l-note").innerHTML = toConfirm ? `<span class="warn" title="${L("listings.inTheSteamAppOpen")}">${toConfirm} ${L("listings.listingsWaitForConfirmationIn2")}</span>` : "";
       if (!lastComp) log(L("listings.loadedSellListings", { rows: rows.length }));
       render3();
       autoComp();
-      if (rows.some((x) => x.item?.float != null)) ensureFloatDb().then(() => render3());
-      ensure3([...rows, ...planList()].map((r) => ({ hash: r.hash, appid: r.appid })), { onEach: () => render3() });
+      if (rows.some((x) => x.item?.float != null)) ensureFloatDb().then(() => renderSoon());
+      ensure3([...rows, ...planList()].map((r) => ({ hash: r.hash, appid: r.appid })), { onEach: () => renderSoon() });
       checkPlans();
     } catch (e) {
       log(L("listings.errorLoadingListings") + e.message, "err");
@@ -11030,7 +11128,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     const parts = [];
     if (beaten.length) parts.push(`<b class="err">${beaten.length} ${beaten.length === 1 ? L("listings.listingUndercut") : L("listings.listingsUndercut")}</b>`);
     if (tied.length) parts.push(`<span class="warn">${tied.length} ${L("listings.tied")}</span>`);
-    const evals = rows.map((r) => evalListing(r, suggest(r))).filter(Boolean);
+    const evals = inPass(() => rows.map((r) => evalListing(r, suggest(r))).filter(Boolean));
     const high = evals.filter((e) => e.k === "high").length, cheap = evals.filter((e) => e.k === "cheap").length;
     if (high) parts.push(`<span class="err" title="${L("listings.atTheCurrentPriceThe")}">${high} ${L("listings.tooPriceyByTheHistory")}</span>`);
     if (cheap) parts.push(`<span class="warn" title="${L("listings.theyWillSellAlmostSurely")}">${cheap} ${L("listings.tooCheap")}</span>`);
@@ -11039,7 +11137,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     status("undercut", beaten.length ? `<b class="err">${L("listings.undercutListings")}: ${beaten.length}</b>` : null);
   }
   async function competitionFor(list2, tk, { quiet = false } = {}) {
-    const uniq = [...new Map(list2.map((r) => [r.appid + "|" + r.hash, r])).values()];
+    const uniq = [...new Map(list2.map((r) => [r.appid + "|" + r.hash, r])).values()].sort((a, b) => (a.h?.at || 0) - (b.h?.at || 0));
     let i = 0;
     for (const r of uniq) {
       if (tk?.cancelled) break;
@@ -11057,13 +11155,13 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
           x.lowest = h.lowestSell;
           x.h = h;
         });
-        render3();
-        summary(quiet);
+        renderSoon({ running: quiet });
       } catch (e) {
         log(`${r.hash}: ${e.message}`, "err");
         if (e.status === 429) break;
       }
     }
+    if (drawTimer) flushDraw();
     if (!quiet) progress(0);
   }
   async function doRemove() {
@@ -13364,5 +13462,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "22.11.2026, 22:41:44" : "?");
+  console.info("[Flipster] build", true ? "22.11.2026, 22:41:46" : "?");
 })();

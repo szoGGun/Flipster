@@ -89,7 +89,7 @@ function planStatus(p) {
 }
 async function checkPlans() {
   for (const p of planList()) {
-    try { planMarket.set(p.hash, await prices.hist(p.appid, p.hash, 10 * 60000)); render(); } catch { /* next refresh */ }
+    try { planMarket.set(p.hash, await prices.hist(p.appid, p.hash, 10 * 60000)); renderSoon(); } catch { /* next refresh */ }
   }
 }
 let el;
@@ -97,7 +97,21 @@ let task = null;
 let lastAuto = null;
 const sort = ui.sorter('name', 1);
 
+// one redraw shares its work: with 100+ listings every row asking for "my prices" walked all the rows again
+let pass = null;
+const inPass = (fn) => {
+  if (pass) return fn();
+  pass = { mine: null, others: new Map(), sug: new Map() };
+  try { return fn(); } finally { pass = null; }
+};
 const myPriceMap = (hash) => {
+  if (pass) {
+    if (!pass.mine) {
+      pass.mine = new Map();
+      for (const r of rows) { const m = pass.mine.get(r.hash) || pass.mine.set(r.hash, {}).get(r.hash); m[r.buyer] = (m[r.buyer] || 0) + 1; }
+    }
+    return pass.mine.get(hash) || {};
+  }
   const m = {};
   for (const r of rows) if (r.hash === hash) m[r.buyer] = (m[r.buyer] || 0) + 1;
   return m;
@@ -256,7 +270,11 @@ const fmtWait = (d) => (d < 1 / 24 ? L('listings.lessThanAnHour') : d < 1 ? L('l
 /** "1 tańsza oferta", "3 tańsze oferty", "5 tańszych ofert" */
 const aheadTxt = (n) => L('listings.cheaperListings', { count: n });
 /** the sell graph without my own listings (or "one cent under the cheapest" would undercut myself) */
-function othersGraph(r) { return graphWithout(r.h.sellGraph, myPriceMap(r.hash)); }
+function othersGraph(r) {
+  if (!pass) return graphWithout(r.h.sellGraph, myPriceMap(r.hash));
+  if (!pass.others.has(r.hash)) pass.others.set(r.hash, graphWithout(r.h.sellGraph, myPriceMap(r.hash)));
+  return pass.others.get(r.hash);
+}
 /** a cumulative sell graph with my listings (price → how many) taken out */
 function graphWithout(sellGraph, mine = {}) {
   const left = { ...mine };
@@ -270,6 +288,12 @@ function graphWithout(sellGraph, mine = {}) {
   return others;
 }
 function suggest(r) {
+  if (!pass) return suggestNow(r);
+  const k = [r.appid, r.hash, r.pub, r.comp, r.item?.float != null || r.item?.stickers?.length ? 1 : 0].join('|');
+  if (!pass.sug.has(k)) pass.sug.set(k, suggestNow(r));
+  return pass.sug.get(k);
+}
+function suggestNow(r) {
   const rule = r.rule || {};
   const typ = sig.typical(r.hash);
   const unique = r.item?.float != null || r.item?.stickers?.length;
@@ -369,7 +393,21 @@ function chip(r) {
   return `<span class="chipst bad">${L('listings.someoneIsCheaper', { buyer: steam.fmt(r.buyer - r.comp) })}</span>`;
 }
 
-function render() {
+// background checks finish an item every fraction of a second: they redraw together, a few times a second at most
+let drawTimer = 0, sumNext = null;
+function flushDraw() {
+  clearTimeout(drawTimer);
+  drawTimer = 0;
+  const s = sumNext;
+  sumNext = null;
+  inPass(() => { render(); if (s) summary(s.running); });
+}
+function renderSoon(sum = null) {
+  if (sum) sumNext = sum;
+  if (!drawTimer) drawTimer = setTimeout(flushDraw, 400);
+}
+function render() { inPass(drawTable); }
+function drawTable() {
   if (!el) return; // the automation also runs in tabs where this list was never opened
   const tb = el.querySelector('tbody');
   const cnt = document.querySelector('#stt [data-mt="sell"] .cnt');
@@ -381,9 +419,9 @@ function render() {
   const sel = rows.filter((r) => r.checked);
   el.querySelector('#l-bulk').hidden = !sel.length;
   el.querySelector('#l-bulkn').textContent = L('listings.selected', { sel: sel.length });
-  if (!rows.length && !pend.length && !plans.length) { tb.innerHTML = L('listings.youHaveNothingListedYou'); return; }
+  if (!rows.length && !pend.length && !plans.length) { ui.clearRows(tb); tb.innerHTML = L('listings.youHaveNothingListedYou'); return; }
   const sorted = sort.apply([...rows, ...pend], { name: (r) => r.name, buyer: (r) => r.buyer, comp: (r) => (r.comp == null ? null : r.comp - r.buyer) });
-  tb.innerHTML = sorted.map((r) => {
+  const rowHtml = (r) => {
     if (r.pending) return pendingRow(r);
     const rule = r.rule || {};
     const s = suggest(r);
@@ -430,7 +468,15 @@ function render() {
         ${rule.auto && rule.min == null ? `<div class="warn sub">${L('listings.enterTheLowestPricePrice')}</div>` : ''}
       </div>
     </div></td></tr>`;
-  }).join('') + (plans.length ? `<tr><td colspan="6" class="sub" style="padding:10px 8px 4px;font-weight:600">${L('listings.plannedListedWhenTheTrade')}</td></tr>${plans.map(planRow).join('')}` : '');
+  };
+  const seen = new Map();
+  const once = (k) => { const n = seen.get(k) || 0; seen.set(k, n + 1); return n ? `${k}#${n}` : k; };
+  const blocks = sorted.map((r) => ({ key: once(r.pending ? `p|${r.hash}|${r.recv}` : r.listingid), html: rowHtml(r) }));
+  if (plans.length) {
+    blocks.push({ key: 'plans', html: `<tr><td colspan="6" class="sub" style="padding:10px 8px 4px;font-weight:600">${L('listings.plannedListedWhenTheTrade')}</td></tr>` });
+    for (const p of plans) blocks.push({ key: once(`plan|${p.hash}`), html: planRow(p) });
+  }
+  ui.patchRows(tb, blocks);
   el.querySelector('th[data-sort="name"]').textContent = L('listings.item') + sort.arrow('name');
 }
 
@@ -496,16 +542,26 @@ async function load() {
     const { listings, toConfirm, pending, pendingKnown } = await steam.myListings();
     pend = pendingRows(listings, pending || [], pendingKnown, toConfirm);
     const prev = new Map(rows.map((r) => [r.listingid, r])); // after await: keep state set meanwhile
+    // the last order book stays on the row until the new one arrives (without it every suggestion fell back to the rough estimate on each
+    // refresh), unless my own prices of that item changed: the old book still holds my old listing as a "competitor"
+    const myPrices = (list) => {
+      const m = new Map();
+      for (const x of list) (m.get(x.hash) || m.set(x.hash, []).get(x.hash)).push(x.buyer);
+      for (const [k, a] of m) m.set(k, a.sort((x, y) => x - y).join());
+      return m;
+    };
+    const was = myPrices(rows), now = myPrices(listings), market = new Map();
+    for (const r of rows) if (r.h && !market.has(r.hash) && was.get(r.hash) === now.get(r.hash)) market.set(r.hash, r);
     rows = listings.map((l) => {
-      const p = prev.get(l.listingid);
-      return { ...l, rule: rules.get(l.hash) || {}, comp: p?.comp ?? null, lowest: prices.cached(l.appid, l.hash)?.lowest ?? null, newBuyer: p?.newBuyer ?? null, checked: p?.checked || false, status: p?.status || '', cls: p?.cls };
+      const p = prev.get(l.listingid), m = market.get(l.hash);
+      return { ...l, rule: rules.get(l.hash) || {}, comp: m ? m.comp : p?.comp ?? null, stray: m?.stray ?? null, h: m?.h, lowest: m?.lowest ?? prices.cached(l.appid, l.hash)?.lowest ?? null, newBuyer: p?.newBuyer ?? null, checked: p?.checked || false, status: p?.status || '', cls: p?.cls };
     });
     el.querySelector('#l-note').innerHTML = toConfirm ? `<span class="warn" title="${L('listings.inTheSteamAppOpen')}">${toConfirm} ${L('listings.listingsWaitForConfirmationIn2')}</span>` : '';
     if (!lastComp) ui.log(L('listings.loadedSellListings', { rows: rows.length }));
     render();
     autoComp();
-    if (rows.some((x) => x.item?.float != null)) ensureFloatDb().then(() => render()); // float ranks
-    sig.ensure([...rows, ...planList()].map((r) => ({ hash: r.hash, appid: r.appid })), { onEach: () => render() });
+    if (rows.some((x) => x.item?.float != null)) ensureFloatDb().then(() => renderSoon()); // float ranks
+    sig.ensure([...rows, ...planList()].map((r) => ({ hash: r.hash, appid: r.appid })), { onEach: () => renderSoon() });
     checkPlans(); // planned sales: today's market for each
   } catch (e) {
     ui.log(L('listings.errorLoadingListings') + e.message, 'err');
@@ -558,7 +614,7 @@ function summary(running = false) {
   if (beaten.length) parts.push(`<b class="err">${beaten.length} ${beaten.length === 1 ? L('listings.listingUndercut') : L('listings.listingsUndercut')}</b>`);
   if (tied.length) parts.push(`<span class="warn">${tied.length} ${L('listings.tied')}</span>`);
   // the new advice applied to listings priced before it: how many are unlikely to sell, how many are cheap
-  const evals = rows.map((r) => evalListing(r, suggest(r))).filter(Boolean);
+  const evals = inPass(() => rows.map((r) => evalListing(r, suggest(r))).filter(Boolean));
   const high = evals.filter((e) => e.k === 'high').length, cheap = evals.filter((e) => e.k === 'cheap').length;
   if (high) parts.push(`<span class="err" title="${L('listings.atTheCurrentPriceThe')}">${high} ${L('listings.tooPriceyByTheHistory')}</span>`);
   if (cheap) parts.push(`<span class="warn" title="${L('listings.theyWillSellAlmostSurely')}">${cheap} ${L('listings.tooCheap')}</span>`);
@@ -569,7 +625,8 @@ function summary(running = false) {
 
 
 async function competitionFor(list, tk, { quiet = false } = {}) {
-  const uniq = [...new Map(list.map((r) => [r.appid + '|' + r.hash, r])).values()];
+  // the ones without market data first, then the longest unchecked
+  const uniq = [...new Map(list.map((r) => [r.appid + '|' + r.hash, r])).values()].sort((a, b) => (a.h?.at || 0) - (b.h?.at || 0));
   let i = 0;
   for (const r of uniq) {
     if (tk?.cancelled) break;
@@ -588,13 +645,13 @@ async function competitionFor(list, tk, { quiet = false } = {}) {
         x.lowest = h.lowestSell;
         x.h = h;
       });
-      render();
-      summary(quiet);
+      renderSoon({ running: quiet });
     } catch (e) {
       ui.log(`${r.hash}: ${e.message}`, 'err');
       if (e.status === 429) break;
     }
   }
+  if (drawTimer) flushDraw();
   if (!quiet) ui.progress(0);
 }
 

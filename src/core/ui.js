@@ -515,6 +515,30 @@ export function itemCell({ icon: ic, name, hash, color, appid = 730, sub = '' })
     <div><a href="${esc(url)}" target="_blank" style="color:#${esc(color || 'c6d4df')}">${esc(displayName(hash, name))}</a>${sub ? `<div class="sub">${sub}</div>` : ''}</div></div>`;
 }
 
+/**
+ * Fills a table body from [{key, html}], touching only the rows whose html changed, so a long list doesn't rebuild
+ * (and reload its images) because one row got new data. Anything else writing to the body calls clearRows first.
+ */
+const patched = new WeakMap();
+export function clearRows(tb) { patched.delete(tb); }
+export function patchRows(tb, blocks) {
+  if (!patched.has(tb)) tb.textContent = '';
+  const old = patched.get(tb) || new Map(), next = new Map();
+  const tpl = document.createElement('template');
+  for (const { key, html } of blocks) {
+    const o = old.get(key);
+    if (o?.html === html) { next.set(key, o); continue; }
+    tpl.innerHTML = html;
+    const nodes = [...tpl.content.children];
+    if (o) { o.nodes[0].before(...nodes); o.nodes.forEach((n) => n.remove()); }
+    next.set(key, { html, nodes });
+  }
+  for (const [k, o] of old) if (!next.has(k)) o.nodes.forEach((n) => n.remove());
+  let at = tb.firstElementChild;
+  for (const { key } of blocks) for (const n of next.get(key).nodes) { if (n === at) at = at.nextElementSibling; else tb.insertBefore(n, at); }
+  patched.set(tb, next);
+}
+
 /** simple sortable table state */
 export function sorter(defaultKey, defaultDir = -1) {
   let key = defaultKey, dir = defaultDir;
