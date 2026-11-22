@@ -299,8 +299,8 @@ export function parseMyHistoryHtml(d, parse, now = new Date(), dateOf = null) {
     out.push({
       key: row.id.replace('history_row_', ''),
       t, type: sign === '+' ? 'buy' : 'sell', hash, appid: String(a.appid || 730), amount,
-      // buys: what you paid; sells: Steam shows the buyer's price → converted to "received" by the caller
-      price: Math.round(price / amount), priceIsBuyer: sign === '-', pending,
+      // buys: what you paid; sells: what you received, Steam's history row is already after the fees
+      price: Math.round(price / amount), pending,
       cur: curFromText(priceTxt), name: desc.name, icon: desc.icon_url, color: desc.name_color,
       assetid: a.id || null, float: fl != null ? parseFloat(fl) : null, seed: sd != null ? parseInt(sd, 10) : null,
     });

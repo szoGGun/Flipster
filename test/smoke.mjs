@@ -465,8 +465,8 @@ await run('Historia', async () => {
     check(!!got && ymd(got.t) === ymd(x.t), `data ${x.sign === '+' ? 'kupna' : 'sprzedaży'} ${x.hash}: ${ymd(x.t)}${got && ymd(got.t) !== ymd(x.t) ? ` (jest ${ymd(got.t)})` : ''}`);
   }
   const sold = trades[`9003_${HIST[0].pid}`];
-  check(sold?.price === receivedFromBuyer(260) && sold.type === 'sell', `sprzedaż zapisana po prowizji: 2,60 zł → ${receivedFromBuyer(260)} gr`);
-  check((await gm('tradesFmt')) === 5, 'format historii oznaczony jako aktualny');
+  check(sold?.price === 260 && sold.type === 'sell', 'sprzedaż zapisana tak, jak pokazuje ją Steam: 2,60 zł na rękę');
+  check((await gm('tradesFmt')) === 6, 'format historii oznaczony jako aktualny');
   await setInput('#h-per', '0');
   await page.waitForFunction(() => document.querySelectorAll('#h-tbl tbody tr').length >= 6, { timeout: 15000 });
   const cards = (await text('#h-cards')).replace(/\n+/g, ' ');

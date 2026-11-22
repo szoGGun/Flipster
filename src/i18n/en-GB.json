@@ -554,7 +554,7 @@
     "searchItemsPlayers": "Search items, players…",
     "everythingThatHappenedToYour": "Everything that happened to your items, such as trades (with whom and what for what), market sales and purchases, opened cases, contracts and drops (also Steam cards for playing). Game and period follow the filters at the top.",
     "given": "given",
-    "historyOneTimeDownloadOf": "History: re-downloading the whole market history once (trade dates, pattern seeds)…",
+    "historyOneTimeDownloadOf": "History: re-downloading the whole market history once (corrected sale prices)…",
     "historyASyncIsAlready": "History: a sync is already running.",
     "illDownloadTheWholeMarket": "I'll download the whole market history and the whole inventory history (CS2 and Steam cards) again. That's from a few dozen to a few hundred requests to Steam and a few minutes.<br><span class=\"sub\">“Sync” is usually enough, it fetches only new entries (and runs by itself when you open this tab).</span>",
     "downloadEverything": "Download everything",

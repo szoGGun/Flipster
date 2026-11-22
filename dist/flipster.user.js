@@ -738,7 +738,7 @@
       searchItemsPlayers: "Search items, players\u2026",
       everythingThatHappenedToYour: "Everything that happened to your items, such as trades (with whom and what for what), market sales and purchases, opened cases, contracts and drops (also Steam cards for playing). Game and period follow the filters at the top.",
       given: "given",
-      historyOneTimeDownloadOf: "History: re-downloading the whole market history once (trade dates, pattern seeds)\u2026",
+      historyOneTimeDownloadOf: "History: re-downloading the whole market history once (corrected sale prices)\u2026",
       historyASyncIsAlready: "History: a sync is already running.",
       illDownloadTheWholeMarket: `I'll download the whole market history and the whole inventory history (CS2 and Steam cards) again. That's from a few dozen to a few hundred requests to Steam and a few minutes.<br><span class="sub">\u201CSync\u201D is usually enough, it fetches only new entries (and runs by itself when you open this tab).</span>`,
       downloadEverything: "Download everything",
@@ -2247,7 +2247,7 @@
       searchItemsPlayers: "Szukaj: przedmiot, gracz\u2026",
       everythingThatHappenedToYour: "Wszystko, co dzia\u0142o si\u0119 z Twoimi przedmiotami: wymiany (z kim i co za co), rynek, otwarte skrzynie, kontrakty, dropy (tak\u017Ce karty Steam za granie). Gra i okres jak w filtrach u g\xF3ry.",
       given: "oddane",
-      historyOneTimeDownloadOf: "Historia: jednorazowo pobieram ca\u0142\u0105 histori\u0119 rynku od nowa (daty transakcji, seedy wzor\xF3w)\u2026",
+      historyOneTimeDownloadOf: "Historia: jednorazowo pobieram ca\u0142\u0105 histori\u0119 rynku od nowa (poprawione ceny sprzeda\u017Cy)\u2026",
       historyASyncIsAlready: "Historia: synchronizacja ju\u017C trwa.",
       illDownloadTheWholeMarket: 'Pobior\u0119 od nowa ca\u0142\u0105 histori\u0119 rynku i ca\u0142\u0105 histori\u0119 ekwipunku (CS2 i karty Steam). To od kilkudziesi\u0119ciu do kilkuset zapyta\u0144 do Steama i kilka minut.<br><span class="sub">Zwykle wystarcza \u201ESynchronizuj\u201D: dobiera tylko nowe wpisy (i tak dzieje si\u0119 samo po otwarciu tej zak\u0142adki).</span>',
       downloadEverything: "Pobierz wszystko",
@@ -3876,7 +3876,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "20.11.2026, 20:13:50" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "22.11.2026, 22:41:44" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -5469,9 +5469,8 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
         hash,
         appid: String(a.appid || 730),
         amount,
-        // buys: what you paid; sells: Steam shows the buyer's price → converted to "received" by the caller
+        // buys: what you paid; sells: what you received, Steam's history row is already after the fees
         price: Math.round(price / amount),
-        priceIsBuyer: sign === "-",
         pending,
         cur: curFromText(priceTxt),
         name: desc.name,
@@ -8462,7 +8461,7 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
   }
   var meta = bucket("itemMeta");
   var PAGE = 100;
-  var TRADES_FMT = 5;
+  var TRADES_FMT = 6;
   async function loadAnchors() {
     const cached3 = get("histAnchors", null);
     if (cached3) return cached3;
@@ -9123,7 +9122,7 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
             fresh3++;
             added++;
           }
-          const price = t.priceIsBuyer ? receivedFromBuyer2(t.price) : t.price;
+          const price = t.price;
           const mem5 = t.assetid ? recallProps({ assetid: t.assetid, float: null }) : {};
           const fl = t.float ?? mem5.float ?? null, sd = t.seed ?? mem5.seed ?? null;
           trades[t.key] = { t: t.t, type: t.type, hash: t.hash, appid: t.appid, amount: t.amount, price, cur: t.cur ?? null, pending: t.pending || void 0, float: fl ?? void 0, seed: sd ?? void 0 };
@@ -13365,5 +13364,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "20.11.2026, 20:13:50" : "?");
+  console.info("[Flipster] build", true ? "22.11.2026, 22:41:44" : "?");
 })();

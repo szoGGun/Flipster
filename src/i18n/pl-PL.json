@@ -554,7 +554,7 @@
     "searchItemsPlayers": "Szukaj: przedmiot, gracz…",
     "everythingThatHappenedToYour": "Wszystko, co działo się z Twoimi przedmiotami: wymiany (z kim i co za co), rynek, otwarte skrzynie, kontrakty, dropy (także karty Steam za granie). Gra i okres jak w filtrach u góry.",
     "given": "oddane",
-    "historyOneTimeDownloadOf": "Historia: jednorazowo pobieram całą historię rynku od nowa (daty transakcji, seedy wzorów)…",
+    "historyOneTimeDownloadOf": "Historia: jednorazowo pobieram całą historię rynku od nowa (poprawione ceny sprzedaży)…",
     "historyASyncIsAlready": "Historia: synchronizacja już trwa.",
     "illDownloadTheWholeMarket": "Pobiorę od nowa całą historię rynku i całą historię ekwipunku (CS2 i karty Steam). To od kilkudziesięciu do kilkuset zapytań do Steama i kilka minut.<br><span class=\"sub\">Zwykle wystarcza „Synchronizuj”: dobiera tylko nowe wpisy (i tak dzieje się samo po otwarciu tej zakładki).</span>",
     "downloadEverything": "Pobierz wszystko",

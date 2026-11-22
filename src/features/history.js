@@ -57,7 +57,7 @@ function applyTab() {
 const meta = store.bucket('itemMeta'); // hash -> {name, icon, color, appid}
 
 const PAGE = 100;
-const TRADES_FMT = 5; // bump to force one full re-sync of the saved market trades (5: the pattern seed, 2026-11-20)
+const TRADES_FMT = 6; // bump to force one full re-sync of the saved market trades (6: sales had the fee taken off twice, 2026-11-22)
 
 // ---------------------------------------------------------------- dates for the HTML history (no year in it)
 // 1) exact times: the old JSON history (frozen in 2023) has time_event for every trade → key listingid_purchaseid
@@ -621,8 +621,7 @@ async function syncMarket(full) {
       let fresh = 0;
       for (const t of page) {
         if (!trades[t.key]) { fresh++; added++; }
-        // sells: Steam shows the buyer price → store what landed in the wallet (after fees)
-        const price = t.priceIsBuyer ? steam.receivedFromBuyer(t.price) : t.price;
+        const price = t.price;
         const mem = t.assetid ? steam.recallProps({ assetid: t.assetid, float: null }) : {};
         const fl = t.float ?? mem.float ?? null, sd = t.seed ?? mem.seed ?? null;
         trades[t.key] = { t: t.t, type: t.type, hash: t.hash, appid: t.appid, amount: t.amount, price, cur: t.cur ?? null, pending: t.pending || undefined, float: fl ?? undefined, seed: sd ?? undefined };
