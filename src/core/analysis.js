@@ -722,7 +722,10 @@ export function flipCeiling({ buyGraph, sellGraph, net, depth = 50 }) {
 export function buyPlan({ buyGraph, sellGraph, points, net, sell, from, qty = 1, minRoi = 0.03 }) {
   const got = net(sell);
   if (!(got > 0)) return null;
-  const maxZero = realPrice(got, net), maxRoi = realPrice(Math.max(MIN_BUYER, Math.floor(got / (1 + minRoi))), net);
+  // no price Steam allows leaves the wanted profit (a card selling at 0,12 zł pays 0,04 zł, the cheapest listing is 0,09 zł)
+  const roiTop = Math.floor(got / (1 + minRoi));
+  if (roiTop < MIN_BUYER) return null;
+  const maxZero = realPrice(got, net), maxRoi = realPrice(roiTop, net);
   const asks = levels(sellGraph), bids = levels(buyGraph);
   let left = qty, total = 0, top = null, listed = 0, cheap = 0;
   for (const l of asks) {

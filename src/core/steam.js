@@ -1,7 +1,7 @@
 import { sleep, emitter, parsePrice, displayName } from './util.js';
 import * as store from './store.js';
 import { settings } from './store.js';
-import { buyerFromReceived as _b2r, receivedFromBuyer as _r2b, DEFAULT_WALLET } from './fees.js';
+import { buyerFromReceived as _b2r, receivedFromBuyer as _r2b, DEFAULT_WALLET, syncMinBuyer } from './fees.js';
 import * as disk from './cache.js';
 import { L } from './i18n.js';
 // "no order data": prices.js recognises it by text (in either language)
@@ -58,6 +58,7 @@ export function ctx() {
     } catch { /* ignore */ }
   }
   wallet ||= store.get('wallet', null) || { ...DEFAULT_WALLET, currency: 6, country: 'PL', balance: 0 };
+  syncMinBuyer(wallet);
   if (steamId) store.set('steamId', steamId);
   // walletAt = when the balance was read from Steam; 0 = this page had no wallet info and the saved value is used
   _ctx = { steamId: steamId || store.get('steamId', null), sessionId, wallet, walletAt: wj ? Date.now() : 0, loggedIn: !!(steamId && sessionId) };

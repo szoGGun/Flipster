@@ -2,7 +2,7 @@ import './lang-pl.js'; // first: labels in Polish
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { receivedFromBuyer, buyerFromReceived, effectiveBuyer } from '../src/core/fees.js';
+import { receivedFromBuyer, buyerFromReceived, effectiveBuyer, MIN_BUYER, syncMinBuyer } from '../src/core/fees.js';
 import { parsePrice } from '../src/core/util.js';
 import * as A from '../src/core/analysis.js';
 
@@ -463,6 +463,28 @@ test('buyPlan: up to what price it pays to buy several units', () => {
   assert.equal(at(209).profit, 0);
   assert.ok(at(202).roi >= 0.03 && p.ladder.every((x, i, a) => !i || x.price > a[i - 1].price));
   assert.equal(A.buyPlan({ ...book, points, net, sell: 240, qty: 50 }).now.short, 40); // only 10 listed
+});
+
+test('lowest price follows the wallet fee minimum', () => {
+  const w = { feePercent: 0.05, feeMin: 4, feeBase: 0, pubDefault: 0.1 };
+  const net = (p) => receivedFromBuyer(p, 0.1, w);
+  assert.equal(MIN_BUYER, 3);
+  syncMinBuyer(w);
+  try {
+    assert.equal(MIN_BUYER, 9);
+    assert.equal(A.realPrice(9, net), 9);
+    assert.equal(A.relistTarget({ current: 20, competitor: 8, rule: { undercut: 1 } }).price, 9);
+    const table = { ref: 10, P: { 2: A.FILL_K.map(() => 0.8) }, D: { 2: 1 }, n: 50 };
+    assert.equal(A.listAdviceFill({ table, sellGraph: [[10, 5], [13, 20]], net, maxWaitDays: 2, undercut: 1 }).quick, 9);
+    const book = { buyGraph: [[12, 5]], sellGraph: [[12, 5], [30, 20]], points: [] };
+    assert.equal(A.buyPlan({ ...book, net, sell: 12 }), null); // pays 0,04 zł, nothing can be bought that cheap
+    const plan = A.buyPlan({ ...book, net, sell: 30, from: 13 });
+    assert.equal(plan.got, 22);
+    assert.ok(plan.ladder.length && plan.ladder.every((x) => x.price >= 9 && x.price <= plan.maxZero));
+  } finally {
+    syncMinBuyer();
+  }
+  assert.equal(MIN_BUYER, 3);
 });
 
 test('store buckets: one per key, edits from another tab are seen and not overwritten, caches written later', async () => {

@@ -3876,7 +3876,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "22.11.2026, 22:41:46" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "22.11.2026, 23:02:43" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -4255,7 +4255,10 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     while (buyerFromReceived(r + 1, pub, w) <= buyer) r++;
     return r;
   }
-  var MIN_BUYER = 3;
+  var MIN_BUYER = buyerFromReceived(1);
+  function syncMinBuyer(w = DEFAULT_WALLET) {
+    MIN_BUYER = buyerFromReceived(1, w.pubDefault ?? DEFAULT_WALLET.pubDefault, w);
+  }
 
   // src/core/cache.js
   var DB = "flipster-cache";
@@ -4418,6 +4421,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       }
     }
     wallet2 ||= get("wallet", null) || { ...DEFAULT_WALLET, currency: 6, country: "PL", balance: 0 };
+    syncMinBuyer(wallet2);
     if (steamId) set("steamId", steamId);
     _ctx = { steamId: steamId || get("steamId", null), sessionId, wallet: wallet2, walletAt: wj ? Date.now() : 0, loggedIn: !!(steamId && sessionId) };
     return _ctx;
@@ -5892,7 +5896,9 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
   function buyPlan({ buyGraph, sellGraph, points, net: net4, sell: sell2, from, qty = 1, minRoi = 0.03 }) {
     const got = net4(sell2);
     if (!(got > 0)) return null;
-    const maxZero = realPrice(got, net4), maxRoi = realPrice(Math.max(MIN_BUYER, Math.floor(got / (1 + minRoi))), net4);
+    const roiTop = Math.floor(got / (1 + minRoi));
+    if (roiTop < MIN_BUYER) return null;
+    const maxZero = realPrice(got, net4), maxRoi = realPrice(roiTop, net4);
     const asks = levels(sellGraph), bids = levels(buyGraph);
     let left = qty, total = 0, top = null, listed2 = 0, cheap = 0;
     for (const l of asks) {
@@ -13462,5 +13468,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "22.11.2026, 22:41:46" : "?");
+  console.info("[Flipster] build", true ? "22.11.2026, 23:02:43" : "?");
 })();

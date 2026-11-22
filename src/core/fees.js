@@ -22,4 +22,7 @@ export function receivedFromBuyer(buyer, pub = 0.1, w = DEFAULT_WALLET) {
 /** buyer price that Steam will actually show for a desired buyer price (can be 1-2 cents lower) */
 export const effectiveBuyer = (buyer, pub, w) => buyerFromReceived(receivedFromBuyer(buyer, pub, w), pub, w);
 
-export const MIN_BUYER = 3; // 0.03 is the lowest possible listing price
+// the lowest possible listing price: one cent for the seller plus both minimum fees (0,09 zł at a 0,04 zł minimum);
+// follows the wallet, set by syncMinBuyer when the page's wallet is read
+export let MIN_BUYER = buyerFromReceived(1);
+export function syncMinBuyer(w = DEFAULT_WALLET) { MIN_BUYER = buyerFromReceived(1, w.pubDefault ?? DEFAULT_WALLET.pubDefault, w); }
