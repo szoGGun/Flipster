@@ -193,7 +193,12 @@ function proposal(r) {
   return { price, note };
 }
 
+// background checks finish an order every fraction of a second: they redraw together, a few times a second at most
+let drawTimer = 0;
+const renderSoon = () => { if (!drawTimer) drawTimer = setTimeout(render, 400); };
 function render() {
+  clearTimeout(drawTimer);
+  drawTimer = 0;
   if (!el) return; // the automation also runs in tabs where this list was never opened
   const tb = el.querySelector('tbody');
   const cnt = document.querySelector('#stt [data-mt="buy"] .cnt');
@@ -206,8 +211,8 @@ function render() {
   el.querySelector('#b-bulkn').textContent = L('buyorders.selected', { sel: sel.length });
   const beaten = rows.filter((r) => r.comp != null && r.comp > shown(r)).length;
   el.querySelector('#b-state').innerHTML = checking ? `<span class="acc">${L('buyorders.checkingTheCompetition')}</span>` : lastCheck ? (beaten ? `<b class="err">${beaten} ${L('buyorders.outbid')}</b> · ${L('buyorders.checked')} ${timeAgo(lastCheck)}` : `<span class="ok">${L('buyorders.allHighest')}</span> · ${L('buyorders.checked')} ${timeAgo(lastCheck)}`) : '';
-  if (!rows.length) { tb.innerHTML = L('buyorders.youHaveNoBuyOrders'); return; }
-  tb.innerHTML = rows.map((r) => {
+  if (!rows.length) { ui.clearRows(tb); tb.innerHTML = L('buyorders.youHaveNoBuyOrders'); return; }
+  const rowHtml = (r) => {
     const rule = r.rule || {};
     // what the order makes once it fills: sold after the 7-day lock at the price the item typically sells for (last 7
     // days), never above the cheapest listing, as the Okazje scanner counts it. Not "one cent under the cheapest
@@ -241,7 +246,8 @@ function render() {
       <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-f="auto" ${rule.auto ? 'checked' : ''}> ${L('buyorders.outbidAutomatically2')}</label>
       ${rule.auto && rule.max == null ? L('buyorders.setDontPayMoreThan') : ''}
     </div></td></tr>`;
-  }).join('');
+  };
+  ui.patchRows(tb, rows.map((r) => ({ key: r.id, html: rowHtml(r) })));
 }
 
 async function outbidOne(r) {
@@ -272,7 +278,7 @@ export async function refresh() {
     if (!lastCheck) ui.log(L('buyorders.loadedBuyOrders', { rows: rows.length }));
     render();
     autoMarket();
-    sig.ensure(rows.map((x) => ({ hash: x.hash, appid: x.appid })), { onEach: () => render() }); // for "po sprzedaży"
+    sig.ensure(rows.map((x) => ({ hash: x.hash, appid: x.appid })), { onEach: () => renderSoon() }); // for "po sprzedaży"
   } catch (e) {
     ui.log(L('buyorders.errorLoadingOrders') + e.message, 'err');
   }
@@ -293,7 +299,7 @@ async function marketFor(list, tk, quiet) {
         ui.log(L('buyorders.someoneOutbidYourOrderYours', { hash: r.hash, comp: steam.fmt(comp), price: steam.fmt(r.price) }), 'warn');
       }
       r.comp = comp;
-      render();
+      renderSoon();
     } catch (e) { setStatus(r, e.message, 'err'); if (e.status === 429) break; }
   }
   if (!quiet) ui.progress(0);

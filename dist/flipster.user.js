@@ -3880,7 +3880,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "22.11.2026, 23:48:10" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 00:01:14" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -11576,7 +11576,13 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     if (r.h?.lowestSell && price >= r.h.lowestSell) note = L("buyorders.carefulThatsAlreadyWhatBuying", { lowestSell: fmt(r.h.lowestSell) });
     return { price, note };
   }
+  var drawTimer2 = 0;
+  var renderSoon2 = () => {
+    if (!drawTimer2) drawTimer2 = setTimeout(render4, 400);
+  };
   function render4() {
+    clearTimeout(drawTimer2);
+    drawTimer2 = 0;
     if (!el4) return;
     const tb = el4.querySelector("tbody");
     const cnt = document.querySelector('#stt [data-mt="buy"] .cnt');
@@ -11593,10 +11599,11 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     const beaten = rows2.filter((r) => r.comp != null && r.comp > shown2(r)).length;
     el4.querySelector("#b-state").innerHTML = checking ? `<span class="acc">${L("buyorders.checkingTheCompetition")}</span>` : lastCheck ? beaten ? `<b class="err">${beaten} ${L("buyorders.outbid")}</b> \xB7 ${L("buyorders.checked")} ${timeAgo(lastCheck)}` : `<span class="ok">${L("buyorders.allHighest")}</span> \xB7 ${L("buyorders.checked")} ${timeAgo(lastCheck)}` : "";
     if (!rows2.length) {
+      clearRows(tb);
       tb.innerHTML = L("buyorders.youHaveNoBuyOrders");
       return;
     }
-    tb.innerHTML = rows2.map((r) => {
+    const rowHtml = (r) => {
       const rule = r.rule || {};
       const typ = typical(r.hash);
       const sellAt = typ?.d7 && r.h?.lowestSell ? Math.min(Math.round(typ.d7), r.h.lowestSell - 1) : null;
@@ -11627,7 +11634,8 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       <label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" data-f="auto" ${rule.auto ? "checked" : ""}> ${L("buyorders.outbidAutomatically2")}</label>
       ${rule.auto && rule.max == null ? L("buyorders.setDontPayMoreThan") : ""}
     </div></td></tr>`;
-    }).join("");
+    };
+    patchRows(tb, rows2.map((r) => ({ key: r.id, html: rowHtml(r) })));
   }
   async function outbidOne(r) {
     const p = proposal(r);
@@ -11659,7 +11667,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       if (!lastCheck) log(L("buyorders.loadedBuyOrders", { rows: rows2.length }));
       render4();
       autoMarket();
-      ensure3(rows2.map((x) => ({ hash: x.hash, appid: x.appid })), { onEach: () => render4() });
+      ensure3(rows2.map((x) => ({ hash: x.hash, appid: x.appid })), { onEach: () => renderSoon2() });
     } catch (e) {
       log(L("buyorders.errorLoadingOrders") + e.message, "err");
     }
@@ -11678,7 +11686,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
           log(L("buyorders.someoneOutbidYourOrderYours", { hash: r.hash, comp: fmt(comp), price: fmt(r.price) }), "warn");
         }
         r.comp = comp;
-        render4();
+        renderSoon2();
       } catch (e) {
         setStatus2(r, e.message, "err");
         if (e.status === 429) break;
@@ -13545,5 +13553,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "22.11.2026, 23:48:10" : "?");
+  console.info("[Flipster] build", true ? "23.11.2026, 00:01:14" : "?");
 })();
