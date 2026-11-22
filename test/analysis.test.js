@@ -525,6 +525,22 @@ test('valuation: saved listings are reused only while the search shows the same 
   assert.equal(A.savedAskGood(c, undefined, now, 3600000), false);
 });
 
+test('new search rows: the shape of the old search, and the rate between the two', () => {
+  const rows = A.searchRows([
+    { strHash: 'Revolution Case', cSellOrders: 5000, eCurrency: 6, strMinSellSubtotal: '3,28 zł', asset_description: { name: 'Skrzynia', icon_url: 'i', name_color: 'fff', type: 'Container' } },
+    { strHash: 'Empty Case', cSellOrders: 0, eCurrency: 6, strMinSellSubtotal: '' },
+    { cSellOrders: 1 },
+  ]);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0], { hash_name: 'Revolution Case', name: 'Skrzynia', sell_price: 328, sell_price_text: '3,28 zł', sell_listings: 5000, asset_description: { icon_url: 'i', name_color: 'fff', type: 'Container' } });
+  assert.equal(rows[1].sell_price, 0);
+  const fresh = [['A', 360], ['B', 720], ['C', 1080], ['D', 40], ['E', 900]].map(([hash_name, sell_price]) => ({ hash_name, sell_price }));
+  const old = [['A', 100], ['B', 200], ['C', 300], ['D', 11], ['F', 500]].map(([hash_name, sell_price]) => ({ hash_name, sell_price }));
+  assert.equal(A.searchRate(fresh, old), 3.6);                        // D is too cheap to trust, F isn't in the new list
+  assert.equal(A.searchRate(fresh, old.slice(0, 2)), null);           // too few items
+  assert.equal(A.searchRate(fresh, []), null);
+});
+
 test('store buckets: one per key, edits from another tab are seen and not overwritten, caches written later', async () => {
   const gm = new Map();
   globalThis.GM_getValue = (k) => (gm.has(k) ? structuredClone(gm.get(k)) : undefined);

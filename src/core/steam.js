@@ -3,7 +3,7 @@ import * as store from './store.js';
 import { settings } from './store.js';
 import { buyerFromReceived as _b2r, receivedFromBuyer as _r2b, DEFAULT_WALLET, syncMinBuyer } from './fees.js';
 import * as disk from './cache.js';
-import { parseQuotes } from './analysis.js';
+import { parseQuotes, searchRows } from './analysis.js';
 import { L } from './i18n.js';
 // "no order data": prices.js recognises it by text (in either language)
 const NO_ORDERS = () => L('steam.noOrderData');
@@ -676,6 +676,26 @@ export function parseOrderBook(b) {
   };
 }
 
+/** one request to the new market's Search action (up to 100 rows); never retried, callers have the old way to fall back on */
+const searchAction = (q) => schedule('quote', async () => {
+  countReq('url:/market/actions');
+  const r = await fetch(`${ORIGIN}/market/actions?q=Search&qp=${encodeURIComponent(JSON.stringify([q]))}`, { credentials: 'include', headers: { 'x-valve-action-type': 'queryAction' } });
+  if (r.status === 429) throw new HttpError(429, L('steam.steamTooManyRequests429'));
+  if (!r.ok) throw new HttpError(r.status);
+  return (await r.json())?.data;
+}, { retry: false });
+/**
+ * A page of the new search as { total_count, results } in the old search's shape, prices in the wallet currency.
+ * Throws when it can't be used right now. Only for items without wears: it merges a skin's variants into one row.
+ */
+export async function marketSearchPage(q) {
+  if (Date.now() < (shared().quote?.pauseUntil || 0)) throw new HttpError(429, L('steam.steamTooManyRequests429'));
+  const d = await searchAction({ strQuery: '', count: 100, ...q });
+  const rows = d?.results || [];
+  if (rows.length && rows[0].eCurrency !== wallet().currency) throw new Error('search currency');
+  return { total_count: d?.total_count || 0, results: searchRows(rows) };
+}
+
 /**
  * Cheapest price and number of listings of many Steam items (cards, backgrounds…) from the new market's Search action:
  * up to 100 rows a request, filtered by game. Trading cards first (fewer rows), then the rest of what's still missing.
@@ -687,13 +707,6 @@ export async function steamItemQuotes(hashes, isCancelled = () => false) {
   const gameOf = (h) => h.slice(0, h.indexOf('-'));
   if (Date.now() < (shared().quote?.pauseUntil || 0)) return out; // after a 429: not now, and don't wait for it
   const currency = wallet().currency;
-  const ask = (q) => schedule('quote', async () => {
-    countReq('url:/market/actions');
-    const r = await fetch(`${ORIGIN}/market/actions?q=Search&qp=${encodeURIComponent(JSON.stringify([q]))}`, { credentials: 'include', headers: { 'x-valve-action-type': 'queryAction' } });
-    if (r.status === 429) throw new HttpError(429, L('steam.steamTooManyRequests429'));
-    if (!r.ok) throw new HttpError(r.status);
-    return (await r.json())?.data;
-  }, { retry: false });
   try {
     for (const itemClass of [['item_class_2'], null]) {
       const games = [...new Set([...left].map(gameOf))];
@@ -702,7 +715,7 @@ export async function steamItemQuotes(hashes, isCancelled = () => false) {
         const filters = { Game: [...part].map((g) => `app_${g}`), ...(itemClass ? { item_class: itemClass } : {}) };
         for (let start = 0, total = Infinity, pages = 0; start < total && pages < QUOTE_PAGES; pages++) {
           if (isCancelled() || ![...left].some((h) => part.has(gameOf(h)))) break;
-          const d = await ask({ appid: 753, strQuery: '', start, count: 100, filters });
+          const d = await searchAction({ appid: 753, strQuery: '', start, count: 100, filters });
           const rows = d?.results || [];
           if (!rows.length) break;
           if (rows[0].eCurrency !== currency) return out; // another currency can't be compared with the order book

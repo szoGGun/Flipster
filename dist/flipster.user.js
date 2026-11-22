@@ -3880,7 +3880,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 00:15:20" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 00:31:44" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -4650,6 +4650,15 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     for (const c of String(hash)) n = (n * 31 + c.charCodeAt(0)) % 1e3;
     return BOOK_MAX_AGE * (0.5 + n / 2e3);
   };
+  var searchRows = (rows3) => (rows3 || []).filter((x) => x?.strHash).map((x) => {
+    const a = x.asset_description || {}, low = parsePriceCents(x.strMinSellSubtotal);
+    return { hash_name: x.strHash, name: a.name || x.strHash, sell_price: low > 0 ? low : 0, sell_price_text: x.strMinSellSubtotal || "", sell_listings: x.cSellOrders || 0, asset_description: { icon_url: a.icon_url, name_color: a.name_color, type: a.type } };
+  });
+  function searchRate(fresh3, old) {
+    const low = new Map((fresh3 || []).map((r) => [r.hash_name, r.sell_price]));
+    const rs = (old || []).filter((r) => r.sell_price >= 20 && low.get(r.hash_name) > 0).sort((a, b) => b.sell_price - a.sell_price).slice(0, 5).map((r) => low.get(r.hash_name) / r.sell_price).sort((a, b) => a - b);
+    return rs.length >= 3 ? rs[Math.floor(rs.length / 2)] : null;
+  }
   var savedAskGood = (c, q, now = Date.now(), maxAge = BOOK_MAX_AGE) => !!c?.ask && !!q && c.lowest === q.low && c.sell === q.sell && now - (c.bookAt || 0) < maxAge;
   function parsePriceCents(s) {
     const m = String(s).replace(/\(.*?\)/g, "").match(/[\d][\d\s.,]*/);
@@ -5731,6 +5740,20 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       at: Date.now()
     };
   }
+  var searchAction = (q) => schedule("quote", async () => {
+    countReq("url:/market/actions");
+    const r = await fetch(`${ORIGIN}/market/actions?q=Search&qp=${encodeURIComponent(JSON.stringify([q]))}`, { credentials: "include", headers: { "x-valve-action-type": "queryAction" } });
+    if (r.status === 429) throw new HttpError(429, L("steam.steamTooManyRequests429"));
+    if (!r.ok) throw new HttpError(r.status);
+    return (await r.json())?.data;
+  }, { retry: false });
+  async function marketSearchPage(q) {
+    if (Date.now() < (shared().quote?.pauseUntil || 0)) throw new HttpError(429, L("steam.steamTooManyRequests429"));
+    const d = await searchAction({ strQuery: "", count: 100, ...q });
+    const rows3 = d?.results || [];
+    if (rows3.length && rows3[0].eCurrency !== wallet().currency) throw new Error("search currency");
+    return { total_count: d?.total_count || 0, results: searchRows(rows3) };
+  }
   var QUOTE_GAMES = 40;
   var QUOTE_PAGES = 20;
   async function steamItemQuotes(hashes, isCancelled = () => false) {
@@ -5738,13 +5761,6 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     const gameOf = (h) => h.slice(0, h.indexOf("-"));
     if (Date.now() < (shared().quote?.pauseUntil || 0)) return out;
     const currency = wallet().currency;
-    const ask2 = (q) => schedule("quote", async () => {
-      countReq("url:/market/actions");
-      const r = await fetch(`${ORIGIN}/market/actions?q=Search&qp=${encodeURIComponent(JSON.stringify([q]))}`, { credentials: "include", headers: { "x-valve-action-type": "queryAction" } });
-      if (r.status === 429) throw new HttpError(429, L("steam.steamTooManyRequests429"));
-      if (!r.ok) throw new HttpError(r.status);
-      return (await r.json())?.data;
-    }, { retry: false });
     try {
       for (const itemClass of [["item_class_2"], null]) {
         const games = [...new Set([...left].map(gameOf))];
@@ -5753,7 +5769,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
           const filters = { Game: [...part].map((g) => `app_${g}`), ...itemClass ? { item_class: itemClass } : {} };
           for (let start = 0, total = Infinity, pages2 = 0; start < total && pages2 < QUOTE_PAGES; pages2++) {
             if (isCancelled() || ![...left].some((h) => part.has(gameOf(h)))) break;
-            const d = await ask2({ appid: 753, strQuery: "", start, count: 100, filters });
+            const d = await searchAction({ appid: 753, strQuery: "", start, count: 100, filters });
             const rows3 = d?.results || [];
             if (!rows3.length) break;
             if (rows3[0].eCurrency !== currency) return out;
@@ -12817,8 +12833,29 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     if (rs.length) usdRate = rs.sort((a, b) => a - b)[Math.floor(rs.length / 2)];
     return usdRate;
   }
+  var CASES_QUERY = "category_730_Type%5B%5D=tag_CSGO_Type_WeaponCase&sort_column=popular&sort_dir=desc";
+  async function quickCaseList() {
+    try {
+      const out = [];
+      let total = Infinity;
+      for (let start = 0; start < total && start < 1e3; ) {
+        const d = await marketSearchPage({ appid: 730, start, filters: { Type: ["CSGO_Type_WeaponCase"] } });
+        if (!d.results.length) return null;
+        total = d.total_count;
+        out.push(...d.results);
+        start += d.results.length;
+      }
+      const old = await search(`${CASES_QUERY}&start=0&count=100`);
+      const rate = searchRate(out, old?.results);
+      return rate ? { rate, res: out.map((r) => ({ ...r, name: r.hash_name, sell_price: r.sell_price / rate })) } : null;
+    } catch (e) {
+      console.warn("[Flipster] quick case list failed, using the old search", e);
+      return null;
+    }
+  }
   async function loadCases() {
-    const res = await searchAll("category_730_Type%5B%5D=tag_CSGO_Type_WeaponCase&sort_column=popular&sort_dir=desc", 1e3);
+    const quick2 = await quickCaseList();
+    const res = quick2 ? quick2.res : await searchAll(CASES_QUERY, 1e3);
     const tags = await loadSetTags();
     const db = await load().catch(() => null);
     list = res.filter((r) => /Case$/.test(r.hash_name) && !/souvenir|terminal/i.test(r.hash_name) || db?.caps?.[r.hash_name]).map((r) => {
@@ -12826,7 +12863,8 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       const set2 = cap ? null : setNames(r.hash_name).map((n) => tags.get(n.toLowerCase())).find(Boolean) || null;
       return { hash: r.hash_name, name: r.name, icon: r.asset_description?.icon_url, color: r.asset_description?.name_color, priceUsd: r.sell_price, listings: r.sell_listings, set: set2, kind: cap ? "capsule" : "case" };
     });
-    await refreshRate(list);
+    if (quick2) usdRate = quick2.rate;
+    else await refreshRate(list);
     set("caseList", { at: Date.now(), list, usdRate });
   }
   var COLOR_TIER = { "4b69ff": "mil", "8847ff": "res", "d32ce6": "cla", "eb4b4b": "cov" };
@@ -13583,5 +13621,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "23.11.2026, 00:15:20" : "?");
+  console.info("[Flipster] build", true ? "23.11.2026, 00:31:44" : "?");
 })();

@@ -327,6 +327,23 @@ export const BOOK_MAX_AGE = 10 * 60000;
 export const bookStillGood = (h, q, now = Date.now(), maxAge = BOOK_MAX_AGE) => !!h && !!q && now - h.at < maxAge && q.low === h.lowestSell && q.sell === h.sellCount;
 /** 5-10 minutes, fixed per item: books fetched together don't all expire in the same refresh */
 export const bookMaxAge = (hash) => { let n = 0; for (const c of String(hash)) n = (n * 31 + c.charCodeAt(0)) % 1000; return BOOK_MAX_AGE * (0.5 + n / 2000); };
+/**
+ * Rows of the Search action in the shape of the old /market/search/render, prices in the wallet currency. It groups the
+ * wears and StatTrak of a skin into one row, so it only stands in for the old search on items without variants (containers).
+ */
+export const searchRows = (rows) => (rows || []).filter((x) => x?.strHash).map((x) => {
+  const a = x.asset_description || {}, low = parsePriceCents(x.strMinSellSubtotal);
+  return { hash_name: x.strHash, name: a.name || x.strHash, sell_price: low > 0 ? low : 0, sell_price_text: x.strMinSellSubtotal || '', sell_listings: x.cSellOrders || 0, asset_description: { icon_url: a.icon_url, name_color: a.name_color, type: a.type } };
+});
+/**
+ * Wallet cents per price unit of the old search: the median over the 5 dearest items in both lists (the cheap ones are
+ * rounded too coarsely, under 20 units they don't count); null with fewer than 3 such items
+ */
+export function searchRate(fresh, old) {
+  const low = new Map((fresh || []).map((r) => [r.hash_name, r.sell_price]));
+  const rs = (old || []).filter((r) => r.sell_price >= 20 && low.get(r.hash_name) > 0).sort((a, b) => b.sell_price - a.sell_price).slice(0, 5).map((r) => low.get(r.hash_name) / r.sell_price).sort((a, b) => a - b);
+  return rs.length >= 3 ? rs[Math.floor(rs.length / 2)] : null;
+}
 /** a valuation's saved listings (prices cache) still hold: same cheapest price and number of listings, not too old */
 export const savedAskGood = (c, q, now = Date.now(), maxAge = BOOK_MAX_AGE) => !!c?.ask && !!q && c.lowest === q.low && c.sell === q.sell && now - (c.bookAt || 0) < maxAge;
 

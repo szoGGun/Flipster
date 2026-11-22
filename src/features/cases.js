@@ -8,6 +8,7 @@ import * as store from '../core/store.js';
 import * as disk from '../core/cache.js';
 import { token } from '../core/jobs.js';
 import { esc, pct, timeAgo } from '../core/util.js';
+import { searchRate } from '../core/analysis.js';
 import * as sh from './storehist.js';
 import * as casedb from './casedb.js';
 import { ownedCount } from './inventory.js';
@@ -89,8 +90,35 @@ async function refreshRate(cases) {
   return usdRate;
 }
 
+const CASES_QUERY = 'category_730_Type%5B%5D=tag_CSGO_Type_WeaponCase&sort_column=popular&sort_dir=desc';
+/**
+ * The list of containers from the new search: 100 a request instead of 10 (they have no wears, which it would merge).
+ * One page of the old search gives the rate its prices are read at, as the skins of a case still come from there.
+ * → { res, rate }, or null when it isn't available: then the old way.
+ */
+async function quickCaseList() {
+  try {
+    const out = [];
+    let total = Infinity;
+    for (let start = 0; start < total && start < 1000;) {
+      const d = await steam.marketSearchPage({ appid: 730, start, filters: { Type: ['CSGO_Type_WeaponCase'] } });
+      if (!d.results.length) return null;
+      total = d.total_count;
+      out.push(...d.results);
+      start += d.results.length;
+    }
+    const old = await search(`${CASES_QUERY}&start=0&count=100`);
+    const rate = searchRate(out, old?.results);
+    return rate ? { rate, res: out.map((r) => ({ ...r, name: r.hash_name, sell_price: r.sell_price / rate })) } : null;
+  } catch (e) {
+    console.warn('[Flipster] quick case list failed, using the old search', e);
+    return null;
+  }
+}
+
 async function loadCases() {
-  const res = await searchAll('category_730_Type%5B%5D=tag_CSGO_Type_WeaponCase&sort_column=popular&sort_dir=desc', 1000);
+  const quick = await quickCaseList();
+  const res = quick ? quick.res : await searchAll(CASES_QUERY, 1000);
   const tags = await loadSetTags();
   const db = await casedb.load().catch(() => null);
   list = res.filter((r) => (/Case$/.test(r.hash_name) && !/souvenir|terminal/i.test(r.hash_name)) || db?.caps?.[r.hash_name]).map((r) => {
@@ -98,7 +126,8 @@ async function loadCases() {
     const set = cap ? null : setNames(r.hash_name).map((n) => tags.get(n.toLowerCase())).find(Boolean) || null;
     return { hash: r.hash_name, name: r.name, icon: r.asset_description?.icon_url, color: r.asset_description?.name_color, priceUsd: r.sell_price, listings: r.sell_listings, set, kind: cap ? 'capsule' : 'case' };
   });
-  await refreshRate(list);
+  if (quick) usdRate = quick.rate;
+  else await refreshRate(list);
   store.set('caseList', { at: Date.now(), list, usdRate });
 }
 

@@ -241,6 +241,7 @@ function respond(url, method, body) {
     return +u.searchParams.get('start') ? { success: true, total_count: HIST.length, results_html: '' } : histHtml();
   }
   if (p.startsWith('/market/search/render')) return search(u.searchParams);
+  if (p === '/market/actions' && u.searchParams.get('q') === 'Search') return { status: 500 }; // the new search is down: the old way must work
   if (p.startsWith('/market/appfilters')) return { success: true, facets: { '730_ItemSet': { tags: { set_community_32: { localized_name: 'The Revolution Collection' }, set_community_26: { localized_name: 'The Fracture Collection' } } } } };
   // Steam filters the history by game: the Steam items' one (app 753, cards and backgrounds) is empty here
   if (/\/inventoryhistory/.test(p)) return u.searchParams.get('cursor[time]') || u.searchParams.getAll('app[]').includes('753') ? { success: true, html: '', descriptions: {} } : invHistory();
