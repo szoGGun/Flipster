@@ -394,6 +394,7 @@ async function load() {
     render();
   } else {
     fromCache = null;
+    ui.clearRows(el.querySelector('#i-grid'));
     el.querySelector('#i-grid').innerHTML = `<div class="empty" style="padding:60px 0"><span class="spin"></span>${L('inventory.loadingTheInventory')}</div>`;
   }
   try {
@@ -418,6 +419,7 @@ async function load() {
     loading = false;
     // the saved inventory stays on screen, marked as not refreshed
     if (fromCache) { fromCache.err = e.message; ui.log(L('inventory.couldntRefreshTheInventory') + e.message, 'warn'); render(); autoPrice(); return; } // the prices don't depend on it
+    ui.clearRows(el.querySelector('#i-grid'));
     el.querySelector('#i-grid').innerHTML = `<div class="empty err">${esc(e.message)}</div>`;
   }
 }
@@ -692,8 +694,10 @@ function render() {
       ? `<span class="warn">${L('inventory.couldntRefreshTheInventory2', { err: esc(fromCache.err) })}</span> ${L('inventory.showingTheStateFromSelling', { at: esc(fmtWhen(fromCache.at)) })} <button class="b s" data-a="reload">${L('inventory.tryAgain')}</button>`
       : `<span class="spin" style="width:10px;height:10px"></span>${L('inventory.showingTheInventoryFromRefreshing', { at: esc(fmtWhen(fromCache.at)) })}`;
   }
-  if (!vis.length) { grid.innerHTML = loading ? `<div class="empty" style="padding:60px 0"><span class="spin"></span>${L('inventory.loadingTheInventory')}</div>` : `<div class="empty">${items.length || listed.length ? L('inventory.noItemsInThisView') : L('inventory.noItems')}</div>`; return; }
-  grid.innerHTML = vis.slice(0, shown).map(card).join('');
+  if (!vis.length) { ui.clearRows(grid); grid.innerHTML = loading ? `<div class="empty" style="padding:60px 0"><span class="spin"></span>${L('inventory.loadingTheInventory')}</div>` : `<div class="empty">${items.length || listed.length ? L('inventory.noItemsInThisView') : L('inventory.noItems')}</div>`; return; }
+  // only the cards that changed (a full redraw reloaded up to 200 images on every valuation step); the saved inventory
+  // has its own keys, so its greyed-out buttons don't survive into the fresh one
+  ui.patchRows(grid, vis.slice(0, shown).map((g) => ({ key: `${fromCache ? 'saved' : 'live'}|${g.key}`, html: card(g) })));
   // the saved inventory: the card buttons are there, greyed out, until the fresh one comes
   if (fromCache) grid.querySelectorAll('.qs button').forEach((b) => { b.disabled = true; b.title = L('inventory.availableWhenTheInventoryHas2'); });
   el.querySelector('[data-a="more"]').hidden = vis.length <= shown;

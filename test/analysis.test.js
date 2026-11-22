@@ -513,6 +513,18 @@ test('quick prices: a saved order book is reused only while the market looks the
   assert.equal(A.bookMaxAge('396710-Card 7'), A.bookMaxAge('396710-Card 7'));
 });
 
+test('valuation: saved listings are reused only while the search shows the same market', () => {
+  const now = 1800000000000, q = { low: 12, sell: 50 };
+  const c = { ask: [[12, 5]], lowest: 12, sell: 50, bookAt: now - 60000 };
+  assert.equal(A.savedAskGood(c, q, now, 3600000), true);
+  assert.equal(A.savedAskGood({ ...c, lowest: 13 }, q, now, 3600000), false);
+  assert.equal(A.savedAskGood({ ...c, sell: 49 }, q, now, 3600000), false);
+  assert.equal(A.savedAskGood({ ...c, ask: null }, q, now, 3600000), false);          // no listings saved yet
+  assert.equal(A.savedAskGood({ ...c, sell: undefined }, q, now, 3600000), false);    // saved by an older version
+  assert.equal(A.savedAskGood({ ...c, bookAt: now - 3600000 }, q, now, 3600000), false);
+  assert.equal(A.savedAskGood(c, undefined, now, 3600000), false);
+});
+
 test('store buckets: one per key, edits from another tab are seen and not overwritten, caches written later', async () => {
   const gm = new Map();
   globalThis.GM_getValue = (k) => (gm.has(k) ? structuredClone(gm.get(k)) : undefined);

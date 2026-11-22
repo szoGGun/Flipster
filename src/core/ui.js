@@ -521,7 +521,9 @@ export function itemCell({ icon: ic, name, hash, color, appid = 730, sub = '' })
  */
 const patched = new WeakMap();
 export function clearRows(tb) { patched.delete(tb); }
-export function patchRows(tb, blocks) {
+export function patchRows(tb, list) {
+  const count = new Map();
+  const blocks = list.map((b) => { const n = count.get(b.key) || 0; count.set(b.key, n + 1); return n ? { ...b, key: `${b.key}#${n}` } : b; });
   if (!patched.has(tb)) tb.textContent = '';
   const old = patched.get(tb) || new Map(), next = new Map();
   const tpl = document.createElement('template');

@@ -2,6 +2,7 @@ import * as store from './store.js';
 import { settings } from './store.js';
 import * as steam from './steam.js';
 import * as disk from './cache.js';
+import { BOOK_MAX_AGE, savedAskGood } from './analysis.js';
 
 // ---------------------------------------------------------------- Steam priceoverview cache
 const cache = store.bucket('prices'); // key appid|hash -> {lowest, median, volume, at}
@@ -46,8 +47,24 @@ export async function lowestPrices(list, { onEach, isCancelled, force = false, m
     // (also once for items valued before the listings were kept, the listing advice needs them)
     return force || !hasLowest(appid, hash, maxAgeMin) || !cached(appid, hash)?.ask;
   });
-  let done = 0;
-  for (const { appid, hash } of todo) {
+  let done = 0, queue = todo;
+  // Steam items: one search request prices up to 100. Its price counts right away; the order book (the listings and
+  // buy orders behind the sale advice) is fetched only when the market moved, or it's too old
+  const steamItems = todo.filter((x) => String(x.appid) === '753');
+  if (steamItems.length >= 4) {
+    const quotes = await steam.steamItemQuotes(steamItems.map((x) => x.hash), isCancelled);
+    const now = Date.now(), maxBook = force ? BOOK_MAX_AGE : 24 * 3600000;
+    queue = todo.filter(({ appid, hash }) => {
+      const q = String(appid) === '753' ? quotes.get(hash) : null;
+      if (!q) return true;
+      const c = cached(appid, hash);
+      const same = savedAskGood(c, q, now, maxBook);
+      cache.set(appid + '|' + hash, { median: null, volume: null, at: 0, ...c, lowest: q.low, lowAt: now });
+      onEach?.(hash, q.low, null, same ? ++done : done, todo.length);
+      return !same;
+    });
+  }
+  for (const { appid, hash } of queue) {
     if (isCancelled?.()) break;
     try {
       const h = await hist(appid, hash, force ? 0 : 60000);
@@ -106,7 +123,7 @@ async function fetchHist(appid, hash, k) {
   // `at` stays the priceoverview time so volume/median are still re-fetched when stale.
   const old = cached(appid, hash);
   // + the cheap end of the listings and the best buy order, for the listing advice on inventory cards (no extra request)
-  cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: h.lowestSell ?? old?.lowest ?? null, lowAt: Date.now(), ask: h.sellGraph?.slice(0, 25) || null, bid: h.highestBuy ?? null });
+  cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: h.lowestSell ?? old?.lowest ?? null, lowAt: Date.now(), ask: h.sellGraph?.slice(0, 25) || null, bid: h.highestBuy ?? null, sell: h.sellCount ?? null, bookAt: h.at });
   return h;
 }
 

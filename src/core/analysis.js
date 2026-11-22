@@ -327,6 +327,8 @@ export const BOOK_MAX_AGE = 10 * 60000;
 export const bookStillGood = (h, q, now = Date.now(), maxAge = BOOK_MAX_AGE) => !!h && !!q && now - h.at < maxAge && q.low === h.lowestSell && q.sell === h.sellCount;
 /** 5-10 minutes, fixed per item: books fetched together don't all expire in the same refresh */
 export const bookMaxAge = (hash) => { let n = 0; for (const c of String(hash)) n = (n * 31 + c.charCodeAt(0)) % 1000; return BOOK_MAX_AGE * (0.5 + n / 2000); };
+/** a valuation's saved listings (prices cache) still hold: same cheapest price and number of listings, not too old */
+export const savedAskGood = (c, q, now = Date.now(), maxAge = BOOK_MAX_AGE) => !!c?.ask && !!q && c.lowest === q.low && c.sell === q.sell && now - (c.bookAt || 0) < maxAge;
 
 function parsePriceCents(s) {
   const m = String(s).replace(/\(.*?\)/g, '').match(/[\d][\d\s.,]*/);

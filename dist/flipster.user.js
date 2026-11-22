@@ -3880,7 +3880,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 00:01:14" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 00:09:54" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -4145,7 +4145,13 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
   function clearRows(tb) {
     patched.delete(tb);
   }
-  function patchRows(tb, blocks) {
+  function patchRows(tb, list2) {
+    const count = /* @__PURE__ */ new Map();
+    const blocks = list2.map((b) => {
+      const n = count.get(b.key) || 0;
+      count.set(b.key, n + 1);
+      return n ? { ...b, key: `${b.key}#${n}` } : b;
+    });
     if (!patched.has(tb)) tb.textContent = "";
     const old = patched.get(tb) || /* @__PURE__ */ new Map(), next = /* @__PURE__ */ new Map();
     const tpl = document.createElement("template");
@@ -4644,6 +4650,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     for (const c of String(hash)) n = (n * 31 + c.charCodeAt(0)) % 1e3;
     return BOOK_MAX_AGE * (0.5 + n / 2e3);
   };
+  var savedAskGood = (c, q, now = Date.now(), maxAge = BOOK_MAX_AGE) => !!c?.ask && !!q && c.lowest === q.low && c.sell === q.sell && now - (c.bookAt || 0) < maxAge;
   function parsePriceCents(s) {
     const m = String(s).replace(/\(.*?\)/g, "").match(/[\d][\d\s.,]*/);
     if (!m) return NaN;
@@ -5882,8 +5889,22 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       seen.add(k);
       return force || !hasLowest(appid, hash, maxAgeMin) || !cached2(appid, hash)?.ask;
     });
-    let done = 0;
-    for (const { appid, hash } of todo) {
+    let done = 0, queue = todo;
+    const steamItems = todo.filter((x) => String(x.appid) === "753");
+    if (steamItems.length >= 4) {
+      const quotes = await steamItemQuotes(steamItems.map((x) => x.hash), isCancelled);
+      const now = Date.now(), maxBook = force ? BOOK_MAX_AGE : 24 * 36e5;
+      queue = todo.filter(({ appid, hash }) => {
+        const q = String(appid) === "753" ? quotes.get(hash) : null;
+        if (!q) return true;
+        const c = cached2(appid, hash);
+        const same = savedAskGood(c, q, now, maxBook);
+        cache.set(appid + "|" + hash, { median: null, volume: null, at: 0, ...c, lowest: q.low, lowAt: now });
+        onEach?.(hash, q.low, null, same ? ++done : done, todo.length);
+        return !same;
+      });
+    }
+    for (const { appid, hash } of queue) {
       if (isCancelled?.()) break;
       try {
         const h = await hist(appid, hash, force ? 0 : 6e4);
@@ -5941,7 +5962,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     hcache.set(k, h);
     if (ttl() > 0) put("ob|" + k, h);
     const old = cached2(appid, hash);
-    cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: h.lowestSell ?? old?.lowest ?? null, lowAt: Date.now(), ask: h.sellGraph?.slice(0, 25) || null, bid: h.highestBuy ?? null });
+    cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: h.lowestSell ?? old?.lowest ?? null, lowAt: Date.now(), ask: h.sellGraph?.slice(0, 25) || null, bid: h.highestBuy ?? null, sell: h.sellCount ?? null, bookAt: h.at });
     return h;
   }
 
@@ -7565,6 +7586,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       render();
     } else {
       fromCache = null;
+      clearRows(el.querySelector("#i-grid"));
       el.querySelector("#i-grid").innerHTML = `<div class="empty" style="padding:60px 0"><span class="spin"></span>${L("inventory.loadingTheInventory")}</div>`;
     }
     try {
@@ -7597,6 +7619,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
         autoPrice();
         return;
       }
+      clearRows(el.querySelector("#i-grid"));
       el.querySelector("#i-grid").innerHTML = `<div class="empty err">${esc(e.message)}</div>`;
     }
   }
@@ -7866,10 +7889,11 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       note.innerHTML = fromCache.err ? `<span class="warn">${L("inventory.couldntRefreshTheInventory2", { err: esc(fromCache.err) })}</span> ${L("inventory.showingTheStateFromSelling", { at: esc(fmtWhen(fromCache.at)) })} <button class="b s" data-a="reload">${L("inventory.tryAgain")}</button>` : `<span class="spin" style="width:10px;height:10px"></span>${L("inventory.showingTheInventoryFromRefreshing", { at: esc(fmtWhen(fromCache.at)) })}`;
     }
     if (!vis.length) {
+      clearRows(grid);
       grid.innerHTML = loading2 ? `<div class="empty" style="padding:60px 0"><span class="spin"></span>${L("inventory.loadingTheInventory")}</div>` : `<div class="empty">${items.length || listed.length ? L("inventory.noItemsInThisView") : L("inventory.noItems")}</div>`;
       return;
     }
-    grid.innerHTML = vis.slice(0, shown).map(card).join("");
+    patchRows(grid, vis.slice(0, shown).map((g) => ({ key: `${fromCache ? "saved" : "live"}|${g.key}`, html: card(g) })));
     if (fromCache) grid.querySelectorAll(".qs button").forEach((b) => {
       b.disabled = true;
       b.title = L("inventory.availableWhenTheInventoryHas2");
@@ -13553,5 +13577,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "23.11.2026, 00:01:14" : "?");
+  console.info("[Flipster] build", true ? "23.11.2026, 00:09:54" : "?");
 })();
