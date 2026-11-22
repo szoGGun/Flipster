@@ -1391,6 +1391,8 @@
     "inventory": "ekwipunek",
     "listingsHistory": "oferty/historia",
     "pages": "strony",
+    "quickPrices": "szybkie ceny",
+    "quickPriceCheck": "Szybkie sprawdzanie cen przedmiotów Steam",
     "search": "wyszukiwarka",
     "every": "co",
     "general": "Ogólne",

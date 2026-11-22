@@ -88,6 +88,15 @@ export async function hist(appid, hash, maxAgeMs = 60000) {
   inflight.set(k, p);
   return p;
 }
+/** the last order book of an item younger than maxAgeMs, without asking Steam; null when there is none */
+export async function peekHist(appid, hash, maxAgeMs) {
+  const k = appid + '|' + hash;
+  const c = hcache.get(k);
+  if (c && Date.now() - c.at < maxAgeMs) return c;
+  const d = await disk.get('ob|' + k, Math.min(maxAgeMs, disk.ttl()));
+  if (d) hcache.set(k, d);
+  return d || null;
+}
 const inflight = new Map();
 async function fetchHist(appid, hash, k) {
   const h = await steam.histogram(appid, hash);

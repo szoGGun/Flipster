@@ -487,6 +487,32 @@ test('lowest price follows the wallet fee minimum', () => {
   assert.equal(MIN_BUYER, 3);
 });
 
+test('quick prices: a saved order book is reused only while the market looks the same', () => {
+  const rows = [
+    { strHash: '396710-A', cSellOrders: 126, eCurrency: 6, strMinSellSubtotal: '0,12 zł' },
+    { strHash: '396710-B', cSellOrders: 2000, eCurrency: 6, strMinSellSubtotal: '1 234,56 zł' },
+    { strHash: '396710-C', cSellOrders: 5, eCurrency: 1, strMinSellSubtotal: '$0.05' },    // another currency
+    { strHash: '396710-D', cSellOrders: 0, eCurrency: 6, strMinSellSubtotal: '' },         // nothing listed
+  ];
+  const q = A.parseQuotes(rows, 6);
+  assert.deepEqual([...q.keys()], ['396710-A', '396710-B']);
+  assert.deepEqual(q.get('396710-A'), { low: 12, sell: 126 });
+  assert.equal(q.get('396710-B').low, 123456);
+  const now = 1800000000000;
+  const h = { lowestSell: 12, sellCount: 126, at: now - 60000 };
+  assert.equal(A.bookStillGood(h, { low: 12, sell: 126 }, now), true);
+  assert.equal(A.bookStillGood(h, { low: 11, sell: 126 }, now), false);     // someone undercut
+  assert.equal(A.bookStillGood(h, { low: 12, sell: 127 }, now), false);     // a new listing
+  assert.equal(A.bookStillGood({ ...h, at: now - A.BOOK_MAX_AGE }, { low: 12, sell: 126 }, now), false); // too old
+  assert.equal(A.bookStillGood(h, undefined, now), false);
+  assert.equal(A.bookStillGood(null, { low: 12, sell: 126 }, now), false);
+  assert.equal(A.bookStillGood(h, { low: 12, sell: 126 }, now, 30000), false); // older than this item's own limit
+  const ages = Array.from({ length: 200 }, (_, i) => A.bookMaxAge(`396710-Card ${i}`));
+  assert.ok(ages.every((x) => x >= A.BOOK_MAX_AGE / 2 && x < A.BOOK_MAX_AGE));
+  assert.ok(new Set(ages.map((x) => Math.floor(x / 60000))).size >= 4);         // spread over the 5-10 minutes
+  assert.equal(A.bookMaxAge('396710-Card 7'), A.bookMaxAge('396710-Card 7'));
+});
+
 test('store buckets: one per key, edits from another tab are seen and not overwritten, caches written later', async () => {
   const gm = new Map();
   globalThis.GM_getValue = (k) => (gm.has(k) ? structuredClone(gm.get(k)) : undefined);

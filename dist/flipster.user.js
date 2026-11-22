@@ -1575,6 +1575,8 @@
       inventory: "inventory",
       listingsHistory: "listings/history",
       pages: "pages",
+      quickPrices: "quick prices",
+      quickPriceCheck: "Quick price check of Steam items",
       search: "search",
       every: "every",
       general: "General",
@@ -3084,6 +3086,8 @@
       inventory: "ekwipunek",
       listingsHistory: "oferty/historia",
       pages: "strony",
+      quickPrices: "szybkie ceny",
+      quickPriceCheck: "Szybkie sprawdzanie cen przedmiot\xF3w Steam",
       search: "wyszukiwarka",
       every: "co",
       general: "Og\xF3lne",
@@ -3876,7 +3880,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "22.11.2026, 23:02:43" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "22.11.2026, 23:48:10" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -4362,899 +4366,6 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     if (d) await tx(d, "readwrite", (s) => s.clear());
   }
 
-  // src/core/steam.js
-  var NO_ORDERS = () => L("steam.noOrderData");
-  var ORIGIN = "https://steamcommunity.com";
-  var bus = emitter();
-  function scanScripts(re) {
-    for (const s of document.scripts) {
-      const m = s.textContent && s.textContent.match(re);
-      if (m) return m[1];
-    }
-    return null;
-  }
-  var _ctx;
-  function ctx() {
-    if (_ctx) return _ctx;
-    const sid = (v) => /^\d{17}$/.test(String(v ?? "")) ? String(v) : null;
-    const page = (k) => {
-      try {
-        return typeof unsafeWindow !== "undefined" ? unsafeWindow[k] : void 0;
-      } catch {
-        return void 0;
-      }
-    };
-    let steamId = sid(scanScripts(/g_steamID\s*=\s*"(\d{17})"/)) || sid(page("g_steamID"));
-    if (!steamId) {
-      try {
-        steamId = sid(JSON.parse(document.querySelector("#application_config")?.dataset.userinfo || "{}").steamid);
-      } catch {
-      }
-    }
-    if (!steamId) {
-      const mp = document.querySelector("#global_actions [data-miniprofile]")?.dataset.miniprofile;
-      if (/^\d{1,10}$/.test(mp || "")) steamId = (76561197960265728n + BigInt(mp)).toString();
-    }
-    if (!steamId && document.querySelector("#global_actions .user_avatar, #account_pulldown, #header_wallet_balance")) steamId = sid(get("steamId", null));
-    const sessionId = (document.cookie.match(/(?:^|;\s*)sessionid=([^;]+)/) || [])[1] || scanScripts(/g_sessionID\s*=\s*"([^"]+)"/) || page("g_sessionID") || null;
-    let wallet2 = null;
-    let pw = null;
-    try {
-      pw = typeof unsafeWindow !== "undefined" && unsafeWindow.g_rgWalletInfo ? JSON.parse(JSON.stringify(unsafeWindow.g_rgWalletInfo)) : null;
-    } catch {
-    }
-    const wj = pw ? JSON.stringify(pw) : scanScripts(/g_rgWalletInfo\s*=\s*(\{[^;]*?\})\s*;/);
-    if (wj) {
-      try {
-        const w = JSON.parse(wj);
-        wallet2 = {
-          currency: parseInt(w.wallet_currency, 10) || 6,
-          country: w.wallet_country || "PL",
-          feePercent: parseFloat(w.wallet_fee_percent ?? 0.05),
-          feeMin: parseInt(w.wallet_fee_minimum ?? 1, 10),
-          feeBase: parseInt(w.wallet_fee_base ?? 0, 10),
-          pubDefault: parseFloat(w.wallet_publisher_fee_percent_default ?? 0.1),
-          balance: parseInt(w.wallet_balance, 10) || 0
-        };
-        set("wallet", wallet2);
-      } catch {
-      }
-    }
-    wallet2 ||= get("wallet", null) || { ...DEFAULT_WALLET, currency: 6, country: "PL", balance: 0 };
-    syncMinBuyer(wallet2);
-    if (steamId) set("steamId", steamId);
-    _ctx = { steamId: steamId || get("steamId", null), sessionId, wallet: wallet2, walletAt: wj ? Date.now() : 0, loggedIn: !!(steamId && sessionId) };
-    return _ctx;
-  }
-  async function marketListings(appid, hash, { start = 0, count = 100 } = {}) {
-    const w = wallet();
-    const d = await schedule("page", () => getJSON(`${ORIGIN}/market/listings/${appid}/${encodeURIComponent(hash)}/render/?query=&start=${start}&count=${count}&country=${w.country || "PL"}&language=english&currency=${w.currency}`));
-    if (!d?.success) throw new Error(L("steam.steamReturnedNoListings"));
-    const props = new Map((Array.isArray(d.asset_properties) ? d.asset_properties : []).map((p) => [String(p.assetid), p.asset_properties || []]));
-    const out = [];
-    for (const l of Object.values(d.listinginfo || {})) {
-      const a = l.asset || {};
-      const desc = d.assets?.[a.appid]?.[a.contextid]?.[a.id] || {};
-      const pr = props.get(String(a.id)) || a.asset_properties || desc.asset_properties || [];
-      const fl = pr.find((p) => p.propertyid === 2)?.float_value;
-      const seed = pr.find((p) => p.propertyid === 1)?.int_value;
-      const buyer = (l.converted_price ?? l.price ?? 0) + (l.converted_fee ?? l.fee ?? 0);
-      if (!(buyer > 0)) continue;
-      out.push({ id: String(l.listingid), price: buyer, float: fl != null ? parseFloat(fl) : null, seed: seed != null ? +seed : null });
-    }
-    return { total: d.total_count || 0, listings: out.sort((x, y) => x.price - y.price) };
-  }
-  var loginCheck = null;
-  function ensureLogin() {
-    const c = ctx();
-    if (c.loggedIn) return Promise.resolve(true);
-    return loginCheck ||= (async () => {
-      try {
-        const html = await schedule("page", () => getText(`${ORIGIN}/market/`));
-        const sid = html.match(/g_steamID\s*=\s*"(\d{17})"/)?.[1];
-        const ses = html.match(/g_sessionID\s*=\s*"([^"]+)"/)?.[1];
-        if (sid && ses) {
-          c.steamId = sid;
-          c.sessionId = ses;
-          c.loggedIn = true;
-          set("steamId", sid);
-          const m = html.match(/g_rgWalletInfo\s*=\s*(\{[^;]*?\})\s*;/);
-          const b = m ? parseInt(JSON.parse(m[1]).wallet_balance, 10) : NaN;
-          if (b >= 0) {
-            c.wallet.balance = b;
-            c.walletAt = Date.now();
-            set("wallet", c.wallet);
-          }
-          return true;
-        }
-      } catch {
-      }
-      loginCheck = null;
-      return false;
-    })();
-  }
-  var wallet = () => ctx().wallet;
-  async function refreshWallet(maxAgeMs = 6e4) {
-    const c = ctx();
-    if (Date.now() - c.walletAt < maxAgeMs) return c.wallet;
-    const html = await schedule("page", () => getText(`${ORIGIN}/market/`));
-    const m = html.match(/g_rgWalletInfo\s*=\s*(\{[^;]*?\})\s*;/);
-    const b = m ? parseInt(JSON.parse(m[1]).wallet_balance, 10) : NaN;
-    if (!(b >= 0)) throw new Error(L("steam.steamGaveNoWalletBalance"));
-    c.wallet.balance = b;
-    c.walletAt = Date.now();
-    set("wallet", c.wallet);
-    return c.wallet;
-  }
-  function pageFees() {
-    try {
-      const W = typeof unsafeWindow !== "undefined" ? unsafeWindow : null;
-      return W && typeof W.CalculateAmountToSendForDesiredReceivedAmount === "function" && W.g_rgWalletInfo ? W : null;
-    } catch {
-      return null;
-    }
-  }
-  function buyerFromReceived2(recv, pub = wallet().pubDefault) {
-    const W = pageFees();
-    if (W) {
-      try {
-        const r = W.CalculateAmountToSendForDesiredReceivedAmount(recv, pub, W.g_rgWalletInfo);
-        const a = parseInt(r?.amount, 10);
-        if (a > 0) return a;
-      } catch {
-      }
-    }
-    return buyerFromReceived(recv, pub, wallet());
-  }
-  function receivedFromBuyer2(buyer, pub = wallet().pubDefault) {
-    if (!(buyer > 0)) return 0;
-    let r = receivedFromBuyer(buyer, pub, wallet());
-    while (r > 1 && buyerFromReceived2(r, pub) > buyer) r--;
-    while (buyerFromReceived2(r + 1, pub) <= buyer) r++;
-    return r;
-  }
-  function achievable(buyer, pub = wallet().pubDefault, up = false) {
-    if (!(buyer > 0)) return buyer;
-    const r = receivedFromBuyer2(buyer, pub);
-    const p = buyerFromReceived2(r, pub);
-    return up && p < buyer ? buyerFromReceived2(r + 1, pub) : p;
-  }
-  var CURRENCY = { 1: ["$", ""], 2: ["\xA3", ""], 3: ["", "\u20AC"], 5: ["", " p\u0443\u0431."], 6: ["", " z\u0142"], 7: ["R$ ", ""], 17: ["", " TL"], 18: ["", "\u20B4"], 23: ["\xA5 ", ""], 37: ["", " kr"] };
-  function fmt(c) {
-    if (c == null || isNaN(c)) return "-";
-    const [pre, suf] = CURRENCY[wallet().currency] || ["", ""];
-    const neg = c < 0 ? "\u2212" : "";
-    const v = (Math.abs(c) / 100).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-    return neg + pre + v + suf;
-  }
-  var HttpError = class extends Error {
-    constructor(status2, msg) {
-      super(msg || `HTTP ${status2}`);
-      this.status = status2;
-    }
-  };
-  var LANES = {
-    hist: { start: 900, min: 350, max: 8e3 },
-    // /market/orderbook (prices, competition)
-    price: { start: 3e3, min: 2e3, max: 15e3 },
-    // /market/priceoverview (volume), strict
-    page: { start: 4e3, min: 3e3, max: 2e4 },
-    // legacy listing page
-    inv: { start: 2500, min: 1500, max: 2e4 },
-    // /inventory, strict
-    market: { start: 1200, min: 600, max: 1e4 },
-    // mylistings, history, search
-    search: { start: 1e3, min: 500, max: 15e3 },
-    // /market/search/render (case contents), own lane so a long scan doesn't slow relisting
-    write: { fixed: () => settings.delay },
-    // remove/sell/order, never adaptive
-    ext: { fixed: () => 500 }
-    // outside services (NBP exchange rates)
-  };
-  var lanes = {};
-  var LANE_KEY = "lanes";
-  var shared = () => get(LANE_KEY, {});
-  function saveShared(lane, patch) {
-    const all3 = shared();
-    all3[lane] = { ...all3[lane] || {}, ...patch };
-    set(LANE_KEY, all3);
-  }
-  var REQ_KEY = "reqStats";
-  var reqPend = {};
-  var hourOf = (t = Date.now()) => Math.floor(t / 36e5) * 36e5;
-  function countReq(key, n = 1) {
-    const h = hourOf();
-    const b = reqPend[h] ||= {};
-    b[key] = (b[key] || 0) + n;
-  }
-  var endpointOf = (url) => {
-    try {
-      const p = new URL(url, ORIGIN).pathname;
-      if (/^\/inventory\//.test(p)) return "/inventory";
-      if (/^\/market\/listings\//.test(p)) return /\/render\/?$/.test(p) ? "/market/listings/\u2026/render" : "/market/listings/\u2026";
-      if (/^\/(id|profiles)\//.test(p)) return /inventoryhistory/.test(p) ? "/\u2026/inventoryhistory" : "/\u2026/(profil)";
-      return p.replace(/\/\d{5,}(\/|$)/g, "/\u2026$1").replace(/\/$/, "");
-    } catch {
-      return "?";
-    }
-  };
-  function flushReq() {
-    const pend2 = reqPend;
-    reqPend = {};
-    if (!Object.keys(pend2).length) return;
-    try {
-      const all3 = get(REQ_KEY, {}) || {};
-      for (const [h, b] of Object.entries(pend2)) {
-        const t = all3[h] ||= {};
-        for (const [k, n] of Object.entries(b)) t[k] = (t[k] || 0) + n;
-      }
-      const lim = hourOf() - 48 * 36e5;
-      for (const h of Object.keys(all3)) if (+h < lim) delete all3[h];
-      set(REQ_KEY, all3);
-    } catch {
-    }
-  }
-  if (typeof window !== "undefined") {
-    setInterval(flushReq, 15e3);
-    window.addEventListener("beforeunload", flushReq);
-  }
-  function requestStats() {
-    flushReq();
-    const all3 = get(REQ_KEY, {}) || {};
-    const now = hourOf(), sum = (from) => {
-      const o = {};
-      for (const [h, b] of Object.entries(all3)) if (+h >= from) for (const [k, n] of Object.entries(b)) o[k] = (o[k] || 0) + n;
-      return o;
-    };
-    return { hour: sum(now), day: sum(now - 23 * 36e5), since: now };
-  }
-  function laneStats() {
-    const all3 = shared();
-    return Object.fromEntries(Object.keys(LANES).filter((k) => !LANES[k].fixed).map((k) => [k, all3[k]?.iv ?? LANES[k].start]));
-  }
-  function schedule(lane, fn) {
-    const cfg = LANES[lane] || { start: 1e3, min: 500, max: 1e4 };
-    const l = lanes[lane] ||= { chain: Promise.resolve(), ok: 0 };
-    const interval = () => cfg.fixed ? cfg.fixed() : Math.min(cfg.max, Math.max(cfg.min, shared()[lane]?.iv ?? cfg.start));
-    const run = async () => {
-      for (let attempt = 0; ; attempt++) {
-        for (; ; ) {
-          const s = shared()[lane] || {};
-          const at = Math.max(s.next || 0, s.pauseUntil || 0);
-          const wait = at - Date.now();
-          if (wait <= 0) break;
-          await sleep(Math.min(wait, 2e3));
-        }
-        saveShared(lane, { next: Date.now() + interval() });
-        countReq("lane:" + lane);
-        try {
-          const r = await fn();
-          if (!cfg.fixed && ++l.ok >= 8) {
-            l.ok = 0;
-            saveShared(lane, { iv: Math.max(cfg.min, Math.round(interval() * 0.93)), backoff: 0 });
-          }
-          return r;
-        } catch (e) {
-          if (e.status === 429) {
-            countReq("429:" + lane);
-            l.ok = 0;
-            const s = shared()[lane] || {};
-            const backoff = Math.min((s.backoff || 15e3) * 2, 6e5);
-            saveShared(lane, {
-              iv: cfg.fixed ? void 0 : Math.min(cfg.max, interval() * 2),
-              backoff,
-              pauseUntil: Date.now() + backoff
-            });
-            bus.emit("ratelimit", lane, backoff);
-            if (attempt < 3) continue;
-          }
-          throw e;
-        }
-      }
-    };
-    const p = l.chain.then(run, run);
-    l.chain = p.catch(() => {
-    });
-    return p;
-  }
-  async function getJSON(url) {
-    countReq("url:" + endpointOf(url));
-    const r = await fetch(url, { credentials: "include" });
-    if (!r.ok) throw new HttpError(r.status, r.status === 429 ? L("steam.steamTooManyRequests429") : r.status === 403 ? L("steam.noAccess403PrivateInventory") : void 0);
-    const t = await r.text();
-    try {
-      return JSON.parse(t) ?? {};
-    } catch {
-      throw new HttpError(r.status, L("steam.invalidResponseFromSteamAre"));
-    }
-  }
-  async function getText(url) {
-    countReq("url:" + endpointOf(url));
-    const r = await fetch(url, { credentials: "include" });
-    if (!r.ok) throw new HttpError(r.status, r.status === 429 ? L("steam.steamTooManyRequests429") : void 0);
-    return r.text();
-  }
-  async function post(url, data3, referrer) {
-    countReq("url:" + endpointOf(url));
-    const r = await fetch(url, {
-      method: "POST",
-      credentials: "include",
-      referrer: referrer || `${ORIGIN}/market/`,
-      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
-      body: new URLSearchParams({ sessionid: ctx().sessionId, ...data3 })
-    });
-    let json = null;
-    try {
-      json = await r.json();
-    } catch {
-    }
-    if (r.status === 429) throw new HttpError(429, L("steam.steamTooManyRequests429"));
-    return { ok: r.ok, status: r.status, json: json || {} };
-  }
-  async function myListings() {
-    const listings = [];
-    let buyOrders = [];
-    let toConfirm = 0;
-    let pending = [], pendingKnown = false;
-    let start = 0;
-    let total = Infinity;
-    while (start < total) {
-      const d = await schedule("market", () => getJSON(`${ORIGIN}/market/mylistings/?norender=1&start=${start}&count=100`));
-      if (!d.success) throw new Error(L("steam.couldntLoadListingsAreYou"));
-      total = d.total_count || 0;
-      if (start === 0) {
-        buyOrders = (d.buy_orders || []).map(parseBuyOrder);
-        toConfirm = (d.listings_to_confirm || []).length;
-        pendingKnown = Array.isArray(d.listings_to_confirm);
-        for (const l of d.listings_to_confirm || []) {
-          try {
-            const p = parseListing(l, d.assets);
-            if (p.hash && p.recv > 0) pending.push(p);
-          } catch {
-          }
-        }
-      }
-      const ls = d.listings || [];
-      for (const l of ls) listings.push(parseListing(l, d.assets));
-      if (!ls.length) break;
-      start += ls.length;
-    }
-    return { listings, buyOrders, toConfirm, pending, pendingKnown };
-  }
-  function parseListing(l, assets) {
-    const a = l.asset || {};
-    const desc = assets?.[a.appid]?.[a.contextid]?.[a.id] || a;
-    const recv = l.converted_price || l.price;
-    const fee = l.converted_fee || l.fee;
-    return {
-      listingid: String(l.listingid),
-      appid: String(a.appid),
-      contextid: String(a.contextid),
-      assetid: String(a.id),
-      amount: parseInt(a.amount, 10) || parseInt(a.original_amount, 10) || 1,
-      hash: desc.market_hash_name || a.market_hash_name,
-      name: displayName(desc.market_hash_name || a.market_hash_name, desc.name || desc.market_name),
-      color: desc.name_color,
-      icon: desc.icon_url,
-      recv,
-      buyer: recv + fee,
-      pub: parseFloat(l.publisher_fee_percent) || wallet().pubDefault,
-      created: (l.time_created || 0) * 1e3,
-      // full item description (stickers, rarity, float if Steam provides it) for showing it in the inventory view
-      item: describeItem(
-        { appid: a.appid, contextid: a.contextid, assetid: a.id, classid: desc.classid ?? a.classid, instanceid: desc.instanceid ?? a.instanceid, amount: a.amount || a.original_amount },
-        desc,
-        a.asset_properties || desc.asset_properties || [],
-        ctx().steamId
-      )
-    };
-  }
-  function parseBuyOrder(o) {
-    const d = o.description || {};
-    return {
-      id: String(o.buy_orderid),
-      appid: String(o.appid),
-      hash: o.hash_name,
-      name: displayName(o.hash_name, d.name),
-      color: d.name_color,
-      icon: d.icon_url,
-      price: parseInt(o.price, 10),
-      // per unit, buyer price (cents)
-      qty: parseInt(o.quantity, 10),
-      remaining: parseInt(o.quantity_remaining, 10)
-    };
-  }
-  var removeListing = (id) => schedule("write", () => post(`${ORIGIN}/market/removelisting/${id}`, {}));
-  var sellItem = ({ appid, contextid, assetid, amount = 1, price }) => schedule(
-    "write",
-    () => post(`${ORIGIN}/market/sellitem/`, { appid, contextid, assetid, amount: String(amount), price: String(price) }, `${ORIGIN}/profiles/${ctx().steamId}/inventory/`)
-  );
-  var createBuyOrder = ({ appid, hash, priceEach, qty }) => schedule(
-    "write",
-    () => post(`${ORIGIN}/market/createbuyorder/`, {
-      currency: String(wallet().currency),
-      appid: String(appid),
-      market_hash_name: hash,
-      price_total: String(priceEach * qty),
-      quantity: String(qty),
-      billing_state: "",
-      save_my_address: "0"
-    }, `${ORIGIN}/market/listings/${appid}/${encodeURIComponent(hash)}`)
-  );
-  var cancelBuyOrder = (id) => schedule("write", () => post(`${ORIGIN}/market/cancelbuyorder/`, { buy_orderid: id }));
-  function sellResultText(res) {
-    const j = res.json || {};
-    if (res.ok && j.success) {
-      const conf = j.requires_confirmation || j.needs_mobile_confirmation || j.needs_email_confirmation;
-      return { ok: true, confirm: !!conf };
-    }
-    return { ok: false, msg: j.message || `HTTP ${res.status}` };
-  }
-  var INV_CACHE_KEY = "invcache";
-  function cachedInventory(steamId = ctx().steamId, appid = 730, contexts = [2]) {
-    const all3 = get(INV_CACHE_KEY, {});
-    const main2 = all3[`${steamId}|${appid}|${contexts[0]}`];
-    if (!main2?.items) return null;
-    const seen = /* @__PURE__ */ new Set(), items2 = [];
-    for (const c of contexts) for (const it of all3[`${steamId}|${appid}|${c}`]?.items || []) if (!seen.has(it.assetid)) {
-      seen.add(it.assetid);
-      items2.push(it);
-    }
-    return { at: main2.at, items: items2 };
-  }
-  async function inventory(steamId = ctx().steamId, appid = 730, contextid = 2, { maxAgeMin = 0 } = {}) {
-    const key = `${steamId}|${appid}|${contextid}`;
-    if (maxAgeMin > 0) {
-      const c = get(INV_CACHE_KEY, {})[key];
-      if (c && Date.now() - c.at < maxAgeMin * 6e4) return c.items;
-    }
-    const items2 = await fetchInventory(steamId, appid, contextid);
-    rememberProps(items2);
-    try {
-      const all3 = get(INV_CACHE_KEY, {});
-      for (const k of Object.keys(all3)) if (Date.now() - all3[k].at > 36e5) delete all3[k];
-      all3[key] = { at: Date.now(), items: items2 };
-      set(INV_CACHE_KEY, all3);
-    } catch {
-    }
-    return items2;
-  }
-  var PROPS_KEY = "assetProps";
-  var PROPS_MAX = 8e3;
-  var propsMem = null;
-  var propsAt = 0;
-  var propsAll = () => propsMem && Date.now() - propsAt < 3e4 ? propsMem : (propsAt = Date.now(), propsMem = get(PROPS_KEY, {}));
-  function rememberProps(items2) {
-    try {
-      const m = propsAll();
-      let changed = false;
-      for (const i of items2) {
-        if (i.float == null && !i.nameTag) continue;
-        const v = [i.float, i.seed, i.nameTag || null];
-        const old = m[i.assetid];
-        if (!old || old[0] !== v[0] || old[2] !== v[2]) {
-          m[i.assetid] = v;
-          changed = true;
-        }
-      }
-      const keys = Object.keys(m);
-      if (keys.length > PROPS_MAX) {
-        keys.slice(0, keys.length - PROPS_MAX).forEach((k) => delete m[k]);
-        changed = true;
-      }
-      if (changed) set(PROPS_KEY, m);
-      propsMem = m;
-      propsAt = Date.now();
-    } catch {
-    }
-  }
-  function recallProps(item) {
-    if (!item || item.float != null && item.nameTag) return item;
-    const v = propsAll()[item.assetid];
-    if (!v) return item;
-    return { ...item, float: item.float ?? v[0], seed: item.seed ?? v[1], nameTag: item.nameTag || v[2] };
-  }
-  function uiLanguage() {
-    try {
-      if (typeof unsafeWindow !== "undefined" && unsafeWindow.g_strLanguage) return unsafeWindow.g_strLanguage;
-    } catch {
-    }
-    const c = document.cookie.match(/(?:^|;\s*)Steam_Language=([^;]+)/)?.[1];
-    if (c) return c;
-    return /^pl/i.test(document.documentElement.lang || "") ? "polish" : "english";
-  }
-  async function fetchInventory(steamId, appid, contextid) {
-    const items2 = [];
-    let last = null;
-    let more = true;
-    let guard = 0;
-    const SIZES = [2e3, 1e3, 500, 200, 75];
-    let si = Math.max(0, SIZES.indexOf(get("invPage", 2e3)));
-    while (more && guard++ < 200) {
-      let d, tries = 0;
-      for (; ; ) {
-        const url = `${ORIGIN}/inventory/${steamId}/${appid}/${contextid}?l=english&count=${SIZES[si]}${last ? `&start_assetid=${last}` : ""}`;
-        try {
-          d = await schedule("inv", () => getJSON(url));
-          break;
-        } catch (e) {
-          if (e.status !== 500 && e.status !== 400 && e.status !== 502 && e.status !== 503) throw e;
-          if (si < SIZES.length - 1) {
-            si++;
-            set("invPage", SIZES[si]);
-            console.warn(`[Flipster] ekwipunek: Steam ${e.status}, zmniejszam stron\u0119 do ${SIZES[si]}`);
-            continue;
-          }
-          if (++tries > 2) throw new HttpError(e.status, L("steam.steamIsntReturningTheInventory", { status: e.status }));
-          await sleep(3e3 * tries);
-        }
-      }
-      items2.push(...parseInventory(d, steamId));
-      more = !!d.more_items;
-      last = d.last_assetid;
-    }
-    return items2;
-  }
-  function parseInventory(d, steamId) {
-    const descs = new Map((d.descriptions || []).map((x) => [x.classid + "_" + x.instanceid, x]));
-    const props = new Map((d.asset_properties || []).map((p) => [String(p.assetid), p.asset_properties || []]));
-    return (d.assets || []).map((a) => describeItem(a, descs.get(a.classid + "_" + a.instanceid) || {}, props.get(String(a.assetid)) || [], steamId));
-  }
-  function describeItem(a, ds, pr = [], steamId = "") {
-    const prop = (id) => pr.find((p) => p.propertyid === id);
-    const fl = prop(2)?.float_value;
-    const seed = prop(1)?.int_value;
-    const html = (ds.descriptions || []).map((x) => x.value || "").join("\n");
-    const stickers = [...html.matchAll(/<img[^>]*src="([^"]+)"[^>]*title="(Sticker|Patch|Charm): ([^"]+)"/g)].map((m) => ({ img: m[1], kind: m[2], name: m[3] }));
-    const wear = (ds.descriptions || []).find((x) => x.name === "exterior_wear")?.value?.replace("Exterior: ", "");
-    const tag = (cat) => (ds.tags || []).find((t) => t.category === cat);
-    let inspect = (ds.actions || []).find((x) => /preview/.test(x.link))?.link;
-    if (inspect) {
-      inspect = inspect.replace("%owner_steamid%", steamId).replace("%assetid%", a.assetid).replace(/%propid:(\d+)%/g, (_, id) => pr.find((p) => p.propertyid === +id)?.string_value || "");
-    }
-    const lock = (ds.owner_descriptions || []).map((x) => x.value).join(" ");
-    const ntRaw = (ds.fraudwarnings || []).find((x) => /Name ?Tag|Nazwa/i.test(x));
-    const ntProp = pr.find((p) => p.string_value && p.propertyid !== 6 && /name|tag|nazw/i.test(p.name || ""));
-    const nameTag = ntRaw ? ntRaw.replace(/^.*?(Name ?Tag|Nazwa[^:]*):\s*/i, "").replace(/^''|''$/g, "").replace(/^"|"$/g, "").trim() : ntProp ? String(ntProp.string_value).trim() : null;
-    return {
-      appid: String(a.appid),
-      contextid: String(a.contextid),
-      assetid: String(a.assetid),
-      classid: a.classid,
-      instanceid: a.instanceid,
-      amount: parseInt(a.amount, 10) || 1,
-      hash: ds.market_hash_name,
-      name: displayName(ds.market_hash_name, ds.name),
-      color: ds.name_color,
-      rarityColor: tag("Rarity")?.color,
-      rarity: tag("Rarity")?.internal_name || null,
-      // Rarity_Default = stock (default) item
-      itemType: tag("Type")?.internal_name || null,
-      // CSGO_Type_Collectible (coins, medals, pins), CSGO_Type_MusicKit…
-      type: ds.type,
-      icon: ds.icon_url,
-      marketable: !!ds.marketable,
-      tradable: !!ds.tradable,
-      commodity: !!ds.commodity,
-      float: fl != null ? parseFloat(fl) : null,
-      seed: seed != null ? parseInt(seed, 10) : null,
-      wear,
-      stickers,
-      nameTag,
-      // 2025+ inventory: listed items stay in the inventory "sealed" (sealed_type 1); other sealed = trade protection
-      sealed: Number(ds.sealed_type) === 1 ? "listed" : ds.sealed ? "protected" : null,
-      inspect,
-      lock: /after|Tradable|Marketable|protected/i.test(lock) ? lock.replace(/<[^>]+>/g, "") : ds.sealed && Number(ds.sealed_type) !== 1 ? "Ochrona handlu (trade protection)" : ""
-    };
-  }
-  async function priceOverview(appid, hash, currency = wallet().currency) {
-    const d = await schedule(
-      "price",
-      () => getJSON(`${ORIGIN}/market/priceoverview/?appid=${appid}&currency=${currency}&market_hash_name=${encodeURIComponent(hash)}`)
-    );
-    if (!d.success) throw new Error(L("steam.noPriceData"));
-    return {
-      lowest: parsePrice(d.lowest_price),
-      median: parsePrice(d.median_price),
-      volume: parseInt(String(d.volume || "0").replace(/\D/g, ""), 10) || 0
-    };
-  }
-  var nameIds = bucket("nameids");
-  async function nameId(appid, hash) {
-    const key = appid + "|" + hash;
-    const cached3 = nameIds.get(key);
-    if (cached3) return cached3;
-    const html = await schedule("page", () => getText(`${ORIGIN}/market/listings/${appid}/${encodeURIComponent(hash)}`));
-    const m = html.match(/Market_LoadOrderSpread\(\s*(\d+)\s*\)/) || html.match(/item_?name_?id["']?\s*[:=]\s*["']?(\d+)/i);
-    if (!m) throw new Error(L("steam.couldntLoadBuyOrdersNew"));
-    nameIds.set(key, m[1]);
-    return m[1];
-  }
-  var graph = (g) => (g || []).map((x) => [Math.round(x[0] * 100), parseInt(x[1], 10)]);
-  var int = (s) => parseInt(String(s ?? "").replace(/\D/g, ""), 10) || 0;
-  function compactToGraph(arr) {
-    const out = [];
-    let cum = 0;
-    for (let i = 0; i + 1 < (arr || []).length; i += 2) {
-      cum += arr[i + 1];
-      out.push([arr[i], cum]);
-    }
-    return out;
-  }
-  async function orderBook(appid, hash) {
-    const url = `${ORIGIN}/market/orderbook?q=Load&qp=${encodeURIComponent(JSON.stringify([Number(appid), hash]))}`;
-    const d = await schedule("hist", async () => {
-      const r = await fetch(url, { credentials: "include", headers: { "x-valve-action-type": "queryAction" } });
-      if (r.status === 429) throw new HttpError(429, L("steam.steamTooManyRequests429"));
-      if (!r.ok) throw new HttpError(r.status);
-      return r.json();
-    });
-    const b = d?.data?.success ? d.data.data : null;
-    if (!b) throw new Error(NO_ORDERS());
-    return parseOrderBook(b);
-  }
-  function parseOrderBook(b) {
-    return {
-      highestBuy: b.amtMaxBuyOrder || null,
-      lowestSell: b.amtMinSellOrder || null,
-      buyGraph: compactToGraph(b.rgCompactBuyOrders),
-      sellGraph: compactToGraph(b.rgCompactSellOrders),
-      buyCount: b.cBuyOrders || 0,
-      sellCount: b.cSellOrders || 0,
-      currency: b.eCurrency,
-      at: Date.now()
-    };
-  }
-  var orderBookBroken = false;
-  var histWarned = false;
-  async function histogram(appid, hash) {
-    if (!orderBookBroken) {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          return await orderBook(appid, hash);
-        } catch (e) {
-          if (e.status === 429) throw e;
-          if (e.status === 404) {
-            orderBookBroken = true;
-            break;
-          }
-          if (e.message === NO_ORDERS()) throw new Error(L("steam.noOrderDataCheckThe", { hash }));
-          if (e.status >= 500 && attempt === 0) {
-            await sleep(1500);
-            continue;
-          }
-          if (!histWarned) {
-            histWarned = true;
-            console.warn("[Flipster] orderbook failed, trying legacy histogram", e);
-          }
-          break;
-        }
-      }
-    }
-    return legacyHistogram(appid, hash);
-  }
-  async function legacyHistogram(appid, hash) {
-    const id = await nameId(appid, hash);
-    const w = wallet();
-    const d = await schedule(
-      "hist",
-      () => getJSON(`${ORIGIN}/market/itemordershistogram?country=${w.country || "PL"}&language=english&currency=${w.currency}&item_nameid=${id}&two_factor=0`)
-    );
-    if (!d.success) throw new Error(NO_ORDERS());
-    return {
-      highestBuy: d.highest_buy_order ? parseInt(d.highest_buy_order, 10) : null,
-      lowestSell: d.lowest_sell_order ? parseInt(d.lowest_sell_order, 10) : null,
-      buyGraph: graph(d.buy_order_graph),
-      sellGraph: graph(d.sell_order_graph),
-      buyCount: int(d.buy_order_count),
-      sellCount: int(d.sell_order_count),
-      at: Date.now()
-    };
-  }
-  var priceHistory = (appid, hash, { remember = false, force = false } = {}) => cached(`ph|${appid}|${hash}`, force ? 0 : ttl(), () => fetchPriceHistory(appid, hash), (v) => remember && v?.length > 0);
-  async function fetchPriceHistory(appid, hash) {
-    let d;
-    try {
-      d = await schedule("market", () => getJSON(`${ORIGIN}/market/pricehistory/?appid=${appid}&market_hash_name=${encodeURIComponent(hash)}`));
-    } catch (e) {
-      if (e.status === 429) throw e;
-      d = null;
-    }
-    if (!d?.success) {
-      const url = `${ORIGIN}/market/actions?q=QueryPriceHistory&qp=${encodeURIComponent(JSON.stringify([Number(appid), hash]))}`;
-      const r = await schedule("market", () => fetch(url, { credentials: "include", headers: { "x-valve-action-type": "queryAction" } }).then((x) => x.json()));
-      const inner = r?.data?.data ?? r?.data;
-      d = { success: true, prices: Array.isArray(inner) ? inner : inner?.prices || [] };
-    }
-    if (!d.prices?.length) throw new Error(L("steam.noPriceHistory"));
-    return (d.prices || []).map((p) => Array.isArray(p) ? { t: Date.parse(String(p[0]).replace(/: \+0$/, ":00 +0000")), price: Math.round(p[1] * 100), vol: parseInt(p[2], 10) || 0 } : { t: p.time * 1e3, price: Math.round(p.price_median * 100), vol: parseInt(p.purchases, 10) || 0 });
-  }
-  var myHistoryPage = (start, count = 500) => schedule("market", () => getJSON(`${ORIGIN}/market/myhistory/render/?query=&start=${start}&count=${count}&norender=1`));
-  var myHistoryHtmlPage = (start, count = 100) => schedule("market", () => getJSON(`${ORIGIN}/market/myhistory/render/?query=&start=${start}&count=${count}&l=english`));
-  function gmJSON(url) {
-    return new Promise((resolve, reject) => {
-      if (typeof GM_xmlhttpRequest !== "function") return reject(new Error(L("steam.gmXmlhttprequestUnavailable")));
-      GM_xmlhttpRequest({
-        method: "GET",
-        url,
-        headers: { Accept: "application/json" },
-        timeout: 3e4,
-        onload: (r) => {
-          if (r.status === 429) return reject(new HttpError(429, L("steam.externalServiceRequestLimitTry")));
-          if (r.status >= 400) return reject(new HttpError(r.status));
-          try {
-            resolve(JSON.parse(r.responseText));
-          } catch {
-            reject(new Error(L("steam.invalidResponse")));
-          }
-        },
-        onerror: () => reject(new Error(L("steam.networkError"))),
-        ontimeout: () => reject(new Error("Timeout"))
-      });
-    });
-  }
-
-  // src/core/prices.js
-  var cache = bucket("prices");
-  function cached2(appid, hash) {
-    return cache.get(appid + "|" + hash) || null;
-  }
-  function fresh(appid, hash, maxAgeMin = settings.cacheMin) {
-    const c = cached2(appid, hash);
-    return c && Date.now() - c.at < maxAgeMin * 6e4 ? c : null;
-  }
-  async function steamPrice(appid, hash, { force = false } = {}) {
-    if (!force) {
-      const f = fresh(appid, hash);
-      if (f) return f;
-    }
-    const p = await priceOverview(appid, hash);
-    const v = { ...p, at: Date.now(), lowAt: Date.now() };
-    cache.set(appid + "|" + hash, v);
-    return v;
-  }
-  function hasLowest(appid, hash, maxAgeMin) {
-    const c = cached2(appid, hash);
-    return !!c && c.lowAt != null && Date.now() - c.lowAt < maxAgeMin * 6e4;
-  }
-  async function lowestPrices(list2, { onEach, isCancelled, force = false, maxAgeMin = 360 } = {}) {
-    const seen = /* @__PURE__ */ new Set();
-    const todo = list2.filter(({ appid, hash }) => {
-      const k = appid + "|" + hash;
-      if (!hash || seen.has(k)) return false;
-      seen.add(k);
-      return force || !hasLowest(appid, hash, maxAgeMin) || !cached2(appid, hash)?.ask;
-    });
-    let done = 0;
-    for (const { appid, hash } of todo) {
-      if (isCancelled?.()) break;
-      try {
-        const h = await hist(appid, hash, force ? 0 : 6e4);
-        onEach?.(hash, h.lowestSell, null, ++done, todo.length);
-      } catch (e) {
-        if (e.status === 400 || e.status === 404 || /brak danych o zleceniach|nie udało się pobrać zleceń|no order data|couldn't load buy orders/.test(e.message || "")) {
-          const k = appid + "|" + hash;
-          const old = cached2(appid, hash);
-          cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: old?.lowest ?? null, lowAt: Date.now(), ask: old?.ask ?? [] });
-        }
-        onEach?.(hash, null, e, ++done, todo.length);
-        if (e.status === 429) break;
-      }
-    }
-    return todo.length;
-  }
-  function pruneCache(days = 14) {
-    const all3 = cache.all();
-    const lim = Date.now() - days * 864e5;
-    let n = 0;
-    for (const k of Object.keys(all3)) if (Math.max(all3[k].at || 0, all3[k].lowAt || 0) < lim) {
-      delete all3[k];
-      n++;
-    }
-    if (n) cache.replace(all3);
-  }
-  var hcache = /* @__PURE__ */ new Map();
-  async function hist(appid, hash, maxAgeMs = 6e4) {
-    const k = appid + "|" + hash;
-    const c = hcache.get(k);
-    if (c && Date.now() - c.at < maxAgeMs) return c;
-    if (inflight2.has(k)) return inflight2.get(k);
-    const p = (async () => {
-      const d = await get2("ob|" + k, Math.min(maxAgeMs, ttl()));
-      if (d) {
-        hcache.set(k, d);
-        return d;
-      }
-      return fetchHist(appid, hash, k);
-    })().finally(() => inflight2.delete(k));
-    inflight2.set(k, p);
-    return p;
-  }
-  var inflight2 = /* @__PURE__ */ new Map();
-  async function fetchHist(appid, hash, k) {
-    const h = await histogram(appid, hash);
-    hcache.set(k, h);
-    if (ttl() > 0) put("ob|" + k, h);
-    const old = cached2(appid, hash);
-    cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: h.lowestSell ?? old?.lowest ?? null, lowAt: Date.now(), ask: h.sellGraph?.slice(0, 25) || null, bid: h.highestBuy ?? null });
-    return h;
-  }
-
-  // src/core/jobs.js
-  var chain = Promise.resolve();
-  function withLock(name, fn) {
-    const p = chain.then(() => fn());
-    chain = p.catch(() => {
-    });
-    return p;
-  }
-  function token() {
-    let c = false;
-    return { cancel: () => c = true, get cancelled() {
-      return c;
-    } };
-  }
-  var TAB_ID = Math.random().toString(36).slice(2);
-  var STALE = 45e3;
-  var leader = false;
-  function isLeader() {
-    return leader;
-  }
-  function startLeaderElection(onChange) {
-    const tick2 = () => {
-      const cur = get("leader", null);
-      const now = Date.now();
-      const mine = cur?.id === TAB_ID;
-      if (!cur || mine || now - cur.at > STALE) {
-        set("leader", { id: TAB_ID, at: now });
-        if (!leader) {
-          leader = true;
-          onChange?.(true);
-        }
-      } else if (leader) {
-        leader = false;
-        onChange?.(false);
-      }
-    };
-    tick2();
-    setInterval(tick2, 15e3);
-    window.addEventListener("beforeunload", () => {
-      if (leader) set("leader", null);
-    });
-  }
-  function every(name, minutes, enabled, fn, onState) {
-    let next = Date.now() + 15e3;
-    let runningNow = false;
-    const loop = async () => {
-      for (; ; ) {
-        await sleep(5e3);
-        onState?.({ next, running: runningNow, enabled: enabled(), leader });
-        if (!enabled() || !leader || runningNow) continue;
-        if (Date.now() < next) continue;
-        runningNow = true;
-        try {
-          await fn();
-        } catch (e) {
-          console.error("[Flipster]", name, e);
-        }
-        runningNow = false;
-        next = Date.now() + Math.max(1, minutes()) * 6e4;
-      }
-    };
-    loop();
-    return {
-      runNow() {
-        next = 0;
-      },
-      reschedule() {
-        next = Date.now() + Math.max(1, minutes()) * 6e4;
-      },
-      get next() {
-        return next;
-      }
-    };
-  }
-
   // src/core/analysis.js
   function levels(graph2) {
     const out = [];
@@ -5517,6 +4628,22 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     }
     return out;
   }
+  function parseQuotes(rows3, currency) {
+    const out = /* @__PURE__ */ new Map();
+    for (const x of rows3 || []) {
+      if (!x?.strHash || x.eCurrency !== currency) continue;
+      const low = parsePriceCents(x.strMinSellSubtotal);
+      if (low > 0 && Number.isInteger(x.cSellOrders)) out.set(x.strHash, { low, sell: x.cSellOrders });
+    }
+    return out;
+  }
+  var BOOK_MAX_AGE = 10 * 6e4;
+  var bookStillGood = (h, q, now = Date.now(), maxAge = BOOK_MAX_AGE) => !!h && !!q && now - h.at < maxAge && q.low === h.lowestSell && q.sell === h.sellCount;
+  var bookMaxAge = (hash) => {
+    let n = 0;
+    for (const c of String(hash)) n = (n * 31 + c.charCodeAt(0)) % 1e3;
+    return BOOK_MAX_AGE * (0.5 + n / 2e3);
+  };
   function parsePriceCents(s) {
     const m = String(s).replace(/\(.*?\)/g, "").match(/[\d][\d\s.,]*/);
     if (!m) return NaN;
@@ -5950,6 +5077,947 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     const v7 = d7.reduce((s, p) => s + (p.vol || 0), 0);
     const week = d7.filter((p) => p.price <= buy).reduce((s, p) => s + (p.vol || 0), 0);
     return { bid, ask: ask2, buy, sell: sell2, sell24, med7, net: got, profit: got - buy, roi: (got - buy) / buy, week, fill7: v7 ? week / v7 : 0, vol24 };
+  }
+
+  // src/core/steam.js
+  var NO_ORDERS = () => L("steam.noOrderData");
+  var ORIGIN = "https://steamcommunity.com";
+  var bus = emitter();
+  function scanScripts(re) {
+    for (const s of document.scripts) {
+      const m = s.textContent && s.textContent.match(re);
+      if (m) return m[1];
+    }
+    return null;
+  }
+  var _ctx;
+  function ctx() {
+    if (_ctx) return _ctx;
+    const sid = (v) => /^\d{17}$/.test(String(v ?? "")) ? String(v) : null;
+    const page = (k) => {
+      try {
+        return typeof unsafeWindow !== "undefined" ? unsafeWindow[k] : void 0;
+      } catch {
+        return void 0;
+      }
+    };
+    let steamId = sid(scanScripts(/g_steamID\s*=\s*"(\d{17})"/)) || sid(page("g_steamID"));
+    if (!steamId) {
+      try {
+        steamId = sid(JSON.parse(document.querySelector("#application_config")?.dataset.userinfo || "{}").steamid);
+      } catch {
+      }
+    }
+    if (!steamId) {
+      const mp = document.querySelector("#global_actions [data-miniprofile]")?.dataset.miniprofile;
+      if (/^\d{1,10}$/.test(mp || "")) steamId = (76561197960265728n + BigInt(mp)).toString();
+    }
+    if (!steamId && document.querySelector("#global_actions .user_avatar, #account_pulldown, #header_wallet_balance")) steamId = sid(get("steamId", null));
+    const sessionId = (document.cookie.match(/(?:^|;\s*)sessionid=([^;]+)/) || [])[1] || scanScripts(/g_sessionID\s*=\s*"([^"]+)"/) || page("g_sessionID") || null;
+    let wallet2 = null;
+    let pw = null;
+    try {
+      pw = typeof unsafeWindow !== "undefined" && unsafeWindow.g_rgWalletInfo ? JSON.parse(JSON.stringify(unsafeWindow.g_rgWalletInfo)) : null;
+    } catch {
+    }
+    const wj = pw ? JSON.stringify(pw) : scanScripts(/g_rgWalletInfo\s*=\s*(\{[^;]*?\})\s*;/);
+    if (wj) {
+      try {
+        const w = JSON.parse(wj);
+        wallet2 = {
+          currency: parseInt(w.wallet_currency, 10) || 6,
+          country: w.wallet_country || "PL",
+          feePercent: parseFloat(w.wallet_fee_percent ?? 0.05),
+          feeMin: parseInt(w.wallet_fee_minimum ?? 1, 10),
+          feeBase: parseInt(w.wallet_fee_base ?? 0, 10),
+          pubDefault: parseFloat(w.wallet_publisher_fee_percent_default ?? 0.1),
+          balance: parseInt(w.wallet_balance, 10) || 0
+        };
+        set("wallet", wallet2);
+      } catch {
+      }
+    }
+    wallet2 ||= get("wallet", null) || { ...DEFAULT_WALLET, currency: 6, country: "PL", balance: 0 };
+    syncMinBuyer(wallet2);
+    if (steamId) set("steamId", steamId);
+    _ctx = { steamId: steamId || get("steamId", null), sessionId, wallet: wallet2, walletAt: wj ? Date.now() : 0, loggedIn: !!(steamId && sessionId) };
+    return _ctx;
+  }
+  async function marketListings(appid, hash, { start = 0, count = 100 } = {}) {
+    const w = wallet();
+    const d = await schedule("page", () => getJSON(`${ORIGIN}/market/listings/${appid}/${encodeURIComponent(hash)}/render/?query=&start=${start}&count=${count}&country=${w.country || "PL"}&language=english&currency=${w.currency}`));
+    if (!d?.success) throw new Error(L("steam.steamReturnedNoListings"));
+    const props = new Map((Array.isArray(d.asset_properties) ? d.asset_properties : []).map((p) => [String(p.assetid), p.asset_properties || []]));
+    const out = [];
+    for (const l of Object.values(d.listinginfo || {})) {
+      const a = l.asset || {};
+      const desc = d.assets?.[a.appid]?.[a.contextid]?.[a.id] || {};
+      const pr = props.get(String(a.id)) || a.asset_properties || desc.asset_properties || [];
+      const fl = pr.find((p) => p.propertyid === 2)?.float_value;
+      const seed = pr.find((p) => p.propertyid === 1)?.int_value;
+      const buyer = (l.converted_price ?? l.price ?? 0) + (l.converted_fee ?? l.fee ?? 0);
+      if (!(buyer > 0)) continue;
+      out.push({ id: String(l.listingid), price: buyer, float: fl != null ? parseFloat(fl) : null, seed: seed != null ? +seed : null });
+    }
+    return { total: d.total_count || 0, listings: out.sort((x, y) => x.price - y.price) };
+  }
+  var loginCheck = null;
+  function ensureLogin() {
+    const c = ctx();
+    if (c.loggedIn) return Promise.resolve(true);
+    return loginCheck ||= (async () => {
+      try {
+        const html = await schedule("page", () => getText(`${ORIGIN}/market/`));
+        const sid = html.match(/g_steamID\s*=\s*"(\d{17})"/)?.[1];
+        const ses = html.match(/g_sessionID\s*=\s*"([^"]+)"/)?.[1];
+        if (sid && ses) {
+          c.steamId = sid;
+          c.sessionId = ses;
+          c.loggedIn = true;
+          set("steamId", sid);
+          const m = html.match(/g_rgWalletInfo\s*=\s*(\{[^;]*?\})\s*;/);
+          const b = m ? parseInt(JSON.parse(m[1]).wallet_balance, 10) : NaN;
+          if (b >= 0) {
+            c.wallet.balance = b;
+            c.walletAt = Date.now();
+            set("wallet", c.wallet);
+          }
+          return true;
+        }
+      } catch {
+      }
+      loginCheck = null;
+      return false;
+    })();
+  }
+  var wallet = () => ctx().wallet;
+  async function refreshWallet(maxAgeMs = 6e4) {
+    const c = ctx();
+    if (Date.now() - c.walletAt < maxAgeMs) return c.wallet;
+    const html = await schedule("page", () => getText(`${ORIGIN}/market/`));
+    const m = html.match(/g_rgWalletInfo\s*=\s*(\{[^;]*?\})\s*;/);
+    const b = m ? parseInt(JSON.parse(m[1]).wallet_balance, 10) : NaN;
+    if (!(b >= 0)) throw new Error(L("steam.steamGaveNoWalletBalance"));
+    c.wallet.balance = b;
+    c.walletAt = Date.now();
+    set("wallet", c.wallet);
+    return c.wallet;
+  }
+  function pageFees() {
+    try {
+      const W = typeof unsafeWindow !== "undefined" ? unsafeWindow : null;
+      return W && typeof W.CalculateAmountToSendForDesiredReceivedAmount === "function" && W.g_rgWalletInfo ? W : null;
+    } catch {
+      return null;
+    }
+  }
+  function buyerFromReceived2(recv, pub = wallet().pubDefault) {
+    const W = pageFees();
+    if (W) {
+      try {
+        const r = W.CalculateAmountToSendForDesiredReceivedAmount(recv, pub, W.g_rgWalletInfo);
+        const a = parseInt(r?.amount, 10);
+        if (a > 0) return a;
+      } catch {
+      }
+    }
+    return buyerFromReceived(recv, pub, wallet());
+  }
+  function receivedFromBuyer2(buyer, pub = wallet().pubDefault) {
+    if (!(buyer > 0)) return 0;
+    let r = receivedFromBuyer(buyer, pub, wallet());
+    while (r > 1 && buyerFromReceived2(r, pub) > buyer) r--;
+    while (buyerFromReceived2(r + 1, pub) <= buyer) r++;
+    return r;
+  }
+  function achievable(buyer, pub = wallet().pubDefault, up = false) {
+    if (!(buyer > 0)) return buyer;
+    const r = receivedFromBuyer2(buyer, pub);
+    const p = buyerFromReceived2(r, pub);
+    return up && p < buyer ? buyerFromReceived2(r + 1, pub) : p;
+  }
+  var CURRENCY = { 1: ["$", ""], 2: ["\xA3", ""], 3: ["", "\u20AC"], 5: ["", " p\u0443\u0431."], 6: ["", " z\u0142"], 7: ["R$ ", ""], 17: ["", " TL"], 18: ["", "\u20B4"], 23: ["\xA5 ", ""], 37: ["", " kr"] };
+  function fmt(c) {
+    if (c == null || isNaN(c)) return "-";
+    const [pre, suf] = CURRENCY[wallet().currency] || ["", ""];
+    const neg = c < 0 ? "\u2212" : "";
+    const v = (Math.abs(c) / 100).toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+    return neg + pre + v + suf;
+  }
+  var HttpError = class extends Error {
+    constructor(status2, msg) {
+      super(msg || `HTTP ${status2}`);
+      this.status = status2;
+    }
+  };
+  var LANES = {
+    hist: { start: 900, min: 350, max: 8e3 },
+    // /market/orderbook (prices, competition)
+    price: { start: 3e3, min: 2e3, max: 15e3 },
+    // /market/priceoverview (volume), strict
+    page: { start: 4e3, min: 3e3, max: 2e4 },
+    // legacy listing page
+    inv: { start: 2500, min: 1500, max: 2e4 },
+    // /inventory, strict
+    market: { start: 1200, min: 600, max: 1e4 },
+    // mylistings, history, search
+    search: { start: 1e3, min: 500, max: 15e3 },
+    // /market/search/render (case contents), own lane so a long scan doesn't slow relisting
+    quote: { start: 1e3, min: 600, max: 15e3 },
+    // /market/actions Search (Steam items, 100 per request), own lane so a scan doesn't hold up a refresh
+    write: { fixed: () => settings.delay },
+    // remove/sell/order, never adaptive
+    ext: { fixed: () => 500 }
+    // outside services (NBP exchange rates)
+  };
+  var lanes = {};
+  var LANE_KEY = "lanes";
+  var shared = () => get(LANE_KEY, {});
+  function saveShared(lane, patch) {
+    const all3 = shared();
+    all3[lane] = { ...all3[lane] || {}, ...patch };
+    set(LANE_KEY, all3);
+  }
+  var REQ_KEY = "reqStats";
+  var reqPend = {};
+  var hourOf = (t = Date.now()) => Math.floor(t / 36e5) * 36e5;
+  function countReq(key, n = 1) {
+    const h = hourOf();
+    const b = reqPend[h] ||= {};
+    b[key] = (b[key] || 0) + n;
+  }
+  var endpointOf = (url) => {
+    try {
+      const p = new URL(url, ORIGIN).pathname;
+      if (/^\/inventory\//.test(p)) return "/inventory";
+      if (/^\/market\/listings\//.test(p)) return /\/render\/?$/.test(p) ? "/market/listings/\u2026/render" : "/market/listings/\u2026";
+      if (/^\/(id|profiles)\//.test(p)) return /inventoryhistory/.test(p) ? "/\u2026/inventoryhistory" : "/\u2026/(profil)";
+      return p.replace(/\/\d{5,}(\/|$)/g, "/\u2026$1").replace(/\/$/, "");
+    } catch {
+      return "?";
+    }
+  };
+  function flushReq() {
+    const pend2 = reqPend;
+    reqPend = {};
+    if (!Object.keys(pend2).length) return;
+    try {
+      const all3 = get(REQ_KEY, {}) || {};
+      for (const [h, b] of Object.entries(pend2)) {
+        const t = all3[h] ||= {};
+        for (const [k, n] of Object.entries(b)) t[k] = (t[k] || 0) + n;
+      }
+      const lim = hourOf() - 48 * 36e5;
+      for (const h of Object.keys(all3)) if (+h < lim) delete all3[h];
+      set(REQ_KEY, all3);
+    } catch {
+    }
+  }
+  if (typeof window !== "undefined") {
+    setInterval(flushReq, 15e3);
+    window.addEventListener("beforeunload", flushReq);
+  }
+  function requestStats() {
+    flushReq();
+    const all3 = get(REQ_KEY, {}) || {};
+    const now = hourOf(), sum = (from) => {
+      const o = {};
+      for (const [h, b] of Object.entries(all3)) if (+h >= from) for (const [k, n] of Object.entries(b)) o[k] = (o[k] || 0) + n;
+      return o;
+    };
+    return { hour: sum(now), day: sum(now - 23 * 36e5), since: now };
+  }
+  function laneStats() {
+    const all3 = shared();
+    return Object.fromEntries(Object.keys(LANES).filter((k) => !LANES[k].fixed).map((k) => [k, all3[k]?.iv ?? LANES[k].start]));
+  }
+  function schedule(lane, fn, { retry = true } = {}) {
+    const cfg = LANES[lane] || { start: 1e3, min: 500, max: 1e4 };
+    const l = lanes[lane] ||= { chain: Promise.resolve(), ok: 0 };
+    const interval = () => cfg.fixed ? cfg.fixed() : Math.min(cfg.max, Math.max(cfg.min, shared()[lane]?.iv ?? cfg.start));
+    const run = async () => {
+      for (let attempt = 0; ; attempt++) {
+        for (; ; ) {
+          const s = shared()[lane] || {};
+          const at = Math.max(s.next || 0, s.pauseUntil || 0);
+          const wait = at - Date.now();
+          if (wait <= 0) break;
+          await sleep(Math.min(wait, 2e3));
+        }
+        saveShared(lane, { next: Date.now() + interval() });
+        countReq("lane:" + lane);
+        try {
+          const r = await fn();
+          if (!cfg.fixed && ++l.ok >= 8) {
+            l.ok = 0;
+            saveShared(lane, { iv: Math.max(cfg.min, Math.round(interval() * 0.93)), backoff: 0 });
+          }
+          return r;
+        } catch (e) {
+          if (e.status === 429) {
+            countReq("429:" + lane);
+            l.ok = 0;
+            const s = shared()[lane] || {};
+            const backoff = Math.min((s.backoff || 15e3) * 2, 6e5);
+            saveShared(lane, {
+              iv: cfg.fixed ? void 0 : Math.min(cfg.max, interval() * 2),
+              backoff,
+              pauseUntil: Date.now() + backoff
+            });
+            bus.emit("ratelimit", lane, backoff);
+            if (retry && attempt < 3) continue;
+          }
+          throw e;
+        }
+      }
+    };
+    const p = l.chain.then(run, run);
+    l.chain = p.catch(() => {
+    });
+    return p;
+  }
+  async function getJSON(url) {
+    countReq("url:" + endpointOf(url));
+    const r = await fetch(url, { credentials: "include" });
+    if (!r.ok) throw new HttpError(r.status, r.status === 429 ? L("steam.steamTooManyRequests429") : r.status === 403 ? L("steam.noAccess403PrivateInventory") : void 0);
+    const t = await r.text();
+    try {
+      return JSON.parse(t) ?? {};
+    } catch {
+      throw new HttpError(r.status, L("steam.invalidResponseFromSteamAre"));
+    }
+  }
+  async function getText(url) {
+    countReq("url:" + endpointOf(url));
+    const r = await fetch(url, { credentials: "include" });
+    if (!r.ok) throw new HttpError(r.status, r.status === 429 ? L("steam.steamTooManyRequests429") : void 0);
+    return r.text();
+  }
+  async function post(url, data3, referrer) {
+    countReq("url:" + endpointOf(url));
+    const r = await fetch(url, {
+      method: "POST",
+      credentials: "include",
+      referrer: referrer || `${ORIGIN}/market/`,
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
+      body: new URLSearchParams({ sessionid: ctx().sessionId, ...data3 })
+    });
+    let json = null;
+    try {
+      json = await r.json();
+    } catch {
+    }
+    if (r.status === 429) throw new HttpError(429, L("steam.steamTooManyRequests429"));
+    return { ok: r.ok, status: r.status, json: json || {} };
+  }
+  async function myListings() {
+    const listings = [];
+    let buyOrders = [];
+    let toConfirm = 0;
+    let pending = [], pendingKnown = false;
+    let start = 0;
+    let total = Infinity;
+    while (start < total) {
+      const d = await schedule("market", () => getJSON(`${ORIGIN}/market/mylistings/?norender=1&start=${start}&count=100`));
+      if (!d.success) throw new Error(L("steam.couldntLoadListingsAreYou"));
+      total = d.total_count || 0;
+      if (start === 0) {
+        buyOrders = (d.buy_orders || []).map(parseBuyOrder);
+        toConfirm = (d.listings_to_confirm || []).length;
+        pendingKnown = Array.isArray(d.listings_to_confirm);
+        for (const l of d.listings_to_confirm || []) {
+          try {
+            const p = parseListing(l, d.assets);
+            if (p.hash && p.recv > 0) pending.push(p);
+          } catch {
+          }
+        }
+      }
+      const ls = d.listings || [];
+      for (const l of ls) listings.push(parseListing(l, d.assets));
+      if (!ls.length) break;
+      start += ls.length;
+    }
+    return { listings, buyOrders, toConfirm, pending, pendingKnown };
+  }
+  function parseListing(l, assets) {
+    const a = l.asset || {};
+    const desc = assets?.[a.appid]?.[a.contextid]?.[a.id] || a;
+    const recv = l.converted_price || l.price;
+    const fee = l.converted_fee || l.fee;
+    return {
+      listingid: String(l.listingid),
+      appid: String(a.appid),
+      contextid: String(a.contextid),
+      assetid: String(a.id),
+      amount: parseInt(a.amount, 10) || parseInt(a.original_amount, 10) || 1,
+      hash: desc.market_hash_name || a.market_hash_name,
+      name: displayName(desc.market_hash_name || a.market_hash_name, desc.name || desc.market_name),
+      color: desc.name_color,
+      icon: desc.icon_url,
+      recv,
+      buyer: recv + fee,
+      pub: parseFloat(l.publisher_fee_percent) || wallet().pubDefault,
+      created: (l.time_created || 0) * 1e3,
+      // full item description (stickers, rarity, float if Steam provides it) for showing it in the inventory view
+      item: describeItem(
+        { appid: a.appid, contextid: a.contextid, assetid: a.id, classid: desc.classid ?? a.classid, instanceid: desc.instanceid ?? a.instanceid, amount: a.amount || a.original_amount },
+        desc,
+        a.asset_properties || desc.asset_properties || [],
+        ctx().steamId
+      )
+    };
+  }
+  function parseBuyOrder(o) {
+    const d = o.description || {};
+    return {
+      id: String(o.buy_orderid),
+      appid: String(o.appid),
+      hash: o.hash_name,
+      name: displayName(o.hash_name, d.name),
+      color: d.name_color,
+      icon: d.icon_url,
+      price: parseInt(o.price, 10),
+      // per unit, buyer price (cents)
+      qty: parseInt(o.quantity, 10),
+      remaining: parseInt(o.quantity_remaining, 10)
+    };
+  }
+  var removeListing = (id) => schedule("write", () => post(`${ORIGIN}/market/removelisting/${id}`, {}));
+  var sellItem = ({ appid, contextid, assetid, amount = 1, price }) => schedule(
+    "write",
+    () => post(`${ORIGIN}/market/sellitem/`, { appid, contextid, assetid, amount: String(amount), price: String(price) }, `${ORIGIN}/profiles/${ctx().steamId}/inventory/`)
+  );
+  var createBuyOrder = ({ appid, hash, priceEach, qty }) => schedule(
+    "write",
+    () => post(`${ORIGIN}/market/createbuyorder/`, {
+      currency: String(wallet().currency),
+      appid: String(appid),
+      market_hash_name: hash,
+      price_total: String(priceEach * qty),
+      quantity: String(qty),
+      billing_state: "",
+      save_my_address: "0"
+    }, `${ORIGIN}/market/listings/${appid}/${encodeURIComponent(hash)}`)
+  );
+  var cancelBuyOrder = (id) => schedule("write", () => post(`${ORIGIN}/market/cancelbuyorder/`, { buy_orderid: id }));
+  function sellResultText(res) {
+    const j = res.json || {};
+    if (res.ok && j.success) {
+      const conf = j.requires_confirmation || j.needs_mobile_confirmation || j.needs_email_confirmation;
+      return { ok: true, confirm: !!conf };
+    }
+    return { ok: false, msg: j.message || `HTTP ${res.status}` };
+  }
+  var INV_CACHE_KEY = "invcache";
+  function cachedInventory(steamId = ctx().steamId, appid = 730, contexts = [2]) {
+    const all3 = get(INV_CACHE_KEY, {});
+    const main2 = all3[`${steamId}|${appid}|${contexts[0]}`];
+    if (!main2?.items) return null;
+    const seen = /* @__PURE__ */ new Set(), items2 = [];
+    for (const c of contexts) for (const it of all3[`${steamId}|${appid}|${c}`]?.items || []) if (!seen.has(it.assetid)) {
+      seen.add(it.assetid);
+      items2.push(it);
+    }
+    return { at: main2.at, items: items2 };
+  }
+  async function inventory(steamId = ctx().steamId, appid = 730, contextid = 2, { maxAgeMin = 0 } = {}) {
+    const key = `${steamId}|${appid}|${contextid}`;
+    if (maxAgeMin > 0) {
+      const c = get(INV_CACHE_KEY, {})[key];
+      if (c && Date.now() - c.at < maxAgeMin * 6e4) return c.items;
+    }
+    const items2 = await fetchInventory(steamId, appid, contextid);
+    rememberProps(items2);
+    try {
+      const all3 = get(INV_CACHE_KEY, {});
+      for (const k of Object.keys(all3)) if (Date.now() - all3[k].at > 36e5) delete all3[k];
+      all3[key] = { at: Date.now(), items: items2 };
+      set(INV_CACHE_KEY, all3);
+    } catch {
+    }
+    return items2;
+  }
+  var PROPS_KEY = "assetProps";
+  var PROPS_MAX = 8e3;
+  var propsMem = null;
+  var propsAt = 0;
+  var propsAll = () => propsMem && Date.now() - propsAt < 3e4 ? propsMem : (propsAt = Date.now(), propsMem = get(PROPS_KEY, {}));
+  function rememberProps(items2) {
+    try {
+      const m = propsAll();
+      let changed = false;
+      for (const i of items2) {
+        if (i.float == null && !i.nameTag) continue;
+        const v = [i.float, i.seed, i.nameTag || null];
+        const old = m[i.assetid];
+        if (!old || old[0] !== v[0] || old[2] !== v[2]) {
+          m[i.assetid] = v;
+          changed = true;
+        }
+      }
+      const keys = Object.keys(m);
+      if (keys.length > PROPS_MAX) {
+        keys.slice(0, keys.length - PROPS_MAX).forEach((k) => delete m[k]);
+        changed = true;
+      }
+      if (changed) set(PROPS_KEY, m);
+      propsMem = m;
+      propsAt = Date.now();
+    } catch {
+    }
+  }
+  function recallProps(item) {
+    if (!item || item.float != null && item.nameTag) return item;
+    const v = propsAll()[item.assetid];
+    if (!v) return item;
+    return { ...item, float: item.float ?? v[0], seed: item.seed ?? v[1], nameTag: item.nameTag || v[2] };
+  }
+  function uiLanguage() {
+    try {
+      if (typeof unsafeWindow !== "undefined" && unsafeWindow.g_strLanguage) return unsafeWindow.g_strLanguage;
+    } catch {
+    }
+    const c = document.cookie.match(/(?:^|;\s*)Steam_Language=([^;]+)/)?.[1];
+    if (c) return c;
+    return /^pl/i.test(document.documentElement.lang || "") ? "polish" : "english";
+  }
+  async function fetchInventory(steamId, appid, contextid) {
+    const items2 = [];
+    let last = null;
+    let more = true;
+    let guard = 0;
+    const SIZES = [2e3, 1e3, 500, 200, 75];
+    let si = Math.max(0, SIZES.indexOf(get("invPage", 2e3)));
+    while (more && guard++ < 200) {
+      let d, tries = 0;
+      for (; ; ) {
+        const url = `${ORIGIN}/inventory/${steamId}/${appid}/${contextid}?l=english&count=${SIZES[si]}${last ? `&start_assetid=${last}` : ""}`;
+        try {
+          d = await schedule("inv", () => getJSON(url));
+          break;
+        } catch (e) {
+          if (e.status !== 500 && e.status !== 400 && e.status !== 502 && e.status !== 503) throw e;
+          if (si < SIZES.length - 1) {
+            si++;
+            set("invPage", SIZES[si]);
+            console.warn(`[Flipster] ekwipunek: Steam ${e.status}, zmniejszam stron\u0119 do ${SIZES[si]}`);
+            continue;
+          }
+          if (++tries > 2) throw new HttpError(e.status, L("steam.steamIsntReturningTheInventory", { status: e.status }));
+          await sleep(3e3 * tries);
+        }
+      }
+      items2.push(...parseInventory(d, steamId));
+      more = !!d.more_items;
+      last = d.last_assetid;
+    }
+    return items2;
+  }
+  function parseInventory(d, steamId) {
+    const descs = new Map((d.descriptions || []).map((x) => [x.classid + "_" + x.instanceid, x]));
+    const props = new Map((d.asset_properties || []).map((p) => [String(p.assetid), p.asset_properties || []]));
+    return (d.assets || []).map((a) => describeItem(a, descs.get(a.classid + "_" + a.instanceid) || {}, props.get(String(a.assetid)) || [], steamId));
+  }
+  function describeItem(a, ds, pr = [], steamId = "") {
+    const prop = (id) => pr.find((p) => p.propertyid === id);
+    const fl = prop(2)?.float_value;
+    const seed = prop(1)?.int_value;
+    const html = (ds.descriptions || []).map((x) => x.value || "").join("\n");
+    const stickers = [...html.matchAll(/<img[^>]*src="([^"]+)"[^>]*title="(Sticker|Patch|Charm): ([^"]+)"/g)].map((m) => ({ img: m[1], kind: m[2], name: m[3] }));
+    const wear = (ds.descriptions || []).find((x) => x.name === "exterior_wear")?.value?.replace("Exterior: ", "");
+    const tag = (cat) => (ds.tags || []).find((t) => t.category === cat);
+    let inspect = (ds.actions || []).find((x) => /preview/.test(x.link))?.link;
+    if (inspect) {
+      inspect = inspect.replace("%owner_steamid%", steamId).replace("%assetid%", a.assetid).replace(/%propid:(\d+)%/g, (_, id) => pr.find((p) => p.propertyid === +id)?.string_value || "");
+    }
+    const lock = (ds.owner_descriptions || []).map((x) => x.value).join(" ");
+    const ntRaw = (ds.fraudwarnings || []).find((x) => /Name ?Tag|Nazwa/i.test(x));
+    const ntProp = pr.find((p) => p.string_value && p.propertyid !== 6 && /name|tag|nazw/i.test(p.name || ""));
+    const nameTag = ntRaw ? ntRaw.replace(/^.*?(Name ?Tag|Nazwa[^:]*):\s*/i, "").replace(/^''|''$/g, "").replace(/^"|"$/g, "").trim() : ntProp ? String(ntProp.string_value).trim() : null;
+    return {
+      appid: String(a.appid),
+      contextid: String(a.contextid),
+      assetid: String(a.assetid),
+      classid: a.classid,
+      instanceid: a.instanceid,
+      amount: parseInt(a.amount, 10) || 1,
+      hash: ds.market_hash_name,
+      name: displayName(ds.market_hash_name, ds.name),
+      color: ds.name_color,
+      rarityColor: tag("Rarity")?.color,
+      rarity: tag("Rarity")?.internal_name || null,
+      // Rarity_Default = stock (default) item
+      itemType: tag("Type")?.internal_name || null,
+      // CSGO_Type_Collectible (coins, medals, pins), CSGO_Type_MusicKit…
+      type: ds.type,
+      icon: ds.icon_url,
+      marketable: !!ds.marketable,
+      tradable: !!ds.tradable,
+      commodity: !!ds.commodity,
+      float: fl != null ? parseFloat(fl) : null,
+      seed: seed != null ? parseInt(seed, 10) : null,
+      wear,
+      stickers,
+      nameTag,
+      // 2025+ inventory: listed items stay in the inventory "sealed" (sealed_type 1); other sealed = trade protection
+      sealed: Number(ds.sealed_type) === 1 ? "listed" : ds.sealed ? "protected" : null,
+      inspect,
+      lock: /after|Tradable|Marketable|protected/i.test(lock) ? lock.replace(/<[^>]+>/g, "") : ds.sealed && Number(ds.sealed_type) !== 1 ? "Ochrona handlu (trade protection)" : ""
+    };
+  }
+  async function priceOverview(appid, hash, currency = wallet().currency) {
+    const d = await schedule(
+      "price",
+      () => getJSON(`${ORIGIN}/market/priceoverview/?appid=${appid}&currency=${currency}&market_hash_name=${encodeURIComponent(hash)}`)
+    );
+    if (!d.success) throw new Error(L("steam.noPriceData"));
+    return {
+      lowest: parsePrice(d.lowest_price),
+      median: parsePrice(d.median_price),
+      volume: parseInt(String(d.volume || "0").replace(/\D/g, ""), 10) || 0
+    };
+  }
+  var nameIds = bucket("nameids");
+  async function nameId(appid, hash) {
+    const key = appid + "|" + hash;
+    const cached3 = nameIds.get(key);
+    if (cached3) return cached3;
+    const html = await schedule("page", () => getText(`${ORIGIN}/market/listings/${appid}/${encodeURIComponent(hash)}`));
+    const m = html.match(/Market_LoadOrderSpread\(\s*(\d+)\s*\)/) || html.match(/item_?name_?id["']?\s*[:=]\s*["']?(\d+)/i);
+    if (!m) throw new Error(L("steam.couldntLoadBuyOrdersNew"));
+    nameIds.set(key, m[1]);
+    return m[1];
+  }
+  var graph = (g) => (g || []).map((x) => [Math.round(x[0] * 100), parseInt(x[1], 10)]);
+  var int = (s) => parseInt(String(s ?? "").replace(/\D/g, ""), 10) || 0;
+  function compactToGraph(arr) {
+    const out = [];
+    let cum = 0;
+    for (let i = 0; i + 1 < (arr || []).length; i += 2) {
+      cum += arr[i + 1];
+      out.push([arr[i], cum]);
+    }
+    return out;
+  }
+  async function orderBook(appid, hash) {
+    const url = `${ORIGIN}/market/orderbook?q=Load&qp=${encodeURIComponent(JSON.stringify([Number(appid), hash]))}`;
+    const d = await schedule("hist", async () => {
+      const r = await fetch(url, { credentials: "include", headers: { "x-valve-action-type": "queryAction" } });
+      if (r.status === 429) throw new HttpError(429, L("steam.steamTooManyRequests429"));
+      if (!r.ok) throw new HttpError(r.status);
+      return r.json();
+    });
+    const b = d?.data?.success ? d.data.data : null;
+    if (!b) throw new Error(NO_ORDERS());
+    return parseOrderBook(b);
+  }
+  function parseOrderBook(b) {
+    return {
+      highestBuy: b.amtMaxBuyOrder || null,
+      lowestSell: b.amtMinSellOrder || null,
+      buyGraph: compactToGraph(b.rgCompactBuyOrders),
+      sellGraph: compactToGraph(b.rgCompactSellOrders),
+      buyCount: b.cBuyOrders || 0,
+      sellCount: b.cSellOrders || 0,
+      currency: b.eCurrency,
+      at: Date.now()
+    };
+  }
+  var QUOTE_GAMES = 40;
+  var QUOTE_PAGES = 20;
+  async function steamItemQuotes(hashes, isCancelled = () => false) {
+    const out = /* @__PURE__ */ new Map(), left = new Set(hashes.filter((h) => /^\d+-/.test(h)));
+    const gameOf = (h) => h.slice(0, h.indexOf("-"));
+    if (Date.now() < (shared().quote?.pauseUntil || 0)) return out;
+    const currency = wallet().currency;
+    const ask2 = (q) => schedule("quote", async () => {
+      countReq("url:/market/actions");
+      const r = await fetch(`${ORIGIN}/market/actions?q=Search&qp=${encodeURIComponent(JSON.stringify([q]))}`, { credentials: "include", headers: { "x-valve-action-type": "queryAction" } });
+      if (r.status === 429) throw new HttpError(429, L("steam.steamTooManyRequests429"));
+      if (!r.ok) throw new HttpError(r.status);
+      return (await r.json())?.data;
+    }, { retry: false });
+    try {
+      for (const itemClass of [["item_class_2"], null]) {
+        const games = [...new Set([...left].map(gameOf))];
+        for (let i = 0; i < games.length; i += QUOTE_GAMES) {
+          const part = new Set(games.slice(i, i + QUOTE_GAMES));
+          const filters = { Game: [...part].map((g) => `app_${g}`), ...itemClass ? { item_class: itemClass } : {} };
+          for (let start = 0, total = Infinity, pages2 = 0; start < total && pages2 < QUOTE_PAGES; pages2++) {
+            if (isCancelled() || ![...left].some((h) => part.has(gameOf(h)))) break;
+            const d = await ask2({ appid: 753, strQuery: "", start, count: 100, filters });
+            const rows3 = d?.results || [];
+            if (!rows3.length) break;
+            if (rows3[0].eCurrency !== currency) return out;
+            for (const [h, q] of parseQuotes(rows3, currency)) if (left.delete(h)) out.set(h, q);
+            total = d.total_count || 0;
+            start += rows3.length;
+          }
+        }
+        if (!left.size) break;
+      }
+    } catch (e) {
+      console.warn("[Flipster] quick price check failed, using order books", e);
+    }
+    return out;
+  }
+  var orderBookBroken = false;
+  var histWarned = false;
+  async function histogram(appid, hash) {
+    if (!orderBookBroken) {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await orderBook(appid, hash);
+        } catch (e) {
+          if (e.status === 429) throw e;
+          if (e.status === 404) {
+            orderBookBroken = true;
+            break;
+          }
+          if (e.message === NO_ORDERS()) throw new Error(L("steam.noOrderDataCheckThe", { hash }));
+          if (e.status >= 500 && attempt === 0) {
+            await sleep(1500);
+            continue;
+          }
+          if (!histWarned) {
+            histWarned = true;
+            console.warn("[Flipster] orderbook failed, trying legacy histogram", e);
+          }
+          break;
+        }
+      }
+    }
+    return legacyHistogram(appid, hash);
+  }
+  async function legacyHistogram(appid, hash) {
+    const id = await nameId(appid, hash);
+    const w = wallet();
+    const d = await schedule(
+      "hist",
+      () => getJSON(`${ORIGIN}/market/itemordershistogram?country=${w.country || "PL"}&language=english&currency=${w.currency}&item_nameid=${id}&two_factor=0`)
+    );
+    if (!d.success) throw new Error(NO_ORDERS());
+    return {
+      highestBuy: d.highest_buy_order ? parseInt(d.highest_buy_order, 10) : null,
+      lowestSell: d.lowest_sell_order ? parseInt(d.lowest_sell_order, 10) : null,
+      buyGraph: graph(d.buy_order_graph),
+      sellGraph: graph(d.sell_order_graph),
+      buyCount: int(d.buy_order_count),
+      sellCount: int(d.sell_order_count),
+      at: Date.now()
+    };
+  }
+  var priceHistory = (appid, hash, { remember = false, force = false } = {}) => cached(`ph|${appid}|${hash}`, force ? 0 : ttl(), () => fetchPriceHistory(appid, hash), (v) => remember && v?.length > 0);
+  async function fetchPriceHistory(appid, hash) {
+    let d;
+    try {
+      d = await schedule("market", () => getJSON(`${ORIGIN}/market/pricehistory/?appid=${appid}&market_hash_name=${encodeURIComponent(hash)}`));
+    } catch (e) {
+      if (e.status === 429) throw e;
+      d = null;
+    }
+    if (!d?.success) {
+      const url = `${ORIGIN}/market/actions?q=QueryPriceHistory&qp=${encodeURIComponent(JSON.stringify([Number(appid), hash]))}`;
+      const r = await schedule("market", () => fetch(url, { credentials: "include", headers: { "x-valve-action-type": "queryAction" } }).then((x) => x.json()));
+      const inner = r?.data?.data ?? r?.data;
+      d = { success: true, prices: Array.isArray(inner) ? inner : inner?.prices || [] };
+    }
+    if (!d.prices?.length) throw new Error(L("steam.noPriceHistory"));
+    return (d.prices || []).map((p) => Array.isArray(p) ? { t: Date.parse(String(p[0]).replace(/: \+0$/, ":00 +0000")), price: Math.round(p[1] * 100), vol: parseInt(p[2], 10) || 0 } : { t: p.time * 1e3, price: Math.round(p.price_median * 100), vol: parseInt(p.purchases, 10) || 0 });
+  }
+  var myHistoryPage = (start, count = 500) => schedule("market", () => getJSON(`${ORIGIN}/market/myhistory/render/?query=&start=${start}&count=${count}&norender=1`));
+  var myHistoryHtmlPage = (start, count = 100) => schedule("market", () => getJSON(`${ORIGIN}/market/myhistory/render/?query=&start=${start}&count=${count}&l=english`));
+  function gmJSON(url) {
+    return new Promise((resolve, reject) => {
+      if (typeof GM_xmlhttpRequest !== "function") return reject(new Error(L("steam.gmXmlhttprequestUnavailable")));
+      GM_xmlhttpRequest({
+        method: "GET",
+        url,
+        headers: { Accept: "application/json" },
+        timeout: 3e4,
+        onload: (r) => {
+          if (r.status === 429) return reject(new HttpError(429, L("steam.externalServiceRequestLimitTry")));
+          if (r.status >= 400) return reject(new HttpError(r.status));
+          try {
+            resolve(JSON.parse(r.responseText));
+          } catch {
+            reject(new Error(L("steam.invalidResponse")));
+          }
+        },
+        onerror: () => reject(new Error(L("steam.networkError"))),
+        ontimeout: () => reject(new Error("Timeout"))
+      });
+    });
+  }
+
+  // src/core/prices.js
+  var cache = bucket("prices");
+  function cached2(appid, hash) {
+    return cache.get(appid + "|" + hash) || null;
+  }
+  function fresh(appid, hash, maxAgeMin = settings.cacheMin) {
+    const c = cached2(appid, hash);
+    return c && Date.now() - c.at < maxAgeMin * 6e4 ? c : null;
+  }
+  async function steamPrice(appid, hash, { force = false } = {}) {
+    if (!force) {
+      const f = fresh(appid, hash);
+      if (f) return f;
+    }
+    const p = await priceOverview(appid, hash);
+    const v = { ...p, at: Date.now(), lowAt: Date.now() };
+    cache.set(appid + "|" + hash, v);
+    return v;
+  }
+  function hasLowest(appid, hash, maxAgeMin) {
+    const c = cached2(appid, hash);
+    return !!c && c.lowAt != null && Date.now() - c.lowAt < maxAgeMin * 6e4;
+  }
+  async function lowestPrices(list2, { onEach, isCancelled, force = false, maxAgeMin = 360 } = {}) {
+    const seen = /* @__PURE__ */ new Set();
+    const todo = list2.filter(({ appid, hash }) => {
+      const k = appid + "|" + hash;
+      if (!hash || seen.has(k)) return false;
+      seen.add(k);
+      return force || !hasLowest(appid, hash, maxAgeMin) || !cached2(appid, hash)?.ask;
+    });
+    let done = 0;
+    for (const { appid, hash } of todo) {
+      if (isCancelled?.()) break;
+      try {
+        const h = await hist(appid, hash, force ? 0 : 6e4);
+        onEach?.(hash, h.lowestSell, null, ++done, todo.length);
+      } catch (e) {
+        if (e.status === 400 || e.status === 404 || /brak danych o zleceniach|nie udało się pobrać zleceń|no order data|couldn't load buy orders/.test(e.message || "")) {
+          const k = appid + "|" + hash;
+          const old = cached2(appid, hash);
+          cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: old?.lowest ?? null, lowAt: Date.now(), ask: old?.ask ?? [] });
+        }
+        onEach?.(hash, null, e, ++done, todo.length);
+        if (e.status === 429) break;
+      }
+    }
+    return todo.length;
+  }
+  function pruneCache(days = 14) {
+    const all3 = cache.all();
+    const lim = Date.now() - days * 864e5;
+    let n = 0;
+    for (const k of Object.keys(all3)) if (Math.max(all3[k].at || 0, all3[k].lowAt || 0) < lim) {
+      delete all3[k];
+      n++;
+    }
+    if (n) cache.replace(all3);
+  }
+  var hcache = /* @__PURE__ */ new Map();
+  async function hist(appid, hash, maxAgeMs = 6e4) {
+    const k = appid + "|" + hash;
+    const c = hcache.get(k);
+    if (c && Date.now() - c.at < maxAgeMs) return c;
+    if (inflight2.has(k)) return inflight2.get(k);
+    const p = (async () => {
+      const d = await get2("ob|" + k, Math.min(maxAgeMs, ttl()));
+      if (d) {
+        hcache.set(k, d);
+        return d;
+      }
+      return fetchHist(appid, hash, k);
+    })().finally(() => inflight2.delete(k));
+    inflight2.set(k, p);
+    return p;
+  }
+  async function peekHist(appid, hash, maxAgeMs) {
+    const k = appid + "|" + hash;
+    const c = hcache.get(k);
+    if (c && Date.now() - c.at < maxAgeMs) return c;
+    const d = await get2("ob|" + k, Math.min(maxAgeMs, ttl()));
+    if (d) hcache.set(k, d);
+    return d || null;
+  }
+  var inflight2 = /* @__PURE__ */ new Map();
+  async function fetchHist(appid, hash, k) {
+    const h = await histogram(appid, hash);
+    hcache.set(k, h);
+    if (ttl() > 0) put("ob|" + k, h);
+    const old = cached2(appid, hash);
+    cache.set(k, { median: null, volume: null, at: 0, ...old, lowest: h.lowestSell ?? old?.lowest ?? null, lowAt: Date.now(), ask: h.sellGraph?.slice(0, 25) || null, bid: h.highestBuy ?? null });
+    return h;
+  }
+
+  // src/core/jobs.js
+  var chain = Promise.resolve();
+  function withLock(name, fn) {
+    const p = chain.then(() => fn());
+    chain = p.catch(() => {
+    });
+    return p;
+  }
+  function token() {
+    let c = false;
+    return { cancel: () => c = true, get cancelled() {
+      return c;
+    } };
+  }
+  var TAB_ID = Math.random().toString(36).slice(2);
+  var STALE = 45e3;
+  var leader = false;
+  function isLeader() {
+    return leader;
+  }
+  function startLeaderElection(onChange) {
+    const tick2 = () => {
+      const cur = get("leader", null);
+      const now = Date.now();
+      const mine = cur?.id === TAB_ID;
+      if (!cur || mine || now - cur.at > STALE) {
+        set("leader", { id: TAB_ID, at: now });
+        if (!leader) {
+          leader = true;
+          onChange?.(true);
+        }
+      } else if (leader) {
+        leader = false;
+        onChange?.(false);
+      }
+    };
+    tick2();
+    setInterval(tick2, 15e3);
+    window.addEventListener("beforeunload", () => {
+      if (leader) set("leader", null);
+    });
+  }
+  function every(name, minutes, enabled, fn, onState) {
+    let next = Date.now() + 15e3;
+    let runningNow = false;
+    const loop = async () => {
+      for (; ; ) {
+        await sleep(5e3);
+        onState?.({ next, running: runningNow, enabled: enabled(), leader });
+        if (!enabled() || !leader || runningNow) continue;
+        if (Date.now() < next) continue;
+        runningNow = true;
+        try {
+          await fn();
+        } catch (e) {
+          console.error("[Flipster]", name, e);
+        }
+        runningNow = false;
+        next = Date.now() + Math.max(1, minutes()) * 6e4;
+      }
+    };
+    loop();
+    return {
+      runNow() {
+        next = 0;
+      },
+      reschedule() {
+        next = Date.now() + Math.max(1, minutes()) * 6e4;
+      },
+      get next() {
+        return next;
+      }
+    };
   }
 
   // src/features/relist-engine.js
@@ -11144,12 +11212,20 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   }
   async function competitionFor(list2, tk, { quiet = false } = {}) {
     const uniq = [...new Map(list2.map((r) => [r.appid + "|" + r.hash, r])).values()].sort((a, b) => (a.h?.at || 0) - (b.h?.at || 0));
+    const known = /* @__PURE__ */ new Map();
+    for (const r of uniq) {
+      if (r.appid !== "753") continue;
+      const b = r.h || await peekHist(r.appid, r.hash, BOOK_MAX_AGE);
+      if (b && Date.now() - b.at < BOOK_MAX_AGE) known.set(r.hash, b);
+    }
+    const quotes = known.size >= 4 ? await steamItemQuotes([...known.keys()], () => tk?.cancelled) : /* @__PURE__ */ new Map();
     let i = 0;
     for (const r of uniq) {
       if (tk?.cancelled) break;
       if (!quiet) progress(++i, uniq.length);
       try {
-        const h = await hist(r.appid, r.hash, quiet ? 6e4 : 5e3);
+        const kept = r.appid === "753" ? known.get(r.hash) : null;
+        const h = bookStillGood(kept, quotes.get(r.hash), Date.now(), bookMaxAge(r.hash)) ? kept : await hist(r.appid, r.hash, quiet ? 6e4 : 5e3);
         const comp = competitorSell(h.sellGraph, myPriceMap(r.hash), settings.ignoreBelow ?? 2, skipChooser(r.hash, (p) => receivedFromBuyer2(p, r.pub)));
         const raw = competitorSell(h.sellGraph, myPriceMap(r.hash));
         rows.filter((x) => x.hash === r.hash).forEach((x) => {
@@ -13190,7 +13266,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     const tg = (k) => `<label class="tgl"><input type="checkbox" data-k="${k}" ${settings[k] ? "checked" : ""}><span class="tr"></span></label>`;
     const row = (t, d, ctl = "") => `<div class="set-row"><div class="txt"><div class="t">${t}</div>${d ? `<div class="d">${d}</div>` : ""}</div>${ctl ? `<div class="ctl">${ctl}</div>` : ""}</div>`;
     const famous = starterSummary().join("\n") + "\n\n" + L("settings.sources") + ": csdb.gg, csgoskins.gg, skinscanner.gg";
-    const lanes2 = Object.entries(laneStats()).map(([k, v]) => `${{ hist: L("settings.pricesOrders"), price: L("settings.volume"), inv: L("settings.inventory"), market: L("settings.listingsHistory"), page: L("settings.pages"), search: L("settings.search") }[k] || k} ${L("settings.every")} ${(v / 1e3).toFixed(1).replace(".", ",")} s`).join(" \xB7 ");
+    const lanes2 = Object.entries(laneStats()).map(([k, v]) => `${{ hist: L("settings.pricesOrders"), price: L("settings.volume"), inv: L("settings.inventory"), market: L("settings.listingsHistory"), page: L("settings.pages"), search: L("settings.search"), quote: L("settings.quickPrices") }[k] || k} ${L("settings.every")} ${(v / 1e3).toFixed(1).replace(".", ",")} s`).join(" \xB7 ");
     root2.innerHTML = `
     <style>
       #stt .set{padding:12px 14px 24px;display:flex;flex-direction:column;gap:12px}
@@ -13373,6 +13449,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     inv: L("settings.inventory"),
     page: L("settings.itemPages"),
     search: L("settings.marketSearchScannerCases"),
+    quote: L("settings.quickPriceCheck"),
     write: L("settings.listingRemovingOrders")
   };
   function reqInfo(root2) {
@@ -13468,5 +13545,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "22.11.2026, 23:02:43" : "?");
+  console.info("[Flipster] build", true ? "22.11.2026, 23:48:10" : "?");
 })();

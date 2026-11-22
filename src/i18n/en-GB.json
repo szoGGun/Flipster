@@ -1389,6 +1389,8 @@
     "inventory": "inventory",
     "listingsHistory": "listings/history",
     "pages": "pages",
+    "quickPrices": "quick prices",
+    "quickPriceCheck": "Quick price check of Steam items",
     "search": "search",
     "every": "every",
     "general": "General",

@@ -3,6 +3,7 @@ import * as store from './store.js';
 import { settings } from './store.js';
 import { buyerFromReceived as _b2r, receivedFromBuyer as _r2b, DEFAULT_WALLET, syncMinBuyer } from './fees.js';
 import * as disk from './cache.js';
+import { parseQuotes } from './analysis.js';
 import { L } from './i18n.js';
 // "no order data": prices.js recognises it by text (in either language)
 const NO_ORDERS = () => L('steam.noOrderData');
@@ -200,6 +201,7 @@ const LANES = {
   inv:    { start: 2500, min: 1500, max: 20000 },  // /inventory, strict
   market: { start: 1200, min: 600,  max: 10000 },  // mylistings, history, search
   search: { start: 1000, min: 500,  max: 15000 },  // /market/search/render (case contents), own lane so a long scan doesn't slow relisting
+  quote:  { start: 1000, min: 600,  max: 15000 },  // /market/actions Search (Steam items, 100 per request), own lane so a scan doesn't hold up a refresh
   write:  { fixed: () => settings.delay },         // remove/sell/order, never adaptive
   ext:    { fixed: () => 500 },                    // outside services (NBP exchange rates)
 };
@@ -259,7 +261,7 @@ export function laneStats() {
   return Object.fromEntries(Object.keys(LANES).filter((k) => !LANES[k].fixed).map((k) => [k, all[k]?.iv ?? LANES[k].start]));
 }
 
-export function schedule(lane, fn) {
+export function schedule(lane, fn, { retry = true } = {}) {
   const cfg = LANES[lane] || { start: 1000, min: 500, max: 10000 };
   const l = (lanes[lane] ||= { chain: Promise.resolve(), ok: 0 });
   const interval = () => (cfg.fixed ? cfg.fixed() : Math.min(cfg.max, Math.max(cfg.min, shared()[lane]?.iv ?? cfg.start)));
@@ -294,7 +296,7 @@ export function schedule(lane, fn) {
             pauseUntil: Date.now() + backoff,
           });
           bus.emit('ratelimit', lane, backoff);
-          if (attempt < 3) continue;
+          if (retry && attempt < 3) continue;
         }
         throw e;
       }
@@ -672,6 +674,49 @@ export function parseOrderBook(b) {
     currency: b.eCurrency,
     at: Date.now(),
   };
+}
+
+/**
+ * Cheapest price and number of listings of many Steam items (cards, backgrounds…) from the new market's Search action:
+ * up to 100 rows a request, filtered by game. Trading cards first (fewer rows), then the rest of what's still missing.
+ * Only a shortcut: on any problem it returns what it has and the caller fetches the order books as before.
+ */
+const QUOTE_GAMES = 40, QUOTE_PAGES = 20;
+export async function steamItemQuotes(hashes, isCancelled = () => false) {
+  const out = new Map(), left = new Set(hashes.filter((h) => /^\d+-/.test(h)));
+  const gameOf = (h) => h.slice(0, h.indexOf('-'));
+  if (Date.now() < (shared().quote?.pauseUntil || 0)) return out; // after a 429: not now, and don't wait for it
+  const currency = wallet().currency;
+  const ask = (q) => schedule('quote', async () => {
+    countReq('url:/market/actions');
+    const r = await fetch(`${ORIGIN}/market/actions?q=Search&qp=${encodeURIComponent(JSON.stringify([q]))}`, { credentials: 'include', headers: { 'x-valve-action-type': 'queryAction' } });
+    if (r.status === 429) throw new HttpError(429, L('steam.steamTooManyRequests429'));
+    if (!r.ok) throw new HttpError(r.status);
+    return (await r.json())?.data;
+  }, { retry: false });
+  try {
+    for (const itemClass of [['item_class_2'], null]) {
+      const games = [...new Set([...left].map(gameOf))];
+      for (let i = 0; i < games.length; i += QUOTE_GAMES) {
+        const part = new Set(games.slice(i, i + QUOTE_GAMES));
+        const filters = { Game: [...part].map((g) => `app_${g}`), ...(itemClass ? { item_class: itemClass } : {}) };
+        for (let start = 0, total = Infinity, pages = 0; start < total && pages < QUOTE_PAGES; pages++) {
+          if (isCancelled() || ![...left].some((h) => part.has(gameOf(h)))) break;
+          const d = await ask({ appid: 753, strQuery: '', start, count: 100, filters });
+          const rows = d?.results || [];
+          if (!rows.length) break;
+          if (rows[0].eCurrency !== currency) return out; // another currency can't be compared with the order book
+          for (const [h, q] of parseQuotes(rows, currency)) if (left.delete(h)) out.set(h, q);
+          total = d.total_count || 0;
+          start += rows.length;
+        }
+      }
+      if (!left.size) break;
+    }
+  } catch (e) {
+    console.warn('[Flipster] quick price check failed, using order books', e);
+  }
+  return out;
 }
 
 let orderBookBroken = false;

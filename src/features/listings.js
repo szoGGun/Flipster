@@ -4,7 +4,7 @@ import * as prices from '../core/prices.js';
 import * as store from '../core/store.js';
 import { settings } from '../core/store.js';
 import { withLock, token, every, isLeader } from '../core/jobs.js';
-import { competitorSell, relistTarget, optimalSellPrice, LIST_SHARE, listAdviceFill, levels, sellChance, horizonOf } from '../core/analysis.js';
+import { competitorSell, relistTarget, optimalSellPrice, LIST_SHARE, listAdviceFill, levels, sellChance, horizonOf, bookStillGood, bookMaxAge, BOOK_MAX_AGE } from '../core/analysis.js';
 import { parsePrice, toInput, esc, timeAgo, fmtWhen, daysTxt, wearShort, shareTxt } from '../core/util.js';
 import { relist } from './relist-engine.js';
 import * as sig from './sellsignals.js';
@@ -627,12 +627,22 @@ function summary(running = false) {
 async function competitionFor(list, tk, { quiet = false } = {}) {
   // the ones without market data first, then the longest unchecked
   const uniq = [...new Map(list.map((r) => [r.appid + '|' + r.hash, r])).values()].sort((a, b) => (a.h?.at || 0) - (b.h?.at || 0));
+  // Steam items: one search request answers for up to 100 of them. A saved book whose cheapest price and number of
+  // listings haven't changed isn't fetched again (a few items aren't worth the extra request)
+  const known = new Map();
+  for (const r of uniq) {
+    if (r.appid !== '753') continue;
+    const b = r.h || await prices.peekHist(r.appid, r.hash, BOOK_MAX_AGE);
+    if (b && Date.now() - b.at < BOOK_MAX_AGE) known.set(r.hash, b);
+  }
+  const quotes = known.size >= 4 ? await steam.steamItemQuotes([...known.keys()], () => tk?.cancelled) : new Map();
   let i = 0;
   for (const r of uniq) {
     if (tk?.cancelled) break;
     if (!quiet) ui.progress(++i, uniq.length);
     try {
-      const h = await prices.hist(r.appid, r.hash, quiet ? 60000 : 5000);
+      const kept = r.appid === '753' ? known.get(r.hash) : null;
+      const h = bookStillGood(kept, quotes.get(r.hash), Date.now(), bookMaxAge(r.hash)) ? kept : await prices.hist(r.appid, r.hash, quiet ? 60000 : 5000);
       const comp = competitorSell(h.sellGraph, myPriceMap(r.hash), settings.ignoreBelow ?? 2, sig.skipChooser(r.hash, (p) => steam.receivedFromBuyer(p, r.pub)));
       const raw = competitorSell(h.sellGraph, myPriceMap(r.hash)); // the very cheapest other, lone ones included
       rows.filter((x) => x.hash === r.hash).forEach((x) => {

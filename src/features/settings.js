@@ -18,7 +18,7 @@ export function mount(root) {
   const tg = (k) => `<label class="tgl"><input type="checkbox" data-k="${k}" ${settings[k] ? 'checked' : ''}><span class="tr"></span></label>`;
   const row = (t, d, ctl = '') => `<div class="set-row"><div class="txt"><div class="t">${t}</div>${d ? `<div class="d">${d}</div>` : ''}</div>${ctl ? `<div class="ctl">${ctl}</div>` : ''}</div>`;
   const famous = starterSummary().join('\n') + '\n\n' + L('settings.sources') + ': csdb.gg, csgoskins.gg, skinscanner.gg';
-  const lanes = Object.entries(steam.laneStats()).map(([k, v]) => `${{ hist: L('settings.pricesOrders'), price: L('settings.volume'), inv: L('settings.inventory'), market: L('settings.listingsHistory'), page: L('settings.pages'), search: L('settings.search') }[k] || k} ${L('settings.every')} ${(v / 1000).toFixed(1).replace('.', ',')} s`).join(' · ');
+  const lanes = Object.entries(steam.laneStats()).map(([k, v]) => `${{ hist: L('settings.pricesOrders'), price: L('settings.volume'), inv: L('settings.inventory'), market: L('settings.listingsHistory'), page: L('settings.pages'), search: L('settings.search'), quote: L('settings.quickPrices') }[k] || k} ${L('settings.every')} ${(v / 1000).toFixed(1).replace('.', ',')} s`).join(' · ');
   root.innerHTML = `
     <style>
       #stt .set{padding:12px 14px 24px;display:flex;flex-direction:column;gap:12px}
@@ -160,7 +160,7 @@ export function mount(root) {
 // ---------------------------------------------------------------- the request counter (steam.requestStats)
 const LANE_NAMES = {
   hist: L('settings.orderBooksPricesCompetition'), market: L('settings.yourListingsHistoryPriceHistories'), price: L('settings.24HVolume'),
-  inv: L('settings.inventory'), page: L('settings.itemPages'), search: L('settings.marketSearchScannerCases'), write: L('settings.listingRemovingOrders'),
+  inv: L('settings.inventory'), page: L('settings.itemPages'), search: L('settings.marketSearchScannerCases'), quote: L('settings.quickPriceCheck'), write: L('settings.listingRemovingOrders'),
 };
 function reqInfo(root) {
   const box = root.querySelector('#st-req');

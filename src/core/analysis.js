@@ -308,6 +308,26 @@ export function parseMyHistoryHtml(d, parse, now = new Date(), dateOf = null) {
   return out;
 }
 
+/**
+ * Rows of the new market's Search action → hash → { low (cheapest listing, buyer price), sell (listings) }. Only rows in
+ * the wallet currency: compared with the order book, which is in that currency.
+ */
+export function parseQuotes(rows, currency) {
+  const out = new Map();
+  for (const x of rows || []) {
+    if (!x?.strHash || x.eCurrency !== currency) continue;
+    const low = parsePriceCents(x.strMinSellSubtotal);
+    if (low > 0 && Number.isInteger(x.cSellOrders)) out.set(x.strHash, { low, sell: x.cSellOrders });
+  }
+  return out;
+}
+// the search says nothing about buy orders or deeper listings, so a book is reused for this long at most
+export const BOOK_MAX_AGE = 10 * 60000;
+/** the saved order book still describes the market: same cheapest price, same number of listings, not too old */
+export const bookStillGood = (h, q, now = Date.now(), maxAge = BOOK_MAX_AGE) => !!h && !!q && now - h.at < maxAge && q.low === h.lowestSell && q.sell === h.sellCount;
+/** 5-10 minutes, fixed per item: books fetched together don't all expire in the same refresh */
+export const bookMaxAge = (hash) => { let n = 0; for (const c of String(hash)) n = (n * 31 + c.charCodeAt(0)) % 1000; return BOOK_MAX_AGE * (0.5 + n / 2000); };
+
 function parsePriceCents(s) {
   const m = String(s).replace(/\(.*?\)/g, '').match(/[\d][\d\s.,]*/);
   if (!m) return NaN;
