@@ -1532,13 +1532,15 @@ function nowPrice(hash, appid = 730) {
   const c = prices.cached(app, hash);
   if (c?.lowest) return c.lowest;
   const k = app + '|' + hash;
-  if (!prices.hasLowest(app, hash, 360) && (nowQueue.has(k) || nowQueue.size < 150)) {
+  // (Steam items come from one search for many of them, so they aren't held back by the limit of one round)
+  if (!prices.hasLowest(app, hash, 360) && (nowQueue.has(k) || nowQueue.size < 150 || app === '753')) {
     nowQueue.set(k, { appid: app, hash });
     clearTimeout(nowTimer);
     nowTimer = setTimeout(() => {
       const list = [...nowQueue.values()];
       nowQueue.clear();
-      prices.lowestPrices(list).then(() => { render(); renderInv(); });
+      let last = 0;
+      prices.lowestPrices(list, { priceOnly: true, onEach: () => { if (Date.now() - last > 1500) { last = Date.now(); render(true); } } }).then(() => { render(); renderInv(); });
     }, 1000);
   }
   return null;

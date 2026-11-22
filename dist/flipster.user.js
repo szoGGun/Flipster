@@ -3880,7 +3880,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 00:09:54" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 00:15:20" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -5881,13 +5881,13 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     const c = cached2(appid, hash);
     return !!c && c.lowAt != null && Date.now() - c.lowAt < maxAgeMin * 6e4;
   }
-  async function lowestPrices(list2, { onEach, isCancelled, force = false, maxAgeMin = 360 } = {}) {
+  async function lowestPrices(list2, { onEach, isCancelled, force = false, maxAgeMin = 360, priceOnly = false } = {}) {
     const seen = /* @__PURE__ */ new Set();
     const todo = list2.filter(({ appid, hash }) => {
       const k = appid + "|" + hash;
       if (!hash || seen.has(k)) return false;
       seen.add(k);
-      return force || !hasLowest(appid, hash, maxAgeMin) || !cached2(appid, hash)?.ask;
+      return force || !hasLowest(appid, hash, maxAgeMin) || !priceOnly && !cached2(appid, hash)?.ask;
     });
     let done = 0, queue = todo;
     const steamItems = todo.filter((x) => String(x.appid) === "753");
@@ -5898,7 +5898,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
         const q = String(appid) === "753" ? quotes.get(hash) : null;
         if (!q) return true;
         const c = cached2(appid, hash);
-        const same = savedAskGood(c, q, now, maxBook);
+        const same = priceOnly || savedAskGood(c, q, now, maxBook);
         cache.set(appid + "|" + hash, { median: null, volume: null, at: 0, ...c, lowest: q.low, lowAt: now });
         onEach?.(hash, q.low, null, same ? ++done : done, todo.length);
         return !same;
@@ -10109,13 +10109,19 @@ ${L("history.terminalsTerminalInGamePurchase")}: ${fmt(spentTerm)}`)}">${spentTe
     const c = cached2(app2, hash);
     if (c?.lowest) return c.lowest;
     const k = app2 + "|" + hash;
-    if (!hasLowest(app2, hash, 360) && (nowQueue.has(k) || nowQueue.size < 150)) {
+    if (!hasLowest(app2, hash, 360) && (nowQueue.has(k) || nowQueue.size < 150 || app2 === "753")) {
       nowQueue.set(k, { appid: app2, hash });
       clearTimeout(nowTimer);
       nowTimer = setTimeout(() => {
         const list2 = [...nowQueue.values()];
         nowQueue.clear();
-        lowestPrices(list2).then(() => {
+        let last = 0;
+        lowestPrices(list2, { priceOnly: true, onEach: () => {
+          if (Date.now() - last > 1500) {
+            last = Date.now();
+            render2(true);
+          }
+        } }).then(() => {
           render2();
           renderInv();
         });
@@ -13577,5 +13583,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "23.11.2026, 00:09:54" : "?");
+  console.info("[Flipster] build", true ? "23.11.2026, 00:15:20" : "?");
 })();

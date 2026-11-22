@@ -38,14 +38,14 @@ export function hasLowest(appid, hash, maxAgeMin) {
  * Fetches only items without a lowest price younger than maxAgeMin (unless force).
  * onEach(hash, lowest|null, err)
  */
-export async function lowestPrices(list, { onEach, isCancelled, force = false, maxAgeMin = 360 } = {}) {
+export async function lowestPrices(list, { onEach, isCancelled, force = false, maxAgeMin = 360, priceOnly = false } = {}) {
   const seen = new Set();
   const todo = list.filter(({ appid, hash }) => {
     const k = appid + '|' + hash;
     if (!hash || seen.has(k)) return false;
     seen.add(k);
     // (also once for items valued before the listings were kept, the listing advice needs them)
-    return force || !hasLowest(appid, hash, maxAgeMin) || !cached(appid, hash)?.ask;
+    return force || !hasLowest(appid, hash, maxAgeMin) || (!priceOnly && !cached(appid, hash)?.ask);
   });
   let done = 0, queue = todo;
   // Steam items: one search request prices up to 100. Its price counts right away; the order book (the listings and
@@ -58,7 +58,7 @@ export async function lowestPrices(list, { onEach, isCancelled, force = false, m
       const q = String(appid) === '753' ? quotes.get(hash) : null;
       if (!q) return true;
       const c = cached(appid, hash);
-      const same = savedAskGood(c, q, now, maxBook);
+      const same = priceOnly || savedAskGood(c, q, now, maxBook); // priceOnly: the caller shows just the price
       cache.set(appid + '|' + hash, { median: null, volume: null, at: 0, ...c, lowest: q.low, lowAt: now });
       onEach?.(hash, q.low, null, same ? ++done : done, todo.length);
       return !same;
