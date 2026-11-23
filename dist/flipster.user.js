@@ -555,6 +555,18 @@
       salePrice: "Sale price",
       buyOrdersNow: "Buy orders now",
       lowestListingNow: "Lowest listing now",
+      chartAll: "All",
+      chartYear: "1 year",
+      chartDays: "{n} days",
+      chartUnits: "{n} pcs",
+      chartRange: "{lo} to {hi}",
+      chartHigh: "max {v}",
+      chartLow: "min {v}",
+      chartNoSales: "No sales in this period",
+      chartGap: "no sales for {n} months",
+      chartGapShort: "{n} mo",
+      chartSale: "this sale {v}",
+      chartChange: "change {v}",
       watch: "Watch",
       anOrderACentAbove: "An order one cent above the orders actually in the book",
       placeBuyOrder: "Place buy order",
@@ -726,10 +738,11 @@
       totalPerItem: "total per item",
       filterItems: "Filter items\u2026",
       showHideTheResultMonth: "Show / hide the monthly breakdown of flips, cases, spent and received",
-      months: "Months",
       showHideTheFlipProfit: "Show / hide the flip profit chart",
-      chart: "Chart",
-      eachSaleIsPairedWith: "Profit is calculated with FIFO, each sale is paired with the oldest unsold purchase of the same item. Sale amounts are already after Steam's fee. Sales without a market purchase (drops, cases, trades) are counted separately as \u201Cincome without cost\u201D.",
+      chartFlips: "Flip chart",
+      chartBalance: "Balance chart",
+      showHideTheBalance: "Show or hide the running balance, received from sales minus spent on the market",
+      eachSaleIsPairedWith: "Profit is calculated with FIFO, each sale is paired with the oldest copy of the item you had at the time. Copies already opened, traded away or used up don't count as flips. Sale amounts are already after Steam's fee. Sales of copies not bought on the market (drops, cases, trades) are counted separately as \u201Cincome without cost\u201D.",
       allEvents: "all events",
       trades2: "trades",
       cases: "cases",
@@ -750,6 +763,7 @@
       sale: "sale",
       downloadedEvents: "downloaded {start}/{total} events",
       historyStoppedISavedWhat: "History: stopped, I saved what I managed to download.",
+      steamGaveNoFullHistory: "History: Steam didn't return the whole history, keeping the saved trades. Try again later.",
       historyNewTradesInTotal: "History: +{added} new trades ({trades} in total).",
       knownPattern: ", \u{1F48E} known pattern {knownList}",
       noneIsAKnownRare: ", none is a known rare pattern",
@@ -970,6 +984,8 @@
       total2: "Total",
       tooFewSalesToDraw: "Too few sales to draw a chart.",
       cumulativeFlipProfit: "Cumulative flip profit",
+      cumulativeBalance: "Running balance",
+      tooFewTradesToDraw: "Too few trades to draw a chart.",
       theTableAndCardsShow: "the table and cards show only {x0} - {x1}: ",
       total3: "total: ",
       showAll: "show all",
@@ -1389,6 +1405,7 @@
       onlyOfCopiesInHave: "Only {lower} of copies in {wear} have a lower float. Click to compare with market listings.",
       clickToCompareTheFloat: "Click to compare the float with market listings.",
       tooPricey: "too pricey",
+      planSellsAtOnce: "sells right away",
       pricey: "pricey",
       cheapYouCanAskMore: "cheap, you can ask more",
       fine: "fine",
@@ -1397,7 +1414,7 @@
       tie: "tie",
       someoneIsCheaper: "someone is {buyer} cheaper",
       selected: "{sel} selected:",
-      youHaveNothingListedYou: '<tr><td colspan="6" class="empty">You have nothing listed. Items are listed from the Inventory tab.</td></tr>',
+      youHaveNothingListedYou: '<tr><td colspan="5" class="empty">You have nothing listed. Items are listed from the Inventory tab.</td></tr>',
       listed: "listed {created}",
       theAutomationShouldWatchThis: "The automation should watch this listing, but without a lowest price it skips it. Set one in \u2699.",
       theAutomationShouldWatchThis2: `The automation should watch this listing (not below {min}), but it's off. Turn it on with "\u2699 Auto" at the top.`,
@@ -2067,6 +2084,18 @@
       salePrice: "Cena transakcji",
       buyOrdersNow: "Zlecenia kupna teraz",
       lowestListingNow: "Najni\u017Csza sprzeda\u017C teraz",
+      chartAll: "Ca\u0142o\u015B\u0107",
+      chartYear: "1 rok",
+      chartDays: "{n} dni",
+      chartUnits: "{n} szt.",
+      chartRange: "od {lo} do {hi}",
+      chartHigh: "maks. {v}",
+      chartLow: "min. {v}",
+      chartNoSales: "Brak transakcji w tym okresie",
+      chartGap: "przerwa w sprzeda\u017Cy {n} mies.",
+      chartGapShort: "{n} mies.",
+      chartSale: "ta sprzeda\u017C {v}",
+      chartChange: "zmiana {v}",
       watch: "Obserwuj",
       anOrderACentAbove: "Zlecenie o grosz nad tymi, kt\xF3re realnie stoj\u0105 w ksi\u0119dze",
       placeBuyOrder: "Z\u0142\xF3\u017C zlecenie kupna",
@@ -2238,10 +2267,11 @@
       totalPerItem: "suma na przedmiot",
       filterItems: "Filtruj przedmiot\u2026",
       showHideTheResultMonth: "Poka\u017C / ukryj wynik w rozbiciu na miesi\u0105ce: flipy, skrzynie, wydane i otrzymane",
-      months: "Miesi\u0105ce",
       showHideTheFlipProfit: "Poka\u017C / ukryj wykres zysku z flip\xF3w",
-      chart: "Wykres",
-      eachSaleIsPairedWith: "Zysk liczony metod\u0105 FIFO: ka\u017Cda sprzeda\u017C jest parowana z najstarszym niesprzedanym zakupem tego samego przedmiotu. Kwoty sprzeda\u017Cy s\u0105 ju\u017C po prowizji Steama. Sprzeda\u017Ce bez zakupu na rynku (dropy, skrzynki, wymiany) s\u0105 liczone osobno jako \u201Eprzych\xF3d bez kosztu\u201D.",
+      chartFlips: "Wykres flip\xF3w",
+      chartBalance: "Wykres bilansu",
+      showHideTheBalance: "Poka\u017C lub ukryj bilans narastaj\u0105co: otrzymane ze sprzeda\u017Cy minus wydane na rynku",
+      eachSaleIsPairedWith: "Zysk liczony metod\u0105 FIFO: ka\u017Cda sprzeda\u017C jest parowana z najstarsz\u0105 sztuk\u0105 tego przedmiotu, kt\xF3r\u0105 wtedy mia\u0142e\u015B. Sztuki wcze\u015Bniej otwarte, wymienione lub zu\u017Cyte nie licz\u0105 si\u0119 jako flip. Kwoty sprzeda\u017Cy s\u0105 ju\u017C po prowizji Steama. Sprzeda\u017Ce sztuk niekupionych na rynku (dropy, skrzynki, wymiany) s\u0105 liczone osobno jako \u201Eprzych\xF3d bez kosztu\u201D.",
       allEvents: "wszystkie zdarzenia",
       trades2: "wymiany",
       cases: "skrzynie",
@@ -2262,6 +2292,7 @@
       sale: "sprzeda\u017C",
       downloadedEvents: "pobrano {start}/{total} zdarze\u0144",
       historyStoppedISavedWhat: "Historia: przerwano, zapisa\u0142em to, co zd\u0105\u017Cy\u0142em pobra\u0107.",
+      steamGaveNoFullHistory: "Historia: Steam nie zwr\xF3ci\u0142 ca\u0142ej historii, zostawiam zapisane transakcje. Spr\xF3buj ponownie p\xF3\u017Aniej.",
       historyNewTradesInTotal: "Historia: +{added} nowych transakcji (razem {trades}).",
       knownPattern: ", \u{1F48E} znany wz\xF3r: {knownList}",
       noneIsAKnownRare: ", \u017Caden nie jest znanym rzadkim wzorem",
@@ -2482,6 +2513,8 @@
       total2: "Razem",
       tooFewSalesToDraw: "Za ma\u0142o sprzeda\u017Cy, \u017Ceby narysowa\u0107 wykres.",
       cumulativeFlipProfit: "Zysk z flip\xF3w narastaj\u0105co",
+      cumulativeBalance: "Bilans narastaj\u0105co",
+      tooFewTradesToDraw: "Za ma\u0142o transakcji, \u017Ceby narysowa\u0107 wykres.",
       theTableAndCardsShow: "tabela i karty pokazuj\u0105 tylko {x0} - {x1}: ",
       total3: "razem: ",
       showAll: "poka\u017C ca\u0142o\u015B\u0107",
@@ -2901,6 +2934,7 @@
       onlyOfCopiesInHave: "Ni\u017Cszy float ma tylko {lower} egzemplarzy w stanie {wear}. Kliknij, \u017Ceby por\xF3wna\u0107 z ofertami na rynku.",
       clickToCompareTheFloat: "Kliknij, \u017Ceby por\xF3wna\u0107 float z ofertami na rynku.",
       tooPricey: "za drogo",
+      planSellsAtOnce: "sprzeda si\u0119 od razu",
       pricey: "drogo",
       cheapYouCanAskMore: "tanio, mo\u017Cesz wi\u0119cej",
       fine: "w porz\u0105dku",
@@ -2909,7 +2943,7 @@
       tie: "remis",
       someoneIsCheaper: "kto\u015B taniej o {buyer}",
       selected: "Zaznaczono {sel}:",
-      youHaveNothingListedYou: '<tr><td colspan="6" class="empty">Nie masz wystawionych przedmiot\xF3w. Wystawiasz je w zak\u0142adce Ekwipunek.</td></tr>',
+      youHaveNothingListedYou: '<tr><td colspan="5" class="empty">Nie masz wystawionych przedmiot\xF3w. Wystawiasz je w zak\u0142adce Ekwipunek.</td></tr>',
       listed: "wystawiono {created}",
       theAutomationShouldWatchThis: "Automat ma pilnowa\u0107 tej oferty, ale bez najni\u017Cszej ceny j\u0105 pominie. Ustaw j\u0105 w \u2699.",
       theAutomationShouldWatchThis2: "Automat ma pilnowa\u0107 tej oferty (nie ni\u017Cej ni\u017C {min}), ale jest wy\u0142\u0105czony: w\u0142\u0105czysz go w \u201E\u2699 Automat\u201D u g\xF3ry.",
@@ -3828,6 +3862,41 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
 #stt .msel-pop div:hover{background:#2a475e}
 #stt .msel-pop div::before{content:'';flex:none;width:13px;height:13px;border:1px solid #4a6a82;border-radius:2px;font-size:10px;line-height:13px;text-align:center;color:#fff}
 #stt .msel-pop div.on::before{content:'\u2713';background:#2a6f9c;border-color:#66c0f4}
+#stt table.flipt th{white-space:normal;line-height:1.25;vertical-align:bottom}
+#stt table.flipt th,#stt table.flipt td{padding-left:6px;padding-right:6px}
+#stt table.flipt th .stt-i{margin-left:3px}
+#stt table.flipt th:last-child,#stt table.flipt td:last-child{position:sticky;right:0;z-index:1;background:var(--bg)}
+#stt table.flipt th:last-child{z-index:2;background:var(--bg2)}
+#stt table.flipt tr:hover td:last-child{background:#1f2f42}
+#stt table.flipt td:last-child .b.s{padding:3px 6px}
+#stt .sf-lim > label:has(#s-find){min-width:92px}
+#stt table.mt{margin-bottom:8px}
+#stt .mt th.num,#stt .mt td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+#stt .mt .nil{color:#55636f}
+#stt .mt tr.y{cursor:pointer;background:rgba(255,255,255,.035)}
+#stt .mt tr.y:hover{background:rgba(255,255,255,.07)}
+#stt .mt tr.y button{display:inline-flex;align-items:center;padding:0;background:none;border:0;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+#stt .mt tr.y .car{width:16px;color:var(--mut)}
+#stt .mt tr.m td:first-child{padding-left:30px}
+#stt .mt tr.idle td{color:#7d8a96}
+#stt .mt tr.sum td{border-top:2px solid var(--ln);font-weight:600}
+#stt .pc{position:relative;padding:6px 14px 12px}
+#stt .pc-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;margin-bottom:8px}
+#stt .pc-seg{display:inline-flex;gap:2px;padding:2px;background:var(--bg3);border:1px solid var(--ln);border-radius:4px}
+#stt .pc-seg button{padding:3px 10px;background:none;border:0;border-radius:3px;color:var(--mut);font:inherit;font-size:12px;cursor:pointer}
+#stt .pc-seg button:hover{color:#fff}
+#stt .pc-seg button.on{background:var(--ln);color:#fff}
+#stt .pc-leg{display:flex;flex-wrap:wrap;gap:4px 16px;margin-left:auto;font-size:12px;color:var(--tx)}
+#stt .pc-leg span{display:inline-flex;align-items:center;gap:6px}
+#stt .pc-leg i{display:inline-block;width:18px;border-top:2px solid}
+#stt .pc-leg i.d{border-top-style:dashed}
+#stt .pc-plot{position:relative;width:100%}
+#stt .pc-plot svg{display:block;width:100%;height:auto;outline:none;touch-action:pan-y}
+#stt .pc-plot svg:focus-visible{outline:1px solid var(--acc);outline-offset:2px}
+#stt .pc-sel{position:absolute;background:rgba(102,192,244,.16);border:1px solid rgba(102,192,244,.55);pointer-events:none}
+#stt .pc-tip{position:absolute;z-index:5;min-width:96px;padding:7px 10px;background:var(--bg3);border:1px solid var(--ln);border-radius:4px;box-shadow:0 4px 14px #0008;pointer-events:none;white-space:nowrap}
+#stt .pc-tip .v{color:#fff;font-size:14px;font-weight:600}
+#stt .pc-tip .s{margin-top:1px;color:var(--mut);font-size:11px}
 #stt .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--acc,#66c0f4);border-radius:50%;animation:stt-spin .8s linear infinite;vertical-align:-2px;margin-right:8px}
 @keyframes stt-spin{to{transform:rotate(360deg)}}
 #stt .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:10px;padding:12px 14px 48px}
@@ -3919,13 +3988,14 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
 #stt .row2{display:flex;gap:10px;flex-wrap:wrap;padding:12px 14px;align-items:flex-end}
 #stt .row2 > label{flex-direction:column;align-items:flex-start;gap:3px;font-size:12px;color:var(--mut)}
 #stt .row2 > label > .lt{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-#stt svg.chart{width:100%;height:220px;display:block}
 #stt .modal{position:fixed;inset:0;background:#0009;display:flex;align-items:center;justify-content:center;z-index:99999}
 #stt .modal > div{background:var(--bg);border:1px solid var(--ln);border-radius:8px;padding:18px;max-width:520px;width:calc(100% - 32px);box-shadow:0 10px 40px #000}
 #stt .modal h3{margin:0 0 10px;color:#fff;font-weight:500}
 #stt .modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 .stt-i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:6px;border-radius:50%;border:1px solid #66c0f4;color:#66c0f4;font:700 10px/1 Georgia,serif;font-style:italic;text-transform:none;cursor:help;vertical-align:1px;user-select:none}
 .stt-i:hover,.stt-i.on{background:#66c0f4;color:#0e1621}
+.stt-i.alert{border-color:#e5b84c;color:#e5b84c;font-family:inherit;font-style:normal}
+.stt-i.alert:hover,.stt-i.alert.on{background:#e5b84c;color:#0e1621}
 #stt-tip{position:fixed;z-index:100002;max-width:300px;white-space:pre-line;background:#0e1621;border:1px solid #66c0f4;color:#c6d4df;padding:9px 11px;border-radius:6px;font:12.5px/1.5 "Motiva Sans",Arial,sans-serif;box-shadow:0 6px 24px #000c;pointer-events:none}
 .stt-badge{position:absolute;left:2px;top:2px;right:2px;font:600 10px Arial,sans-serif;color:#fff;background:#000b;padding:1px 3px;border-radius:2px;pointer-events:none;display:flex;justify-content:space-between;z-index:3}
 .stt-badge .f{color:#9bd}
@@ -3957,7 +4027,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 18:30:07" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 19:35:58" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -4285,48 +4355,6 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       arrow: (k) => k === key ? dir > 0 ? " \u25B2" : " \u25BC" : ""
     };
   }
-  function lineChart(series, { fmtY = (v) => v, fmtX = (v) => new Date(v).toLocaleDateString(), height = 220, bars = null, zero = false } = {}) {
-    const all3 = series.flatMap((s) => s.points);
-    if (!all3.length) return L("ui.noData");
-    const W = 1e3, H = height, P = { l: 70, r: 12, t: 12, b: 26 };
-    const xs = all3.map((p) => p[0]), ys = all3.map((p) => p[1]);
-    const x0 = Math.min(...xs), x1 = Math.max(...xs);
-    let y0 = Math.min(...ys), y1 = Math.max(...ys);
-    if (zero) {
-      y0 = Math.min(y0, 0);
-      y1 = Math.max(y1, 0);
-    }
-    if (y0 === y1) {
-      y0 -= 1;
-      y1 += 1;
-    }
-    const pad = (y1 - y0) * 0.08;
-    y0 -= pad;
-    y1 += pad;
-    const X = (v) => P.l + (v - x0) / (x1 - x0 || 1) * (W - P.l - P.r);
-    const Y = (v) => P.t + (1 - (v - y0) / (y1 - y0)) * (H - P.t - P.b);
-    let g = "";
-    for (let i = 0; i <= 4; i++) {
-      const v = y0 + (y1 - y0) * i / 4;
-      g += `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#2a475e" stroke-width="1"/><text x="${P.l - 6}" y="${Y(v) + 4}" fill="#8f98a0" font-size="11" text-anchor="end">${esc(fmtY(v))}</text>`;
-    }
-    for (let i = 0; i <= 5; i++) {
-      const v = x0 + (x1 - x0) * i / 5;
-      g += `<text x="${X(v)}" y="${H - 6}" fill="#8f98a0" font-size="11" text-anchor="${i === 0 ? "start" : i === 5 ? "end" : "middle"}">${esc(fmtX(v))}</text>`;
-    }
-    if (bars?.length) {
-      const bm = Math.max(...bars.map((b) => b[1])) || 1;
-      const bw = Math.max(1, (W - P.l - P.r) / bars.length - 1);
-      g += bars.map(([x, v]) => `<rect x="${X(x) - bw / 2}" width="${bw}" y="${H - P.b - v / bm * 40}" height="${v / bm * 40}" fill="#2a475e"/>`).join("");
-    }
-    if (zero) g += `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#8f98a0" stroke-width="1" stroke-dasharray="4 4"/><text x="${W - P.r - 4}" y="${Y(0) - 4}" fill="#8f98a0" font-size="11" text-anchor="end">0 (${L("ui.breakEven")})</text>`;
-    for (const s of series) {
-      const d = s.points.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("");
-      g += `<path d="${d}" fill="none" stroke="${s.color || "#66c0f4"}" stroke-width="${s.width || 1.8}" ${s.dash ? 'stroke-dasharray="5 4"' : ""}/>`;
-    }
-    const legend = series.filter((s) => s.label).map((s, i) => `<text x="${P.l + 8 + i * 160}" y="${P.t + 12}" fill="${s.color}" font-size="12">\u25CF ${esc(s.label)}</text>`).join("");
-    return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px">${g}${legend}</svg>`;
-  }
 
   // src/core/fees.js
   var DEFAULT_WALLET = { feePercent: 0.05, feeMin: 1, feeBase: 0, pubDefault: 0.1 };
@@ -4586,31 +4614,121 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       vol90: d90.reduce((s, p) => s + p.vol, 0)
     };
   }
-  function fifoPnL(trades) {
+  function inventoryMoves(events) {
+    const out = [], seen = /* @__PURE__ */ new Map();
+    const count = (list2) => {
+      const m = /* @__PURE__ */ new Map();
+      for (const i of list2 || []) if (i.hash) m.set(i.hash, (m.get(i.hash) || 0) + (i.amount || 1));
+      return m;
+    };
+    for (const e of events) {
+      if (e.kind === "rynek") continue;
+      const plus = count(e.plus), minus = count(e.minus);
+      for (const [h, n] of minus) {
+        const both = Math.min(n, plus.get(h) || 0);
+        if (both) {
+          minus.set(h, n - both);
+          plus.set(h, plus.get(h) - both);
+        }
+      }
+      for (const [op, side2] of [["in", plus], ["out", minus]]) {
+        for (const [hash, n] of side2) {
+          let qty = n;
+          if (e.kind === "wymiana") {
+            const k = `${op}|${Math.round(e.t / 12e4)}|${hash}`;
+            qty = Math.max(0, n - (seen.get(k) || 0));
+            seen.set(k, Math.max(n, seen.get(k) || 0));
+          }
+          if (qty) out.push({ t: e.t, op, hash, qty });
+        }
+      }
+    }
+    return out;
+  }
+  function tradeYearFixes(rows3, purchases) {
+    const parts = (t) => {
+      const d = new Date(t);
+      return { md: `${d.getMonth()}-${d.getDate()}`, y: d.getFullYear() };
+    };
+    const byDate = /* @__PURE__ */ new Map();
+    for (const p of [...purchases].sort((a, b) => a.t - b.t)) {
+      const k = `${p.hash}|${parts(p.t).md}`;
+      if (!byDate.has(k)) byDate.set(k, []);
+      byDate.get(k).push({ t: p.t, y: parts(p.t).y, used: false });
+    }
+    const list2 = (r) => byDate.get(`${r.hash}|${parts(r.t).md}`) || [];
+    const wrong = [];
+    for (const r of rows3) {
+      const here = list2(r).filter((e) => e.y === parts(r.t).y);
+      if (!here.length) {
+        wrong.push(r);
+        continue;
+      }
+      const free = here.find((e) => !e.used);
+      if (free) free.used = true;
+    }
+    const fixes = /* @__PURE__ */ new Map();
+    for (const r of wrong) {
+      const all3 = list2(r);
+      if (!all3.length) continue;
+      const e = all3.find((x) => !x.used) || all3[all3.length - 1];
+      e.used = true;
+      fixes.set(r.key, e.t);
+    }
+    return fixes;
+  }
+  var wholeHistory = (steamTotal, walked) => steamTotal > 0 && walked >= steamTotal;
+  function fifoPnL(trades, moves = []) {
     const lots = /* @__PURE__ */ new Map();
     const items2 = /* @__PURE__ */ new Map();
+    const copies = /* @__PURE__ */ new Map();
     const realized = [];
-    const sorted = [...trades].sort((a, b) => a.t - b.t);
-    const st = (h) => items2.get(h) || items2.set(h, { hash: h, bought: 0, sold: 0, spent: 0, received: 0, realized: 0, matched: 0, holdQty: 0, holdCost: 0, unmatchedSells: 0 }).get(h);
+    const when = (x) => x.at ?? x.t;
+    const rank = (x) => x.type === "buy" || x.op === "in" ? 0 : 1;
+    const sorted = [...trades, ...moves].sort((a, b) => when(a) - when(b) || rank(a) - rank(b));
+    const st = (h) => items2.get(h) || items2.set(h, { hash: h, bought: 0, sold: 0, spent: 0, received: 0, realized: 0, matched: 0, holdQty: 0, holdCost: 0, unmatchedSells: 0, gone: 0 }).get(h);
+    const pile = (h) => lots.get(h) || lots.set(h, []).get(h);
+    const fate = (ref) => copies.get(ref) || copies.set(ref, { sold: 0, gone: 0 }).get(ref);
     for (const tr of sorted) {
+      if (tr.op === "in") {
+        pile(tr.hash).push({ qty: tr.qty, cost: null, t: tr.t });
+        continue;
+      }
+      if (tr.op === "out") {
+        const ls = pile(tr.hash);
+        for (let left = tr.qty; left > 0 && ls.length; ) {
+          const lot = ls[0], take = Math.min(lot.qty, left);
+          if (lot.cost != null) {
+            st(tr.hash).gone += take;
+            fate(lot.ref).gone += take;
+          }
+          lot.qty -= take;
+          left -= take;
+          if (!lot.qty) ls.shift();
+        }
+        continue;
+      }
       const s = st(tr.hash);
       const q = tr.amount || 1;
       if (tr.type === "buy") {
         s.bought += q;
         s.spent += tr.price * q;
-        (lots.get(tr.hash) || lots.set(tr.hash, []).get(tr.hash)).push({ qty: q, cost: tr.price, t: tr.t });
+        pile(tr.hash).push({ qty: q, cost: tr.price, t: tr.t, ref: tr.key || `${tr.hash}|${tr.t}` });
       } else {
         s.sold += q;
         s.received += tr.price * q;
         let left = q;
-        const ls = lots.get(tr.hash) || [];
+        const ls = pile(tr.hash);
         while (left > 0 && ls.length) {
           const lot = ls[0];
           const take = Math.min(lot.qty, left);
-          const pnl = (tr.price - lot.cost) * take;
-          s.realized += pnl;
-          s.matched += take;
-          realized.push({ hash: tr.hash, qty: take, buy: lot.cost, sell: tr.price, pnl, held: tr.t - lot.t, t: tr.t });
+          if (lot.cost != null) {
+            const pnl = (tr.price - lot.cost) * take;
+            s.realized += pnl;
+            s.matched += take;
+            fate(lot.ref).sold += take;
+            realized.push({ hash: tr.hash, qty: take, buy: lot.cost, sell: tr.price, pnl, held: tr.t - lot.t, t: tr.t });
+          } else s.unmatchedSells += take;
           lot.qty -= take;
           left -= take;
           if (!lot.qty) ls.shift();
@@ -4619,20 +4737,22 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       }
     }
     for (const [h, ls] of lots) {
-      const s = st(h);
-      s.holdQty = ls.reduce((a, l) => a + l.qty, 0);
-      s.holdCost = ls.reduce((a, l) => a + l.qty * l.cost, 0);
+      if (!items2.has(h)) continue;
+      const s = st(h), bought = ls.filter((l) => l.cost != null);
+      s.holdQty = bought.reduce((a, l) => a + l.qty, 0);
+      s.holdCost = bought.reduce((a, l) => a + l.qty * l.cost, 0);
     }
     const list2 = [...items2.values()];
     return {
       items: list2,
       realized,
+      copies,
       totals: {
         spent: list2.reduce((a, s) => a + s.spent, 0),
         received: list2.reduce((a, s) => a + s.received, 0),
         realized: list2.reduce((a, s) => a + s.realized, 0),
         holdCost: list2.reduce((a, s) => a + s.holdCost, 0),
-        trades: sorted.length,
+        trades: trades.length,
         wins: realized.filter((r) => r.pnl > 0).length,
         losses: realized.filter((r) => r.pnl < 0).length
       }
@@ -6256,6 +6376,451 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     return res;
   }
 
+  // src/core/pricechart.js
+  var HOUR = 36e5;
+  var DAY = 24 * HOUR;
+  var RANGES = [
+    { id: "7", days: 7, size: HOUR },
+    { id: "30", days: 30, size: 6 * HOUR },
+    { id: "90", days: 90, size: DAY },
+    { id: "365", days: 365, size: DAY },
+    { id: "all", days: Infinity, size: 7 * DAY }
+  ];
+  var C = { sale: "#3b98dc", bid: "#12a884", ask: "#e4662f", ink: "#c6d4df", mut: "#8f98a0", grid: "rgba(255,255,255,.07)", bar: "#3d6a8a", surface: "#1b2838" };
+  var M = { l: 70, r: 74, t: 14, price: 212, gap: 14, vol: 44, b: 24 };
+  var chartId = 0;
+  function bucketize(points, from, size) {
+    const groups2 = /* @__PURE__ */ new Map();
+    for (const p of points) {
+      if (p.t < from || !(p.price > 0)) continue;
+      const k = Math.floor(p.t / size);
+      if (!groups2.has(k)) groups2.set(k, []);
+      groups2.get(k).push(p);
+    }
+    return [...groups2.entries()].sort((a, b) => a[0] - b[0]).map(([k, ps]) => {
+      const s = [...ps].sort((a, b) => a.price - b.price);
+      const weight = (p) => Math.max(1, p.vol || 0);
+      const total = s.reduce((n, p) => n + weight(p), 0);
+      let seen = 0, price = s[0].price;
+      for (const p of s) {
+        seen += weight(p);
+        if (seen * 2 >= total) {
+          price = p.price;
+          break;
+        }
+      }
+      return { t: (k + 0.5) * size, from: k * size, to: (k + 1) * size, price, lo: s[0].price, hi: s[s.length - 1].price, vol: ps.reduce((n, p) => n + (p.vol || 0), 0) };
+    });
+  }
+  var SPIKE = 1.6;
+  function priceDomain(values) {
+    const mid = (a) => [...a].sort((x, y) => x - y)[Math.floor((a.length - 1) / 2)];
+    const kept = values.filter((v, i) => {
+      const before = values.slice(Math.max(0, i - 4), i), after = values.slice(i + 1, i + 5);
+      if (!before.length || !after.length) return true;
+      const a = mid(before), b = mid(after), top = Math.max(a, b), bottom = Math.min(a, b);
+      return !(v > top * SPIKE && v - top > 5 || v < bottom / SPIKE && bottom - v > 5);
+    });
+    const lo = Math.min(...kept), hi = Math.max(...kept);
+    return { lo, hi, minOk: lo / SPIKE, maxOk: hi * SPIKE };
+  }
+  function niceTicks(lo, hi, count = 4) {
+    const raw = (hi - lo) / count || 1;
+    const mag = 10 ** Math.floor(Math.log10(raw));
+    const step = [1, 2, 2.5, 5, 10].map((x) => x * mag).find((x) => x >= raw);
+    const out = [];
+    for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-6; v += step) out.push(Math.round(v * 100) / 100);
+    return out;
+  }
+  function priceChart(box2, { points, bid, ask: ask2, fmt: fmt2 }) {
+    if (!box2) return;
+    const id = ++chartId;
+    let range = RANGES.find((r) => r.id === get("flipChartRange", "30")) || RANGES[1];
+    box2.className = "pc";
+    box2.innerHTML = `<div class="pc-top">
+      <div class="pc-seg">${RANGES.map((r) => `<button type="button" data-r="${r.id}">${r.id === "all" ? L("flip.chartAll") : r.id === "365" ? L("flip.chartYear") : L("flip.chartDays", { n: r.days })}</button>`).join("")}</div>
+      <div class="pc-leg"><span><i style="border-color:${C.sale}"></i>${L("flip.salePrice")}</span>${bid ? `<span><i class="d" style="border-color:${C.bid}"></i>${L("flip.buyOrdersNow")}</span>` : ""}${ask2 ? `<span><i class="d" style="border-color:${C.ask}"></i>${L("flip.lowestListingNow")}</span>` : ""}</div>
+    </div><div class="pc-plot"></div><div class="pc-tip" hidden></div>`;
+    const plot = box2.querySelector(".pc-plot"), tip = box2.querySelector(".pc-tip");
+    const dayFmt = (t, withYear) => new Date(t).toLocaleDateString(locale(), withYear ? { day: "2-digit", month: "2-digit", year: "numeric" } : { day: "2-digit", month: "2-digit" });
+    function draw() {
+      box2.querySelectorAll("[data-r]").forEach((b) => b.classList.toggle("on", b.dataset.r === range.id));
+      tip.hidden = true;
+      const now = Date.now();
+      const data3 = bucketize(points, range.days === Infinity ? 0 : now - range.days * DAY, range.size);
+      if (!data3.length) {
+        plot.innerHTML = `<div class="empty">${L("flip.chartNoSales")}</div>`;
+        return;
+      }
+      const W = Math.max(420, plot.clientWidth || 1e3), H = M.t + M.price + M.gap + M.vol + M.b;
+      const pR = W - M.r, pTop = M.t, pBot = M.t + M.price, vTop = pBot + M.gap, vBot = vTop + M.vol;
+      const x0 = Math.max(range.days === Infinity ? 0 : now - range.days * DAY, data3[0].from), x1 = now;
+      const X = (t) => M.l + (Math.min(t, x1) - x0) / (x1 - x0 || 1) * (pR - M.l);
+      const dom = priceDomain(data3.map((d) => d.price));
+      const onScale = (v) => v > 0 && v >= dom.minOk && v <= dom.maxOk;
+      const inScale = [dom.lo, dom.hi, ...[bid, ask2].filter(onScale)];
+      let lo = Math.min(...inScale), hi = Math.max(...inScale);
+      if (lo === hi) {
+        lo *= 0.95;
+        hi *= 1.05;
+      }
+      const pad = (hi - lo) * 0.12;
+      lo = Math.max(0, lo - pad);
+      hi += pad;
+      const Y = (v) => pBot - (v - lo) / (hi - lo) * (pBot - pTop);
+      let g = "";
+      for (const v of niceTicks(lo, hi)) {
+        g += `<line x1="${M.l}" x2="${pR}" y1="${Y(v)}" y2="${Y(v)}" stroke="${C.grid}"/><text x="${M.l - 8}" y="${Y(v) + 4}" fill="${C.mut}" font-size="11" text-anchor="end">${fmt2(v)}</text>`;
+      }
+      const span = x1 - x0, labels = Math.max(3, Math.min(7, Math.floor((pR - M.l) / 120)));
+      for (let i = 0; i < labels; i++) {
+        const t = x0 + span * i / (labels - 1);
+        g += `<text x="${X(t)}" y="${H - 7}" fill="${C.mut}" font-size="11" text-anchor="${i === 0 ? "start" : i === labels - 1 ? "end" : "middle"}">${dayFmt(t, span > 200 * DAY)}</text>`;
+      }
+      const vMax = Math.max(...data3.map((d) => d.vol), 1);
+      const slot = (pR - M.l) * range.size / (span || 1), bw = Math.max(1, Math.min(14, slot - 2));
+      g += `<line x1="${M.l}" x2="${pR}" y1="${vBot}" y2="${vBot}" stroke="${C.grid}"/><text x="${M.l - 8}" y="${vTop + 9}" fill="${C.mut}" font-size="11" text-anchor="end">${L("flip.chartUnits", { n: vMax.toLocaleString(locale()) })}</text>`;
+      g += data3.map((d) => {
+        const h = Math.max(1.5, d.vol / vMax * M.vol);
+        return `<rect x="${(X(d.t) - bw / 2).toFixed(1)}" y="${(vBot - h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(2, bw / 2)}" fill="${C.bar}"/>`;
+      }).join("");
+      const marks = [[bid, C.bid], [ask2, C.ask]].filter(([v]) => v > 0).map(([v, color]) => {
+        const on = v >= lo && v <= hi;
+        return { v, color, on, y: on ? Y(v) : v > hi ? pTop + 5 : pBot - 5, arrow: on ? "" : v > hi ? "\u25B2 " : "\u25BC " };
+      }).sort((a, b) => a.y - b.y);
+      if (marks.length === 2 && marks[1].y - marks[0].y < 15) {
+        const mid = (marks[0].y + marks[1].y) / 2;
+        marks[0].y = Math.max(pTop + 5, mid - 7.5);
+        marks[1].y = marks[0].y + 15;
+      }
+      for (const m of marks) {
+        if (m.on) g += `<line x1="${M.l}" x2="${pR}" y1="${Y(m.v)}" y2="${Y(m.v)}" stroke="${m.color}" stroke-width="1.5" stroke-dasharray="5 4" opacity=".85"/>`;
+        g += `<text x="${pR + 6}" y="${m.y + 4}" fill="${C.ink}" font-size="11">${m.arrow}${fmt2(m.v)}</text>`;
+      }
+      const limit = Math.max(2 * DAY, 3 * range.size);
+      let solid = "", dashed = "";
+      data3.forEach((d, i) => {
+        const p = `${X(d.t).toFixed(1)},${Y(d.price).toFixed(1)}`;
+        if (!i) {
+          solid += `M${p}`;
+          return;
+        }
+        if (d.t - data3[i - 1].t > limit) {
+          dashed += `M${X(data3[i - 1].t).toFixed(1)},${Y(data3[i - 1].price).toFixed(1)}L${p}`;
+          solid += `M${p}`;
+        } else solid += `L${p}`;
+      });
+      const clip = `pc-clip-${id}`;
+      g += `<clipPath id="${clip}"><rect x="${M.l}" y="${pTop}" width="${pR - M.l}" height="${pBot - pTop}"/></clipPath><g clip-path="url(#${clip})">`;
+      g += `<path d="${dashed}" fill="none" stroke="${C.sale}" stroke-width="1.5" stroke-dasharray="3 4" opacity=".55"/><path d="${solid}" fill="none" stroke="${C.sale}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      if (data3.length <= 70) g += data3.filter((d) => d.price >= lo && d.price <= hi).map((d) => `<circle cx="${X(d.t).toFixed(1)}" cy="${Y(d.price).toFixed(1)}" r="3" fill="${C.sale}" stroke="${C.surface}" stroke-width="1.5"/>`).join("");
+      g += "</g>";
+      const over = data3.filter((d) => d.price > hi), under = data3.filter((d) => d.price < lo);
+      const edge = (list2, up) => {
+        if (!list2.length) return "";
+        const y = up ? pTop : pBot;
+        const tri = list2.map((d) => {
+          const x2 = X(d.t);
+          return `<polygon points="${x2 - 4},${up ? y + 7 : y - 7} ${x2 + 4},${up ? y + 7 : y - 7} ${x2},${y}" fill="${C.sale}"/>`;
+        }).join("");
+        const top = list2.reduce((a, d) => (up ? d.price > a.price : d.price < a.price) ? d : a);
+        const x = X(top.t), anchor = x > pR - 70 ? "end" : x < M.l + 70 ? "start" : "middle";
+        return `${tri}<text x="${x}" y="${up ? y + 19 : y - 11}" fill="${C.ink}" font-size="11" text-anchor="${anchor}" paint-order="stroke" stroke="${C.surface}" stroke-width="3">${L(up ? "flip.chartHigh" : "flip.chartLow", { v: fmt2(top.price) })}</text>`;
+      };
+      g += edge(over, true) + edge(under, false);
+      g += `<line class="pc-x" y1="${pTop}" y2="${vBot}" stroke="${C.ink}" stroke-opacity=".45" visibility="hidden"/><circle class="pc-dot" r="4.5" fill="${C.sale}" stroke="${C.surface}" stroke-width="2" visibility="hidden"/>`;
+      plot.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" tabindex="0" role="img" aria-label="${L("flip.salePrice")}">${g}</svg>`;
+      const svg = plot.firstChild, cross = svg.querySelector(".pc-x"), dot = svg.querySelector(".pc-dot");
+      let cur = data3.length - 1;
+      const show8 = (i) => {
+        cur = Math.max(0, Math.min(data3.length - 1, i));
+        const d = data3[cur], x = X(d.t), y = Math.max(pTop, Math.min(pBot, Y(d.price)));
+        for (const k of ["x1", "x2"]) cross.setAttribute(k, x);
+        cross.setAttribute("visibility", "visible");
+        dot.setAttribute("cx", x);
+        dot.setAttribute("cy", y);
+        dot.setAttribute("visibility", "visible");
+        const when = range.size < DAY ? new Date(d.from).toLocaleString(locale(), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : range.size === DAY ? dayFmt(d.from, true) : `${dayFmt(d.from)} - ${dayFmt(d.to - 1, true)}`;
+        tip.replaceChildren();
+        const line = (cls2, text) => {
+          const e = document.createElement("div");
+          e.className = cls2;
+          e.textContent = text;
+          tip.append(e);
+        };
+        line("v", fmt2(d.price));
+        if (d.hi > d.lo) line("s", L("flip.chartRange", { lo: fmt2(d.lo), hi: fmt2(d.hi) }));
+        line("s", L("flip.chartUnits", { n: d.vol.toLocaleString(locale()) }));
+        line("s", when);
+        tip.hidden = false;
+        const scale = svg.getBoundingClientRect().width / W || 1, top = plot.offsetTop;
+        const px = x * scale, w = tip.offsetWidth;
+        tip.style.left = `${px + 12 + w > plot.clientWidth ? Math.max(0, px - w - 12) : px + 12}px`;
+        tip.style.top = `${top + M.t + 4}px`;
+      };
+      const hide = () => {
+        tip.hidden = true;
+        cross.setAttribute("visibility", "hidden");
+        dot.setAttribute("visibility", "hidden");
+      };
+      svg.addEventListener("pointermove", (e) => {
+        const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W;
+        let best = 0, gap = Infinity;
+        data3.forEach((d, i) => {
+          const g2 = Math.abs(X(d.t) - px);
+          if (g2 < gap) {
+            gap = g2;
+            best = i;
+          }
+        });
+        show8(best);
+      });
+      svg.addEventListener("pointerleave", hide);
+      svg.addEventListener("blur", hide);
+      svg.addEventListener("focus", () => {
+        if (svg.matches(":focus-visible")) show8(cur);
+      });
+      svg.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        show8(cur + (e.key === "ArrowLeft" ? -1 : 1));
+      });
+    }
+    box2.querySelector(".pc-seg").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-r]");
+      if (!b) return;
+      range = RANGES.find((r) => r.id === b.dataset.r);
+      set("flipChartRange", range.id);
+      draw();
+    });
+    draw();
+    if (typeof ResizeObserver !== "undefined") {
+      let last = plot.clientWidth;
+      const ro = new ResizeObserver(() => {
+        if (!box2.isConnected) {
+          ro.disconnect();
+          return;
+        }
+        if (plot.clientWidth && plot.clientWidth !== last) {
+          last = plot.clientWidth;
+          draw();
+        }
+      });
+      ro.observe(plot);
+    }
+  }
+  function timeWarp(times) {
+    const t = [...new Set(times)].sort((a, b) => a - b), total = t[t.length - 1] - t[0];
+    const limit = Math.max(30 * DAY, total * 0.05), u = [0], gaps = [];
+    let active = 0;
+    for (let i = 1; i < t.length; i++) if (t[i] - t[i - 1] <= limit) active += t[i] - t[i - 1];
+    const shrunk = Math.max(active * 0.07, 1);
+    for (let i = 1; i < t.length; i++) {
+      const dt = t[i] - t[i - 1];
+      if (dt > limit) gaps.push({ from: t[i - 1], to: t[i] });
+      u.push(u[i - 1] + (dt > limit ? shrunk : dt));
+    }
+    const along = (xs, ys, v) => {
+      if (v <= xs[0]) return ys[0];
+      if (v >= xs[xs.length - 1]) return ys[ys.length - 1];
+      let a = 0, b = xs.length - 1;
+      while (b - a > 1) {
+        const m = a + b >> 1;
+        if (xs[m] <= v) a = m;
+        else b = m;
+      }
+      return ys[a] + (v - xs[a]) / (xs[b] - xs[a] || 1) * (ys[b] - ys[a]);
+    };
+    return { U: (v) => along(t, u, v), T: (v) => along(u, t, v), span: u[u.length - 1] || 1, gaps };
+  }
+  function profitChart(plot, { points, fmt: fmt2, onZoom, onReset, label = "", changeKey = "flip.chartSale" }) {
+    if (!plot || points.length < 2) return;
+    const P = { l: 70, r: 82, t: 12, b: 24, h: 196 }, POS = "#12a884", NEG = "#e4662f", id = ++chartId;
+    const tip = document.createElement("div");
+    tip.className = "pc-tip";
+    tip.hidden = true;
+    const signed = (v) => `${v > 0 ? "+" : ""}${fmt2(v)}`;
+    function draw() {
+      const W = Math.max(420, plot.clientWidth || 1e3), H = P.t + P.h + P.b, pR = W - P.r, pBot = P.t + P.h;
+      const warp = timeWarp(points.map((x) => x[0]));
+      const X = (t) => P.l + warp.U(t) / warp.span * (pR - P.l);
+      const values = points.map((x) => x[1]);
+      let lo = Math.min(0, ...values), hi = Math.max(0, ...values);
+      if (lo === hi) hi = lo + 100;
+      const pad = (hi - lo) * 0.1;
+      lo = lo < 0 ? lo - pad : 0;
+      hi += pad;
+      const Y = (v) => pBot - (v - lo) / (hi - lo) * P.h, zero = Y(0);
+      const real = points[points.length - 1][0] - points[0][0];
+      const dateFmt = (t) => new Date(t).toLocaleString(locale(), real < 3 * DAY ? { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" } : real > 200 * DAY ? { day: "2-digit", month: "2-digit", year: "numeric" } : { day: "2-digit", month: "2-digit" });
+      let g = "";
+      for (const v of niceTicks(lo, hi)) {
+        g += `<line x1="${P.l}" x2="${pR}" y1="${Y(v)}" y2="${Y(v)}" stroke="${v === 0 ? "rgba(255,255,255,.34)" : C.grid}"/><text x="${P.l - 8}" y="${Y(v) + 4}" fill="${C.mut}" font-size="11" text-anchor="end">${fmt2(v)}</text>`;
+      }
+      for (const gap of warp.gaps) {
+        const a = X(gap.from), b = X(gap.to);
+        const n = Math.round((gap.to - gap.from) / (30.44 * DAY));
+        g += `<g><title>${L("flip.chartGap", { n })}</title><rect x="${a}" y="${P.t}" width="${b - a}" height="${P.h}" fill="rgba(255,255,255,.035)"/>`;
+        if (b - a >= 46) g += `<text x="${(a + b) / 2}" y="${P.t + 13}" fill="${C.mut}" font-size="10" text-anchor="middle">${L("flip.chartGapShort", { n })}</text>`;
+        g += "</g>";
+      }
+      const labels = Math.max(3, Math.min(7, Math.floor((pR - P.l) / 120))), raw = [];
+      for (let i = 0; i < labels; i++) {
+        const t = warp.T(warp.span * i / (labels - 1)), inGap = i && i < labels - 1 ? warp.gaps.find((x) => t > x.from && t < x.to) : null;
+        raw.push(inGap ? inGap.to : t);
+      }
+      const lastTick = raw[raw.length - 1], ticks = [raw[0]];
+      for (const t of raw.slice(1, -1)) if (X(t) - X(ticks[ticks.length - 1]) >= 88 && X(lastTick) - X(t) >= 88) ticks.push(t);
+      ticks.push(lastTick);
+      ticks.forEach((t, i) => {
+        g += `<text x="${X(t)}" y="${H - 7}" fill="${C.mut}" font-size="11" text-anchor="${i === 0 ? "start" : i === ticks.length - 1 ? "end" : "middle"}">${dateFmt(t)}</text>`;
+      });
+      let d = `M${X(points[0][0]).toFixed(1)},${Y(points[0][1]).toFixed(1)}`;
+      for (let i = 1; i < points.length; i++) d += `H${X(points[i][0]).toFixed(1)}V${Y(points[i][1]).toFixed(1)}`;
+      const area = `${d}V${zero.toFixed(1)}H${X(points[0][0]).toFixed(1)}Z`;
+      const up = `pc-up-${id}`, down = `pc-down-${id}`;
+      g += `<clipPath id="${up}"><rect x="${P.l}" y="${P.t}" width="${pR - P.l}" height="${Math.max(0, zero - P.t)}"/></clipPath><clipPath id="${down}"><rect x="${P.l}" y="${zero}" width="${pR - P.l}" height="${Math.max(0, pBot - zero)}"/></clipPath>`;
+      for (const [clip, color] of [[up, POS], [down, NEG]]) g += `<g clip-path="url(#${clip})"><path d="${area}" fill="${color}" opacity=".14"/><path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></g>`;
+      const end = points[points.length - 1];
+      g += `<circle cx="${X(end[0])}" cy="${Y(end[1])}" r="4" fill="${end[1] >= 0 ? POS : NEG}" stroke="${C.surface}" stroke-width="2"/><text x="${pR + 8}" y="${Y(end[1]) + 4}" fill="#fff" font-size="12" font-weight="600">${signed(end[1])}</text>`;
+      g += `<line class="pc-x" y1="${P.t}" y2="${pBot}" stroke="${C.ink}" stroke-opacity=".45" visibility="hidden"/><circle class="pc-dot" r="4.5" stroke="${C.surface}" stroke-width="2" visibility="hidden"/>`;
+      plot.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" tabindex="0" role="img" aria-label="${label}">${g}</svg><div class="pc-sel" hidden></div>`;
+      plot.append(tip);
+      tip.hidden = true;
+      const svg = plot.querySelector("svg"), sel2 = plot.querySelector(".pc-sel"), cross = svg.querySelector(".pc-x"), dot = svg.querySelector(".pc-dot");
+      const scale = () => svg.getBoundingClientRect().width / W || 1;
+      const pxOf = (e) => Math.max(P.l, Math.min(pR, (e.clientX - svg.getBoundingClientRect().left) / scale()));
+      const timeAt = (x) => warp.T((x - P.l) / (pR - P.l) * warp.span);
+      let cur = points.length - 1, start = null;
+      const show8 = (i) => {
+        cur = Math.max(0, Math.min(points.length - 1, i));
+        const [t, v] = points[cur], x = X(t), y = Y(v), change = cur ? v - points[cur - 1][1] : 0;
+        for (const k of ["x1", "x2"]) cross.setAttribute(k, x);
+        cross.setAttribute("visibility", "visible");
+        dot.setAttribute("cx", x);
+        dot.setAttribute("cy", y);
+        dot.setAttribute("fill", v >= 0 ? POS : NEG);
+        dot.setAttribute("visibility", "visible");
+        tip.replaceChildren();
+        const line = (cls2, text) => {
+          const e = document.createElement("div");
+          e.className = cls2;
+          e.textContent = text;
+          tip.append(e);
+        };
+        line("v", signed(v));
+        if (change) line("s", L(changeKey, { v: signed(change) }));
+        line("s", new Date(t).toLocaleString(locale(), { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }));
+        tip.hidden = false;
+        const px = x * scale(), w = tip.offsetWidth;
+        tip.style.left = `${px + 12 + w > plot.clientWidth ? Math.max(0, px - w - 12) : px + 12}px`;
+        tip.style.top = `${P.t + 4}px`;
+      };
+      const hide = () => {
+        tip.hidden = true;
+        cross.setAttribute("visibility", "hidden");
+        dot.setAttribute("visibility", "hidden");
+      };
+      svg.addEventListener("pointerdown", (e) => {
+        if (e.button) return;
+        start = pxOf(e);
+        svg.setPointerCapture(e.pointerId);
+        e.preventDefault();
+      });
+      svg.addEventListener("pointermove", (e) => {
+        const px = pxOf(e);
+        if (start != null) {
+          const a = Math.min(start, px) * scale(), b = Math.max(start, px) * scale();
+          Object.assign(sel2.style, { left: `${a}px`, width: `${b - a}px`, top: `${P.t * scale()}px`, height: `${P.h * scale()}px` });
+          sel2.hidden = b - a < 3;
+          tip.hidden = true;
+          return;
+        }
+        let best = 0, gap = Infinity;
+        points.forEach((x, i) => {
+          const dist = Math.abs(X(x[0]) - px);
+          if (dist <= gap) {
+            gap = dist;
+            best = i;
+          }
+        });
+        show8(best);
+      });
+      svg.addEventListener("pointerup", (e) => {
+        if (start == null) return;
+        const a = Math.min(start, pxOf(e)), b = Math.max(start, pxOf(e));
+        start = null;
+        sel2.hidden = true;
+        if (b - a >= 6 && timeAt(b) - timeAt(a) >= 6e4) onZoom?.(timeAt(a), timeAt(b));
+      });
+      svg.addEventListener("pointerleave", () => {
+        if (start == null) hide();
+      });
+      svg.addEventListener("blur", hide);
+      svg.addEventListener("dblclick", () => onReset?.());
+      svg.addEventListener("keydown", (e) => {
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        show8(cur + (e.key === "ArrowLeft" ? -1 : 1));
+      });
+    }
+    draw();
+    if (typeof ResizeObserver !== "undefined") {
+      let last = plot.clientWidth;
+      const ro = new ResizeObserver(() => {
+        if (!plot.isConnected) {
+          ro.disconnect();
+          return;
+        }
+        if (plot.clientWidth && plot.clientWidth !== last) {
+          last = plot.clientWidth;
+          draw();
+        }
+      });
+      ro.observe(plot);
+    }
+  }
+
+  // src/features/monthstable.js
+  var KEYS = ["flip", "nf", "wins", "cases", "nc", "open", "spent", "recv"];
+  var sumOf = (rows3) => rows3.reduce((s, x) => {
+    for (const k of KEYS) s[k] += x[k];
+    return s;
+  }, Object.fromEntries(KEYS.map((k) => [k, 0])));
+  function monthsHtml(rows3, open4, fmt2) {
+    const nil = '<span class="nil">-</span>';
+    const money = (v) => Math.round(v) ? `<span class="${v > 0 ? "pos" : "neg"}">${v > 0 ? "+" : ""}${fmt2(v)}</span>` : nil;
+    const flipTip = (x) => x.nf ? `${x.nf} \xB7 ${Math.round(x.wins / x.nf * 100)}% ${L("history.inProfit2")}` : "";
+    const caseTip = (x) => x.open ? `${x.open} ${L("history.open")}${x.nc < x.open ? L("history.withoutAResult", { open: x.open - x.nc }) : ""}` : "";
+    const cells = (x) => {
+      const total = x.flip + x.cases;
+      return `<td class="num"><b>${money(total)}</b></td>
+      <td class="num" title="${esc(flipTip(x))}">${x.nf ? money(x.flip) : nil}</td>
+      <td class="num" title="${esc(caseTip(x))}">${x.nc ? money(x.cases) : x.open ? "\u2026" : nil}</td>
+      <td class="num">${x.spent ? fmt2(x.spent) : nil}</td>
+      <td class="num">${x.recv ? fmt2(x.recv) : nil}</td>
+      <td class="num">${money(x.recv - x.spent)}</td>`;
+    };
+    const monthName = (x) => {
+      const [y, m] = x.k.split("-").map(Number);
+      return new Date(y, m - 1, 1).toLocaleDateString(locale(), { month: "long" });
+    };
+    const years = /* @__PURE__ */ new Map();
+    for (const x of rows3) {
+      const y = x.k.slice(0, 4);
+      if (!years.has(y)) years.set(y, []);
+      years.get(y).push(x);
+    }
+    let body2 = "";
+    for (const [y, months] of years) {
+      const isOpen2 = open4.has(y);
+      body2 += `<tr class="y" data-year="${y}"><td><button type="button" aria-expanded="${isOpen2}"><span class="car">${isOpen2 ? "\u25BE" : "\u25B8"}</span>${y}</button></td>${cells(sumOf(months))}</tr>`;
+      if (isOpen2) for (const x of months) body2 += `<tr class="m${Math.round(x.flip + x.cases) ? "" : " idle"}"><td>${esc(monthName(x))}</td>${cells(x)}</tr>`;
+    }
+    if (years.size > 1) body2 += `<tr class="sum"><td>${L("history.total2")}</td>${cells(sumOf(rows3))}</tr>`;
+    return `<table class="mt"><thead><tr><th>${L("history.month")}</th><th class="num">${L("history.total2")}</th><th class="num">${L("history.flipProfit")}</th><th class="num">${L("history.cases2")}</th><th class="num">${L("history.spent")}</th><th class="num">${L("history.received2")}</th><th class="num">${L("history.balance")}</th></tr></thead><tbody>${body2}</tbody></table>`;
+  }
+
   // src/features/invhistory.js
   var keyOf = (app2) => +app2 === 730 ? "invhist" : `invhist${+app2}`;
   var MAX = 3e4;
@@ -6519,7 +7084,8 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       pages2++;
       onProgress(rows3.length);
     }
-    const uniq = [...new Map(rows3.map((x) => [x.id, x])).values()];
+    const fetched = [...new Map(rows3.map((x) => [x.id, x])).values()];
+    const uniq = cursor || !fetched.length ? [...new Map([...get(KEY, { rows: [] }).rows || [], ...fetched].map((x) => [x.id, x])).values()] : fetched;
     set(KEY, { at: Date.now(), rows: uniq });
     mem2 = null;
     return uniq;
@@ -8751,15 +9317,14 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
   var CUR_NAME = { 1: "USD", 2: "GBP", 3: "EUR", 5: "RUB", 6: "PLN", 7: "BRL", 17: "TRY", 18: "UAH", 20: "CAD", 21: "AUD", 23: "CNY" };
   var FX_ITEM = [440, "Mann Co. Supply Crate Key"];
   var fx = bucket("fx");
-  var fxLoading = /* @__PURE__ */ new Set();
+  var fxLoading = /* @__PURE__ */ new Map();
   function rateFor(cur) {
     const w = wallet().currency;
     if (!cur || cur === w) return 1;
     const c = fx.get(String(cur));
     if (c && Date.now() - c.at < 864e5) return c.r;
     if (!fxLoading.has(cur)) {
-      fxLoading.add(cur);
-      Promise.all([priceOverview(FX_ITEM[0], FX_ITEM[1], cur), priceOverview(FX_ITEM[0], FX_ITEM[1], w)]).then(([a, b]) => {
+      fxLoading.set(cur, Promise.all([priceOverview(FX_ITEM[0], FX_ITEM[1], cur), priceOverview(FX_ITEM[0], FX_ITEM[1], w)]).then(([a, b]) => {
         const r = (b.median || b.lowest) / (a.median || a.lowest);
         if (isFinite(r) && r > 0) {
           fx.set(String(cur), { r, at: Date.now() });
@@ -8767,7 +9332,7 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
           invalidate();
           render2();
         }
-      }).catch((e) => log(L("history.couldntGetTheExchangeRate", { CUR_NAME: CUR_NAME[cur] || cur, message: e.message }), "warn")).finally(() => fxLoading.delete(cur));
+      }).catch((e) => log(L("history.couldntGetTheExchangeRate", { CUR_NAME: CUR_NAME[cur] || cur, message: e.message }), "warn")).finally(() => fxLoading.delete(cur)));
     }
     return c ? c.r : null;
   }
@@ -8893,6 +9458,15 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
       const d = new Date(t);
       return d.getHours() === 12 && !d.getMinutes() && !d.getSeconds() && !d.getMilliseconds();
     };
+    const dated = market.filter((t) => t.type === "buy" && noon(t.t) && isComplete(+t.appid || 730)).sort((a, b) => numCmp(String(a.key), String(b.key)));
+    if (dated.length) {
+      const bought = [];
+      for (const e of allEvents()) if (e.kind === "rynek" && /purchased/i.test(e.desc)) {
+        for (const it of e.plus) if (it.hash) bought.push({ hash: it.hash, t: e.t });
+      }
+      const fixes = tradeYearFixes(dated, bought);
+      for (const t of dated) if (fixes.has(t.key)) t.t = fixes.get(t.key);
+    }
     const times = /* @__PURE__ */ new Map();
     for (const e of all()) {
       if (e.kind !== "rynek") continue;
@@ -8918,6 +9492,11 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
       });
     }
     for (const t of market) if (exact.has(t.key)) t.t = exact.get(t.key);
+    for (const t of market) if (t.type === "sell" && noon(t.t)) {
+      const d = new Date(t.t);
+      d.setHours(23, 59, 59, 0);
+      t.at = d.getTime();
+    }
     return market;
   }
   function invHistoryTrades(marketTrades) {
@@ -9097,8 +9676,9 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
       <select id="h-view" title="${L("history.everyTradeOnItsOwn")}"><option value="tx">${L("history.everyTrade")}</option><option value="item">${L("history.totalPerItem")}</option></select>
       <input type="search" id="h-q" placeholder="${L("history.filterItems")}" style="width:180px">
       <span class="sp"></span>
-      <button class="b pane" data-a="months" title="${L("history.showHideTheResultMonth")}">\u{1F4C5} ${L("history.months")}</button>
-      <button class="b pane" data-a="chart" title="${L("history.showHideTheFlipProfit")}">\u{1F4C8} ${L("history.chart")}</button>
+      <button class="b pane" data-a="months" title="${L("history.showHideTheResultMonth")}">\u{1F4C5} ${L("history.resultByMonth")}</button>
+      <button class="b pane" data-a="chart" title="${L("history.showHideTheFlipProfit")}">\u{1F4C8} ${L("history.chartFlips")}</button>
+      <button class="b pane" data-a="chartbal" title="${L("history.showHideTheBalance")}">\u{1F4C8} ${L("history.chartBalance")}</button>
     </div>
     <div class="cards" id="h-cards" style="grid-template-columns:repeat(auto-fill,minmax(max(170px,calc(25% - 10px)),1fr))"></div>
     <div id="h-months" style="padding:0 14px"></div>
@@ -9179,6 +9759,9 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
       }, dump: exportHistory, syncall: () => syncAll(false), fullall: () => syncAll(true), stop: () => {
         task2?.cancel();
         ihTask?.cancel();
+      }, chartbal: () => {
+        set("histChartBal", !get("histChartBal", false));
+        drawChart();
       }, chart: () => {
         set("histChart", !get("histChart", false));
         if (chartZoom) {
@@ -9327,7 +9910,7 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
     const trades = full ? {} : saved;
     const keep = () => saveTrades(full ? { ...saved, ...trades } : trades);
     const wasEmpty = !Object.keys(saved).length;
-    let start = 0, total = Infinity, added = 0;
+    let start = 0, total = Infinity, added = 0, steamTotal = 0;
     let dateOf = null;
     try {
       const anchors = await loadAnchors();
@@ -9335,6 +9918,7 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
         const d = await myHistoryHtmlPage(start, PAGE);
         if (!d.success) throw new Error(L("history.steamReturnedNoHistory"));
         total = d.total_count || 0;
+        steamTotal = Math.max(steamTotal, total);
         const parse = (h) => new DOMParser().parseFromString(h, "text/html");
         if (!dateOf) {
           const top = parseMyHistoryHtml(d, parse, /* @__PURE__ */ new Date()).find((t) => /^\d+_\d+/.test(t.key) && t.t);
@@ -9369,6 +9953,9 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
       if (task2.cancelled) {
         keep();
         log(L("history.historyStoppedISavedWhat"), "warn");
+      } else if (!wasEmpty && (full ? !wholeHistory(steamTotal, start) : !steamTotal)) {
+        keep();
+        log(L("history.steamGaveNoFullHistory"), "warn");
       } else {
         saveTrades(trades);
         set("tradesSyncedAt", Date.now());
@@ -9416,14 +10003,15 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
   }
   function computeAll() {
     const { list: conv, pending } = converted(timedTrades().all);
-    const res = fifoPnL(conv);
+    const res = fifoPnL(conv, inventoryMoves(allEvents()));
     const owned = ownedNow();
     const notBought = owned ? ownedNotBought() : /* @__PURE__ */ new Map();
     for (const it of res.items) {
+      it.goneQty = it.gone || 0;
       if (!it.holdQty || !owned) continue;
       const have = Math.min(it.holdQty, Math.max(0, (owned.get(it.hash) || 0) - (notBought.get(it.hash) || 0)));
       if (have < it.holdQty) {
-        it.goneQty = it.holdQty - have;
+        it.goneQty += it.holdQty - have;
         it.holdCost = Math.round(it.holdCost * have / it.holdQty);
         it.holdQty = have;
       }
@@ -9481,6 +10069,11 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
     let acc = 0;
     const pts = res.realized.filter((r) => r.t >= periodSince).sort((a, b) => a.t - b.t).map((r) => [r.t, acc += r.pnl]);
     chartPts = pts;
+    const moves = /* @__PURE__ */ new Map();
+    for (const t of all3) if (t.t >= periodSince) moves.set(t.t, (moves.get(t.t) || 0) + (t.type === "sell" ? 1 : -1) * t.price * t.amount);
+    let bal = 0;
+    balancePts = [...moves].sort((a, b) => a[0] - b[0]).map(([t, v]) => [t, bal += v]);
+    if (balancePts.length) balancePts.unshift([balancePts[0][0] - 6e4, 0]);
     drawChart();
     drawMonths(res, all3, inR);
     if (view === "tx") return renderTx({ res, since, until, all: all3, dropTx });
@@ -9622,26 +10215,16 @@ ${L("inventory.appliedOnesUsuallyRaiseThe")}`)}">${L("inventory.stickers2")} ~${
   function renderTx({ res, since, until = Infinity, all: all3, dropTx }) {
     const items2 = new Map(res.items.map((it) => [it.hash, it]));
     const unsoldOf = /* @__PURE__ */ new Map();
-    {
-      const cum = /* @__PURE__ */ new Map(), sold = new Map(res.items.map((it) => [it.hash, it.sold - it.unmatchedSells]));
-      for (const t of [...all3].sort((a, b) => a.t - b.t)) {
-        if (t.type !== "buy") continue;
-        const q = t.amount || 1, st = cum.get(t.hash) || 0, en = st + q;
-        cum.set(t.hash, en);
-        unsoldOf.set(bk(t), Math.max(0, Math.min(q, en - Math.max(sold.get(t.hash) || 0, st))));
-      }
-    }
+    for (const t of all3) if (t.type === "buy") unsoldOf.set(bk(t), Math.max(0, (t.amount || 1) - (res.copies.get(bk(t))?.sold || 0)));
     const goneOf = /* @__PURE__ */ new Map();
     {
-      const left = new Map(res.items.map((it) => [it.hash, it.goneQty || 0]));
+      const left = new Map(res.items.map((it) => [it.hash, (it.goneQty || 0) - (it.gone || 0)]));
       for (const t of [...all3].sort((a, b) => a.t - b.t)) {
         if (t.type !== "buy") continue;
         const k = bk(t), u = unsoldOf.get(k) || 0, l = left.get(t.hash) || 0;
-        const g = Math.min(u, l);
-        if (g) {
-          goneOf.set(k, g);
-          left.set(t.hash, l - g);
-        }
+        const seen = Math.min(u, res.copies.get(k)?.gone || 0), extra = Math.min(u - seen, l);
+        if (seen + extra) goneOf.set(k, seen + extra);
+        if (extra) left.set(t.hash, l - extra);
       }
     }
     const fatesOf = /* @__PURE__ */ new Map();
@@ -9938,6 +10521,19 @@ ${L("history.allUnitsToday", { n: g.n })}: ${fmt(x.now * g.n)}${x.type === "buy"
     const { r, src } = histRate(1, ts);
     if (r && src === "nbp") return { price: Math.round(249 * r), src: L("history.249UsdAtThat") };
     return { price: keyPrice(), src: L("history.249UsdAtTodays") };
+  }
+  function keyPriceNow() {
+    const now = Date.now(), cur = CUR_NAME[wallet().currency];
+    const recent = (k) => k && now - k.t < 400 * 864e5 ? { price: k.price, at: k.t } : null;
+    const named = recent(nearestKeyPrice(now, cur));
+    if (named) return named;
+    const usd = rateFor(1);
+    if (!usd) return null;
+    return recent(nearestKeyPrice(now, cur, keyExpect)) || { price: Math.round(249 * usd) };
+  }
+  async function keyPriceReady() {
+    if (!keyPriceNow()) await fxLoading.get(1);
+    return keyPriceNow();
   }
   var syncStore = once(() => sBusy, (v) => sBusy = v, syncStoreNow);
   async function syncStoreNow() {
@@ -10239,6 +10835,7 @@ ${L("history.terminalsTerminalInGamePurchase")}: ${fmt(spentTerm)}`)}">${spentTe
     const tip = net4 ? L("history.lowestPriceTodayInHand", { low: fmt(low), today: fmt(today) }) : L("history.lowestPriceToday", { low: fmt(low) });
     return `<div class="sub" title="${esc(tip)}">${L("history.today")} ${fmt(low)}${d != null && isFinite(d) ? ` <span class="${d >= 0 ? "pos" : "neg"}">(${d >= 0 ? "+" : ""}${pct(d, 0)})</span>` : ""}</div>`;
   }
+  var monthsOpen = null;
   function drawMonths(res, all3, inR) {
     const box2 = el2?.querySelector("#h-months");
     if (!box2) return;
@@ -10281,109 +10878,72 @@ ${L("history.terminalsTerminalInGamePurchase")}: ${fmt(spentTerm)}`)}">${spentTe
       box2.innerHTML = `<div class="sub" style="padding:6px 0">${L("history.noTradesInThisPeriod")}</div>`;
       return;
     }
-    const money = (v) => `<span class="${v > 0 ? "pos" : v < 0 ? "neg" : ""}">${v > 0 ? "+" : ""}${fmt(Math.round(v))}</span>`;
-    const sum = rows3.reduce((s, x) => {
-      for (const k of ["flip", "nf", "wins", "cases", "nc", "open", "spent", "recv"]) s[k] += x[k];
-      return s;
-    }, { flip: 0, nf: 0, wins: 0, cases: 0, nc: 0, open: 0, spent: 0, recv: 0 });
-    const name = (x) => {
-      const [y, mo] = x.k.split("-").map(Number);
-      return new Date(y, mo - 1, 1).toLocaleDateString(locale(), { month: "long", year: "numeric" });
+    monthsOpen ||= /* @__PURE__ */ new Set([rows3[0].k.slice(0, 4)]);
+    box2.innerHTML = `<div class="sub" style="display:flex;gap:10px;align-items:baseline;margin:6px 0 2px"><b style="color:#c6d4df;font-size:13px">${L("history.resultByMonth")}</b><span>${L("history.flipsAndCasesWithA")}</span></div>${monthsHtml(rows3, monthsOpen, (v) => fmt(Math.round(v)))}`;
+    box2.onclick = (e) => {
+      const y = e.target.closest("[data-year]")?.dataset.year;
+      if (!y) return;
+      if (monthsOpen.has(y)) monthsOpen.delete(y);
+      else monthsOpen.add(y);
+      drawMonths(res, all3, inR);
     };
-    const line = (x, label, strong = false) => `<tr${strong ? ' style="font-weight:600;border-top:2px solid var(--ln)"' : ""}><td>${label}</td>
-    <td>${x.nf ? `${money(x.flip)} <span class="sub">${x.nf} \xB7 ${Math.round(x.wins / x.nf * 100)}% ${L("history.inProfit2")}</span>` : '<span class="sub">-</span>'}</td>
-    <td>${x.open ? `${x.nc ? money(x.cases) : '<span class="sub">\u2026</span>'} <span class="sub">${x.open} ${L("history.open")}${x.nc < x.open ? L("history.withoutAResult", { open: x.open - x.nc }) : ""}</span>` : '<span class="sub">-</span>'}</td>
-    <td>${fmt(x.spent)}</td><td>${fmt(x.recv)}</td><td><b>${money(x.flip + x.cases)}</b></td></tr>`;
-    box2.innerHTML = `<div class="sub" style="display:flex;gap:10px;align-items:baseline;margin:6px 0 2px"><b style="color:#c6d4df;font-size:13px">${L("history.resultByMonth")}</b><span>${L("history.flipsAndCasesWithA")}</span></div>
-    <table style="margin-bottom:8px"><thead><tr><th>${L("history.month")}</th><th>${L("history.flipProfit")}</th><th>${L("history.cases2")}</th><th>${L("history.spent")}</th><th>${L("history.received2")}</th><th>${L("history.total2")}</th></tr></thead>
-    <tbody>${rows3.map((x) => line(x, name(x))).join("")}${rows3.length > 1 ? line(sum, L("history.total2"), true) : ""}</tbody></table>`;
   }
   var chartPts = [];
+  var balancePts = [];
   var chartZoom = null;
-  var CH = { l: 70, r: 12, W: 1e3 };
+  function zoomedPoints(pts) {
+    if (!chartZoom) return pts;
+    const [a, b] = chartZoom;
+    const before = [...pts].reverse().find((x) => x[0] < a);
+    const inside = pts.filter((x) => x[0] >= a && x[0] <= b);
+    const lastV = (inside.length ? inside[inside.length - 1] : before)?.[1] ?? 0;
+    return [[a, before ? before[1] : 0], ...inside, [b, lastV]];
+  }
   function drawChart() {
     const box2 = el2?.querySelector("#h-chart");
     if (!box2) return;
-    const on = get("histChart", false);
-    el2.querySelector('[data-a="chart"]')?.classList.toggle("on", on);
-    if (!on || chartPts.length < 2) {
-      box2.innerHTML = on ? `<div class="sub" style="padding:6px 0">${L("history.tooFewSalesToDraw")}</div>` : "";
-      return;
-    }
-    let p = chartPts;
-    if (chartZoom) {
-      const [a, b] = chartZoom;
-      const before = [...chartPts].reverse().find((x) => x[0] < a);
-      const inside = chartPts.filter((x) => x[0] >= a && x[0] <= b);
-      const lastV = (inside.length ? inside[inside.length - 1] : before)?.[1] ?? 0;
-      p = [[a, before ? before[1] : 0], ...inside, [b, lastV]];
-    }
-    const x0 = p[0][0], x1 = p[p.length - 1][0];
-    const short = x1 - x0 < 3 * 864e5;
-    const endV = chartPts[chartPts.length - 1][1];
-    const delta = chartZoom ? p[p.length - 1][1] - p[0][1] : endV;
-    box2.innerHTML = `
-    <div class="sub" style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0 2px">
-      <b style="color:#c6d4df;font-size:13px">${L("history.cumulativeFlipProfit")}</b>
+    const charts = [
+      { a: "chart", on: get("histChart", false), pts: chartPts, title: L("history.cumulativeFlipProfit"), empty: L("history.tooFewSalesToDraw"), changeKey: "flip.chartSale" },
+      { a: "chartbal", on: get("histChartBal", false), pts: balancePts, title: L("history.cumulativeBalance"), empty: L("history.tooFewTradesToDraw"), changeKey: "flip.chartChange" }
+    ];
+    for (const c of charts) el2.querySelector(`[data-a="${c.a}"]`)?.classList.toggle("on", c.on);
+    const shown3 = charts.filter((c) => c.on);
+    let hint = false;
+    box2.innerHTML = shown3.map((c, i) => {
+      if (c.pts.length < 2) return `<div class="sub" style="padding:6px 0">${c.empty}</div>`;
+      const p = c.p = zoomedPoints(c.pts);
+      const x0 = p[0][0], x1 = p[p.length - 1][0];
+      const delta = chartZoom ? p[p.length - 1][1] - p[0][1] : c.pts[c.pts.length - 1][1];
+      const side2 = hint ? "" : chartZoom ? `<button class="b" data-a="chartreset">${L("history.showAll")}</button>` : `<span>${L("history.dragTheMouseOverThe")}</span>`;
+      hint = true;
+      return `<div class="sub" style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0 2px">
+      <b style="color:#c6d4df;font-size:13px">${c.title}</b>
       <span>${chartZoom ? L("history.theTableAndCardsShow", { x0: new Date(x0).toLocaleDateString(), x1: new Date(x1).toLocaleDateString() }) : L("history.total3")}<b class="${delta >= 0 ? "pos" : "neg"}">${delta >= 0 ? "+" : ""}${fmt(Math.round(delta))}</b></span>
-      <span class="sp" style="flex:1"></span>
-      <span id="h-ch-tip" style="color:#c6d4df"></span>
-      ${chartZoom ? `<button class="b" data-a="chartreset">${L("history.showAll")}</button>` : `<span>${L("history.dragTheMouseOverThe")}</span>`}
+      <span class="sp" style="flex:1"></span>${side2}
     </div>
-    <div id="h-ch-wrap" style="position:relative;cursor:crosshair;user-select:none">
-      ${lineChart([{ points: p, color: endV >= 0 ? "#a4d007" : "#ff6b6b" }], { fmtY: (v) => fmt(Math.round(v)), fmtX: (v) => short ? new Date(v).toLocaleString([], { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : new Date(v).toLocaleDateString(), height: 180, zero: true })}
-      <div id="h-ch-sel" hidden style="position:absolute;top:0;bottom:22px;background:rgba(102,192,244,.18);border:1px solid rgba(102,192,244,.6);pointer-events:none"></div>
-    </div>`;
-    const wrap = box2.querySelector("#h-ch-wrap");
-    const sel2 = box2.querySelector("#h-ch-sel");
-    const tip = box2.querySelector("#h-ch-tip");
-    const tAt = (clientX) => {
-      const r = wrap.getBoundingClientRect();
-      const fx2 = (clientX - r.left) / r.width * CH.W;
-      const f = Math.min(1, Math.max(0, (fx2 - CH.l) / (CH.W - CH.l - CH.r)));
-      return x0 + f * (x1 - x0);
-    };
-    let start = null;
-    wrap.onmousedown = (e) => {
-      if (e.button !== 0) return;
-      start = e.clientX;
-      sel2.hidden = true;
-      e.preventDefault();
-    };
-    wrap.onmousemove = (e) => {
-      const t = tAt(e.clientX);
-      const near = p.reduce((best, x) => Math.abs(x[0] - t) < Math.abs(best[0] - t) ? x : best, p[0]);
-      tip.innerHTML = `${new Date(near[0]).toLocaleString()} \xB7 <b class="${near[1] >= 0 ? "pos" : "neg"}">${fmt(Math.round(near[1]))}</b>`;
-      if (start == null) return;
-      const r = wrap.getBoundingClientRect();
-      const a = Math.min(start, e.clientX) - r.left, b = Math.max(start, e.clientX) - r.left;
-      Object.assign(sel2.style, { left: a + "px", width: b - a + "px" });
-      sel2.hidden = b - a < 3;
-    };
-    wrap.onmouseleave = () => {
-      tip.textContent = "";
-    };
-    const finish = (e) => {
-      if (start == null) return;
-      const s = start;
-      start = null;
-      sel2.hidden = true;
-      window.removeEventListener("mouseup", finish);
-      if (Math.abs(e.clientX - s) < 6) return;
-      const a = tAt(Math.min(s, e.clientX)), b = tAt(Math.max(s, e.clientX));
-      if (b - a < 6e4) return;
-      chartZoom = [a, b];
-      pages.tx = 0;
-      render2(true);
-    };
-    wrap.addEventListener("mousedown", () => window.addEventListener("mouseup", finish));
-    wrap.ondblclick = () => {
-      if (chartZoom) {
-        chartZoom = null;
-        pages.tx = 0;
-        render2(true);
-      }
-    };
+    <div class="pc-plot" data-chart="${i}" style="cursor:crosshair;user-select:none"></div>`;
+    }).join("");
+    shown3.forEach((c, i) => {
+      if (!c.p) return;
+      profitChart(box2.querySelector(`[data-chart="${i}"]`), {
+        points: c.p,
+        label: c.title,
+        changeKey: c.changeKey,
+        fmt: (v) => fmt(Math.round(v)),
+        onZoom: (from, to) => {
+          chartZoom = [from, to];
+          pages.tx = 0;
+          render2(true);
+        },
+        onReset: () => {
+          if (chartZoom) {
+            chartZoom = null;
+            pages.tx = 0;
+            render2(true);
+          }
+        }
+      });
+    });
   }
   var originsMemo = null;
   function itemOrigins() {
@@ -10482,7 +11042,7 @@ ${L("history.terminalsTerminalInGamePurchase")}: ${fmt(spentTerm)}`)}">${spentTe
   // src/features/sellsignals.js
   var hist2 = bucket("sellHist");
   var TTL = 12 * 36e5;
-  var DAY = 864e5;
+  var DAY2 = 864e5;
   var costs = null;
   var costsAt = 0;
   function costOf(hash) {
@@ -10498,7 +11058,7 @@ ${L("history.terminalsTerminalInGamePurchase")}: ${fmt(spentTerm)}`)}">${spentTe
   }
   function prune2(days = 14) {
     const all3 = hist2.all();
-    const lim = Date.now() - days * DAY;
+    const lim = Date.now() - days * DAY2;
     const old = Object.keys(all3).filter((k) => (all3[k]?.at || 0) < lim);
     if (!old.length) return;
     for (const k of old) delete all3[k];
@@ -10536,7 +11096,7 @@ ${L("history.terminalsTerminalInGamePurchase")}: ${fmt(spentTerm)}`)}">${spentTe
     const h = hist2.get(hash);
     if (!h?.p) return null;
     const within = (days2) => {
-      const since = Date.now() - days2 * DAY;
+      const since = Date.now() - days2 * DAY2;
       return h.p.filter((p) => p[0] >= since && p[2] > 0);
     };
     const units = (pts2) => pts2.reduce((x, p) => x + p[2], 0);
@@ -10555,11 +11115,11 @@ ${L("history.terminalsTerminalInGamePurchase")}: ${fmt(spentTerm)}`)}">${spentTe
         if (isCancelled()) break;
         try {
           const pts = await priceHistory(x.appid || 730, x.hash);
-          const since = Date.now() - 35 * DAY;
+          const since = Date.now() - 35 * DAY2;
           const days = /* @__PURE__ */ new Map();
           for (const p of pts) {
             if (p.t < since) continue;
-            const d = Math.floor(p.t / DAY) * DAY;
+            const d = Math.floor(p.t / DAY2) * DAY2;
             const a = days.get(d) || [0, 0];
             a[0] += p.price * (p.vol || 1);
             a[1] += p.vol || 1;
@@ -10576,7 +11136,7 @@ ${L("history.terminalsTerminalInGamePurchase")}: ${fmt(spentTerm)}`)}">${spentTe
           } catch {
           }
           const e = { at: Date.now(), d: [...days].sort((a, b) => a[0] - b[0]).map(([d, [s, v]]) => [d, Math.round(s / v), v]), f, rt, fv: FILL_V };
-          if (!f) e.p = pts.filter((p) => p.t >= Date.now() - 30 * DAY && p.vol > 0).slice(-400).map((p) => [p.t, p.price, p.vol]);
+          if (!f) e.p = pts.filter((p) => p.t >= Date.now() - 30 * DAY2 && p.vol > 0).slice(-400).map((p) => [p.t, p.price, p.vol]);
           hist2.set(x.hash, e);
         } catch (e) {
           if (e.status === 429) break;
@@ -10607,11 +11167,11 @@ ${L("history.terminalsTerminalInGamePurchase")}: ${fmt(spentTerm)}`)}">${spentTe
     const h = hist2.get(it.hash);
     if (h?.d?.length >= 5) {
       const now = Date.now();
-      const recentRows = h.d.filter((r) => r[0] >= now - 2 * DAY);
+      const recentRows = h.d.filter((r) => r[0] >= now - 2 * DAY2);
       const recent = avg(recentRows), recentVol = recentRows.reduce((s, r) => s + r[2], 0);
-      const base = avg(h.d.filter((r) => r[0] >= now - 30 * DAY && r[0] < now - 2 * DAY));
-      const a7 = avg(h.d.filter((r) => r[0] >= now - 7 * DAY));
-      const prev = avg(h.d.filter((r) => r[0] < now - 7 * DAY && r[0] >= now - 28 * DAY));
+      const base = avg(h.d.filter((r) => r[0] >= now - 30 * DAY2 && r[0] < now - 2 * DAY2));
+      const a7 = avg(h.d.filter((r) => r[0] >= now - 7 * DAY2));
+      const prev = avg(h.d.filter((r) => r[0] < now - 7 * DAY2 && r[0] >= now - 28 * DAY2));
       if (base && recent && recentVol >= 3 && recent >= base * (1 + th) && lowest >= base * (1 + th)) {
         out.push({ k: "high", label: L("sellsignals.priceyNow"), cls: "warn", title: L("sellsignals.overTheLast2Days", { recent: fmt(Math.round(recent)), recentVol, recent2: Math.round((recent / base - 1) * 100), base: fmt(Math.round(base)), lowest: fmt(lowest) }) });
       }
@@ -10659,7 +11219,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     const h = hist2.get(hash);
     if (!h?.d?.length) return null;
     const now = Date.now();
-    const d7 = h.d.filter((r) => r[0] >= now - 7 * DAY), d30 = h.d.filter((r) => r[0] >= now - 30 * DAY);
+    const d7 = h.d.filter((r) => r[0] >= now - 7 * DAY2), d30 = h.d.filter((r) => r[0] >= now - 30 * DAY2);
     return { d7: avg(d7), d30: avg(d30), sold7: d7.reduce((s, r) => s + r[2], 0) };
   }
 
@@ -10691,22 +11251,27 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       <td>${itemCell({ ...r, sub: `${r.amount > 1 ? `${r.amount} ${L("listings.pcs")} \xB7 ` : ""}${L("listings.notOnTheMarketYet")}` })}</td>
       <td><b>${fmt(r.buyer)}</b><div class="sub">${L("listings.youGet")} ${fmt(r.recv)}</div></td>
       <td><span class="chipst mid" title="${L("listings.steamListsThisItemOnly")}">\u23F3 ${L("listings.waitingForConfirmation")}</span></td>
-      <td colspan="2"><span class="sub">${L("listings.confirmItInTheSteam")}${r.local ? L("listings.newPriceSetInFlipster") : ""}</span></td></tr>`;
+      <td><span class="sub">${L("listings.confirmItInTheSteam")}${r.local ? L("listings.newPriceSetInFlipster") : ""}</span></td></tr>`;
   var sellPlans2 = bucket("sellPlans");
   var planList = () => Object.entries(sellPlans2.all()).map(([hash, p]) => ({ ...p, hash, name: p.name || hash, appid: p.appid || 730 })).sort((a, b) => (a.until || Infinity) - (b.until || Infinity));
-  var planRow = (p) => `<tr class="plan" style="background:rgba(102,192,244,.04)">
+  var infoTip = (text, alert) => text ? `<span class="stt-i${alert ? " alert" : ""}" tabindex="0" data-tip="${esc(text)}">${alert ? "!" : "i"}</span>` : "";
+  var planRow = (p) => {
+    const st = planStatus(p);
+    return `<tr class="plan" style="background:rgba(102,192,244,.04)">
       <td></td>
       <td>${itemCell({ ...p, sub: `${p.qty > 1 ? `${p.qty} ${L("listings.pcs")} \xB7 ` : ""}${L("listings.tradeLocked")}${p.guard ? L("listings.thenTheAutomation") : ""}` })}</td>
       <td>${p.mode === "fixed" ? `<b>${fmt(p.price)}</b><div class="sub">${L("listings.youGet")} ${fmt(receivedFromBuyer2(p.price))}</div>` : `<b>${L("listings.suggested")}</b><div class="sub">${p.min != null ? L("listings.notBelow", { min: fmt(p.min) }) : L("listings.noLowerLimit")}</div>`}</td>
-      <td><span class="chipst" style="color:#66c0f4;border-color:#2a6f9c" title="${L("listings.whenTheLockEndsFlipster")}">\u23F0 ${L("listings.illListIt")} ${fmtWhen(p.until)}</span>${planStatus(p)}</td>
-      <td colspan="2"><div class="acts" style="flex-wrap:nowrap;align-items:center">
+      <td><span class="chipst" style="color:#66c0f4;border-color:#2a6f9c" title="${L("listings.whenTheLockEndsFlipster")}">\u23F0 ${L("listings.illListIt")} ${fmtWhen(p.until)}</span>${st.html}</td>
+      <td><div class="acts" style="flex-wrap:nowrap;align-items:center">
+        ${infoTip(st.tip, st.alert)}
         <button class="b" data-a="planedit" data-hash="${esc(p.hash)}" data-app="${p.appid}" title="${L("listings.youChangeThePlanOn")}">${L("listings.changeInInventory")} \u2197</button>
         <button class="b red" data-a="plandel" data-hash="${esc(p.hash)}">${L("listings.removePlan")}</button>
       </div></td></tr>`;
+  };
   var planMarket = /* @__PURE__ */ new Map();
   function planStatus(p) {
     const h = planMarket.get(p.hash);
-    if (!h) return L("listings.checkingTheMarket");
+    if (!h) return { html: L("listings.checkingTheMarket"), tip: "", alert: false };
     const f = fmt, N = waitDays(), days = daysTxt(N);
     const table = fill(p.hash);
     const low = h.lowestSell;
@@ -10719,17 +11284,29 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
         atMin = true;
       }
     }
-    const cheapest = low ? ` \xB7 ${L("listings.cheapest")} ${f(low)}` : "";
-    if (price == null) return `<div class="sub" style="margin-top:4px">${L("listings.todayNoMarketData")}${cheapest}</div>`;
+    const cheapest = low ? `${L("listings.cheapest")} ${f(low)}` : "";
+    if (price == null) return { html: `<div class="sub" style="margin-top:4px">${L("listings.todayNoMarketData")}</div>`, tip: cheapest, alert: false };
     const c = table ? sellChance(table, N, price, h.sellGraph) : null;
     const what = p.mode === "fixed" ? L("listings.yourPrice") : atMin ? L("listings.yourMinimum") : L("listings.suggestion");
-    const line = `${L("listings.today")}: ${what} <b>${f(price)}</b>${c != null ? ` \xB7 ${L("listings.chanceWithin", { days })}: ${Math.round(c * 100)}%` : ""}${cheapest}`;
-    let verdict;
-    if (h.highestBuy && price <= h.highestBuy) verdict = `<span class="warn">${L("listings.notAboveTheBuyOrder", { highestBuy: f(h.highestBuy) })}</span>`;
-    else if (c != null && c < 0.25) verdict = `<span class="err">${L("listings.tooPriceyTodaySmallChance")}${atMin || p.mode === "fixed" ? L("listings.considerALowerPrice") : ""}</span>`;
-    else if (c != null && c < 0.5) verdict = `<span class="warn">${L("listings.willProbablyWaitLongerThan", { days })}</span>`;
-    else if (c != null) verdict = `<span class="ok">${L("listings.looksGood")}</span>`;
-    return `<div class="sub" style="margin-top:4px">${line}</div>${verdict ? `<div class="sub">${verdict}</div>` : ""}`;
+    const lines = [`${L("listings.today")}: ${what} ${f(price)}`, c != null ? `${L("listings.chanceWithin", { days })}: ${Math.round(c * 100)}%` : "", cheapest];
+    let word = "", cls2 = "", why = "";
+    if (h.highestBuy && price <= h.highestBuy) {
+      word = L("listings.planSellsAtOnce");
+      cls2 = "warn";
+      why = L("listings.notAboveTheBuyOrder", { highestBuy: f(h.highestBuy) });
+    } else if (c != null && c < 0.25) {
+      word = L("listings.tooPricey");
+      cls2 = "err";
+      why = L("listings.tooPriceyTodaySmallChance") + (atMin || p.mode === "fixed" ? L("listings.considerALowerPrice") : "");
+    } else if (c != null && c < 0.5) {
+      word = L("listings.pricey");
+      cls2 = "warn";
+      why = L("listings.willProbablyWaitLongerThan", { days });
+    } else if (c != null) {
+      word = L("listings.looksGood");
+      cls2 = "ok";
+    }
+    return { html: word ? `<div class="sub ${cls2}" style="margin-top:4px">${word}</div>` : "", tip: [...lines, why].filter(Boolean).join("\n"), alert: cls2 === "err" || cls2 === "warn" };
   }
   async function checkPlans() {
     for (const p of planList()) {
@@ -10807,7 +11384,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     </div>
     <table><thead><tr>
       <th style="width:1%"><input type="checkbox" id="l-all" title="${L("listings.selectAll")}"></th>
-      <th data-sort="name">${L("listings.item")}</th><th data-sort="buyer">${L("listings.yourPrice2")}</th><th data-sort="comp">${L("listings.market")}</th><th>${L("listings.suggestedPrice")}</th><th></th>
+      <th data-sort="name">${L("listings.item")}</th><th data-sort="buyer">${L("listings.yourPrice2")}</th><th data-sort="comp">${L("listings.market")}</th><th></th>
     </tr></thead><tbody></tbody></table>`;
     root2.addEventListener("click", (e) => {
       const th = e.target.closest("th[data-sort]");
@@ -11010,13 +11587,14 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   }
   function suggest(r) {
     if (!pass) return suggestNow(r);
-    const k = [r.appid, r.hash, r.pub, r.comp, r.item?.float != null || r.item?.stickers?.length ? 1 : 0].join("|");
+    const k = [r.appid, r.hash, r.pub, r.comp, r.h ? 1 : 0, r.item?.float != null || r.item?.stickers?.length ? 1 : 0].join("|");
     if (!pass.sug.has(k)) pass.sug.set(k, suggestNow(r));
     return pass.sug.get(k);
   }
   function suggestNow(r) {
     const rule = r.rule || {};
     const typ = typical(r.hash);
+    if (!r.h) return { price: null, why: "", warn: "", typ };
     const unique = r.item?.float != null || r.item?.stickers?.length;
     let price = null, why = "", warn = "";
     const snap = (p, up) => achievable(p, r.pub, up);
@@ -11081,9 +11659,9 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   }
   function evalListing(r, s = null) {
     const t = fill(r.hash);
-    if (!t) return null;
+    if (!t || !r.h) return null;
     const N = waitDays();
-    const c = sellChance(t, N, r.buyer, r.h ? othersGraph(r) : null);
+    const c = sellChance(t, N, r.buyer, othersGraph(r));
     if (c == null) return null;
     const days = daysTxt(N);
     if (c < 0.25) return { c, days, k: "high", label: L("listings.tooPricey"), cls: "err" };
@@ -11092,10 +11670,21 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     return { c, days, k: "ok", label: L("listings.fine"), cls: "ok" };
   }
   function chip(r) {
-    if (r.comp == null) return r.lowest != null ? `<span class="chipst mut">${L("listings.nobodyElseSells")}</span>` : compRunning ? `<span class="chipst mut">${L("listings.checking")}</span>` : '<span class="chipst mut">-</span>';
+    if (!r.h) return busy() ? `<span class="chipst mut">${L("listings.checking")}</span>` : '<span class="chipst mut">-</span>';
+    if (r.comp == null) return `<span class="chipst mut">${L("listings.nobodyElseSells")}</span>`;
     if (r.comp > r.buyer) return `<span class="chipst ok">${L("listings.cheapest")}</span>`;
     if (r.comp === r.buyer) return `<span class="chipst mid">${L("listings.tie")}</span>`;
     return `<span class="chipst bad">${L("listings.someoneIsCheaper", { buyer: fmt(r.buyer - r.comp) })}</span>`;
+  }
+  function rowDetails(r, s, e) {
+    const f = fmt, out = [];
+    if (e) out.push(`${L("listings.yourPrice")}, ${L("listings.chanceWithin2")} ${e.days}: ${Math.round(e.c * 100)}%`);
+    if (s.price != null) out.push(`${L("listings.suggestedPrice")}: ${f(s.price)}, ${L("listings.youGet")} ${f(receivedFromBuyer2(s.price, r.pub))}`);
+    if (s.why) out.push(s.why);
+    if (s.warn) out.push(...s.warn.split("; "));
+    if (s.typ?.d7) out.push(`${L("listings.sellsAt")} ~${f(Math.round(s.typ.d7))}`);
+    if (r.stray != null) out.push(`${L("listings.skippingUnderpricedCheapest")} ${f(r.stray)}`);
+    return out.join("\n");
   }
   var drawTimer = 0;
   var sumNext = null;
@@ -11145,22 +11734,20 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       const same = s.price != null && s.price === r.buyer;
       const autoOff = !settings.autoRelist;
       const autoTag = rule.auto ? `<span class="chipst ${autoOff ? "mut" : rule.min != null ? "ok" : "mid"}" title="${rule.min == null ? L("listings.theAutomationShouldWatchThis") : autoOff ? L("listings.theAutomationShouldWatchThis2", { min: fmt(rule.min) }) : L("listings.theAutomationWatchesThePrice", { min: fmt(rule.min) })}">auto${autoOff ? L("listings.off2") : ""}</span>` : "";
+      const e = evalListing(r, s);
       const main2 = `<tr data-id="${r.listingid}">
       <td><input type="checkbox" data-f="chk" ${r.checked ? "checked" : ""}></td>
       <td>${itemCell({ ...r, sub })}</td>
-      <td><b>${fmt(r.buyer)}</b><div class="sub">${L("listings.youGet")} ${fmt(r.recv)}</div>${(() => {
-        const e = evalListing(r, s);
-        return e ? `<div class="sub ${e.cls}" title="${L("listings.theChanceThatSomeonePays", { days: e.days })}">${L("listings.chanceWithin2")} ${e.days}: ${Math.round(e.c * 100)}% \xB7 ${e.label}</div>` : "";
-      })()}</td>
-      <td>${chip(r)} ${autoTag}<div class="sub" style="margin-top:3px">${r.comp != null ? `${L("listings.cheapestOther")}: ${fmt(r.comp)}` : ""}${r.stray != null ? ` <span title="${L("listings.theCheaperListingsAreBelow")}">(${L("listings.skippingUnderpricedCheapest")} ${fmt(r.stray)})</span>` : ""}${s.typ?.d7 ? `${r.comp != null ? " \xB7 " : ""}<span title="${esc(L("listings.theAveragePriceThisItem", { d7: fmt(Math.round(s.typ.d7)), sold7: s.typ.sold7, d30: s.typ.d30 ? L("listings.last30Days", { d30: fmt(Math.round(s.typ.d30)) }) : "" }))}">${L("listings.sellsAt")} ~${fmt(Math.round(s.typ.d7))}</span>` : ""} \xB7 <a class="acc" target="_blank" href="${esc(marketUrl(r.appid, r.hash))}">${L("listings.market2")} \u2197</a></div></td>
-      <td>${s.price != null ? `<b>${fmt(s.price)}</b><div class="sub" title="${esc(s.why)}">${L("listings.youGet")} ${fmt(receivedFromBuyer2(s.price, r.pub))} \xB7 ${esc(s.why)}</div>${s.warn ? `<div class="sub warn">${esc(s.warn)}</div>` : ""}` : L("listings.waitingForMarketData")}${r.status ? `<div class="sub ${r.cls || ""}">${esc(r.status)}</div>` : ""}</td>
+      <td><b>${fmt(r.buyer)}</b><div class="sub">${L("listings.youGet")} ${fmt(r.recv)}</div>${e && e.k !== "ok" ? `<div class="sub ${e.cls}" title="${L("listings.theChanceThatSomeonePays", { days: e.days })}">${e.label}</div>` : ""}</td>
+      <td>${chip(r)} ${autoTag}${r.h && r.comp != null ? `<div class="sub" style="margin-top:3px">${L("listings.cheapestOther")} ${fmt(r.comp)}</div>` : ""}${r.status ? `<div class="sub ${r.cls || ""}">${esc(r.status)}</div>` : ""}</td>
       <td style="white-space:nowrap"><div class="acts" style="flex-wrap:nowrap;align-items:center">
-        ${s.price != null && !same ? `<button class="b ${s.price < r.buyer ? "" : "go"}" data-a="set" data-id="${r.listingid}" title="${L("listings.removesTheListingAndLists", { price: fmt(s.price) })}">${L("listings.set")} ${fmt(s.price)}</button>` : same ? `<span class="sub ok" style="white-space:nowrap">${L("listings.priceOk")}</span>` : ""}
+        ${r.h ? infoTip(rowDetails(r, s, e), !!s.warn || e?.k === "high" || e?.k === "pricey") : ""}
+        ${s.price == null ? L("listings.waitingForMarketData") : !same ? `<button class="b ${s.price < r.buyer ? "" : "go"}" data-a="set" data-id="${r.listingid}" title="${L("listings.removesTheListingAndLists", { price: fmt(s.price) })}">${L("listings.set")} ${fmt(s.price)}</button>` : `<span class="sub ok" style="white-space:nowrap">${L("listings.priceOk")}</span>`}
         <button class="b red" data-a="rm" data-id="${r.listingid}" title="${L("listings.removeFromTheMarketIt")}">${L("listings.remove")}</button>
         <button class="b ${openCfg === r.listingid ? "on" : ""}" data-a="cfg" data-id="${r.listingid}" title="${L("listings.yourOwnPriceMinimumMaximum")}">\u2699</button>
       </div></td></tr>`;
       if (openCfg !== r.listingid) return main2;
-      return main2 + `<tr class="cfg" data-id="${r.listingid}"><td></td><td colspan="5"><div class="cfgbox">
+      return main2 + `<tr class="cfg" data-id="${r.listingid}"><td></td><td colspan="4"><div class="cfgbox">
       <div>
         <div class="lb">${L("listings.changeThePriceNow")}</div>
         <div class="line">
@@ -11190,7 +11777,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     };
     const blocks = sorted.map((r) => ({ key: once2(r.pending ? `p|${r.hash}|${r.recv}` : r.listingid), html: rowHtml(r) }));
     if (plans.length) {
-      blocks.push({ key: "plans", html: `<tr><td colspan="6" class="sub" style="padding:10px 8px 4px;font-weight:600">${L("listings.plannedListedWhenTheTrade")}</td></tr>` });
+      blocks.push({ key: "plans", html: `<tr><td colspan="5" class="sub" style="padding:10px 8px 4px;font-weight:600">${L("listings.plannedListedWhenTheTrade")}</td></tr>` });
       for (const p of plans) blocks.push({ key: once2(`plan|${p.hash}`), html: planRow(p) });
     }
     patchRows(tb, blocks);
@@ -11322,15 +11909,16 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     await competitionFor(rows, tk, { quiet: true });
     compRunning = false;
     lastComp = Date.now();
+    render3();
     summary();
     tick();
   }
   function summary(running3 = false) {
     const box2 = el3?.querySelector("#l-comp");
     if (!box2) return;
-    const checked = rows.filter((r) => r.comp != null || r.lowest != null);
-    const beaten = rows.filter((r) => r.comp != null && r.comp < r.buyer);
-    const tied = rows.filter((r) => r.comp != null && r.comp === r.buyer);
+    const checked = rows.filter((r) => r.h);
+    const beaten = checked.filter((r) => r.comp != null && r.comp < r.buyer);
+    const tied = checked.filter((r) => r.comp != null && r.comp === r.buyer);
     const parts = [];
     if (beaten.length) parts.push(`<b class="err">${beaten.length} ${beaten.length === 1 ? L("listings.listingUndercut") : L("listings.listingsUndercut")}</b>`);
     if (tied.length) parts.push(`<span class="warn">${tied.length} ${L("listings.tied")}</span>`);
@@ -11338,7 +11926,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     const high = evals.filter((e) => e.k === "high").length, cheap = evals.filter((e) => e.k === "cheap").length;
     if (high) parts.push(`<span class="err" title="${L("listings.atTheCurrentPriceThe")}">${high} ${L("listings.tooPriceyByTheHistory")}</span>`);
     if (cheap) parts.push(`<span class="warn" title="${L("listings.theyWillSellAlmostSurely")}">${cheap} ${L("listings.tooCheap")}</span>`);
-    if (checked.length && !beaten.length && !tied.length && !running3) parts.push(`<span class="ok">${L("listings.allYourListingsAreThe")}</span>`);
+    if (checked.length && checked.length === rows.length && !beaten.length && !tied.length && !running3) parts.push(`<span class="ok">${L("listings.allYourListingsAreThe")}</span>`);
     box2.innerHTML = parts.join(" \xB7 ");
     status("undercut", beaten.length ? `<b class="err">${L("listings.undercutListings")}: ${beaten.length}</b>` : null);
   }
@@ -11427,6 +12015,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
           if (row) {
             row.comp = comp;
             row.lowest = h.lowestSell;
+            row.h = h;
           }
           if (t.price != null) {
             jobs.push({ listing: l, price: t.price });
@@ -12374,12 +12963,6 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
         now: dealCheck({ price: mine, sellPrice: sell2, wallet: wallet() }),
         med: st.med7 ? dealCheck({ price: mine, sellPrice: st.med7, wallet: wallet() }) : null
       } : null;
-      const sell30 = hist3.filter((p) => p.t > Date.now() - 30 * 864e5);
-      const chart = lineChart([
-        { points: sell30.map((p) => [p.t, p.price]), color: "#66c0f4", label: L("flip.salePrice") },
-        ...fr ? [{ points: [[sell30[0]?.t || Date.now() - 2592e6, fr.bid], [Date.now(), fr.bid]], color: "#a4d007", dash: true, label: L("flip.buyOrdersNow") }] : [],
-        ...h.lowestSell ? [{ points: [[sell30[0]?.t || Date.now() - 2592e6, h.lowestSell], [Date.now(), h.lowestSell]], color: "#e5b84c", dash: true, label: L("flip.lowestListingNow") }] : []
-      ], { fmtY: (x) => fmt(Math.round(x)), bars: sell30.map((p) => [p.t, p.vol]) });
       const depth = (g, n = 6) => g.slice(0, n).map(([p, c], i) => `<tr><td>${fmt(p)}</td><td>${c - (i ? g[i - 1][1] : 0)}</td><td class="sub">${c}</td></tr>`).join("");
       const m = get("itemMeta", {})[hash];
       const box2 = (k, v, sub = "", c = "") => `<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ""}</div>`;
@@ -12417,7 +13000,8 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       </div>
       <div id="f-plan"></div>
       ${deal ? `<div class="note" style="font-size:13px">${L("flip.yourPurchaseForSellingNow", { mine: fmt(mine), sell: fmt(sell2), net: fmt(deal.now.net) })} <b class="${deal.now.profit >= 0 ? "pos" : "neg"}">${fmt(deal.now.profit)} (${pct(deal.now.roi)})</b>${deal.med ? `${L("flip.atThe7dMedian")} <b class="${deal.med.profit >= 0 ? "pos" : "neg"}">${fmt(deal.med.profit)}</b>` : ""}. ${L("flip.toComeOutEvenList")} <b>${fmt(deal.now.breakEven)}</b>.</div>` : ""}
-      <div style="padding:0 14px">${chart}</div>`;
+      <div id="f-chart"></div>`;
+      priceChart(out.querySelector("#f-chart"), { points: hist3, bid: fr?.bid, ask: h.lowestSell, fmt: (v) => fmt(Math.round(v)) });
       renderPlan();
       const bookHead = `<tr><th>${L("flip.price")}</th><th>${L("flip.qty")}</th><th>${L("flip.cumul")}</th></tr>`;
       out.insertAdjacentHTML("beforeend", `
@@ -12590,9 +13174,9 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     const rec = (x) => x ? `<b>${pct(x.win, 0)}</b> <span class="${cls(x.med)}">${sp(x.med)}</span>` : '<span class="sub">-</span>';
     const actions = (r) => `<td style="white-space:nowrap"><button class="b s" data-an="${esc(r.hash)}" data-app="${r.appid}">${L("flip.analysis")}</button>
         <button class="b s" data-w="${esc(r.hash)}" data-app="${r.appid}" title="${L("flip.watch")}">${watch.get(r.hash) ? "\u2605" : "\u2606"}</button>
-        ${r.fr ? `<button class="b s" data-bo="${esc(r.hash)}" data-price="${r.fr.buy}" data-app="${r.appid}" title="${L("flip.placeABuyOrderFor", { buy: fmt(r.fr.buy) })}">${L("flip.order")}</button>` : ""}
+        ${r.fr ? `<button class="b s" data-bo="${esc(r.hash)}" data-price="${r.fr.buy}" data-app="${r.appid}" title="${L("flip.placeABuyOrderFor", { buy: fmt(r.fr.buy) })}" aria-label="${L("flip.order")}">+</button>` : ""}
         ${isWatch ? "" : `<button class="b s" data-hide="${esc(r.hash)}" data-app="${r.appid}" title="${L("flip.hideItTheScannerWont")}">\u2715</button>`}</td>`;
-    el5.querySelector(target).innerHTML = (header ? `<div class="note">${header}</div>` : "") + `<table><thead><tr>${head}</tr></thead><tbody>${sorted.length ? sorted.map((r) => {
+    el5.querySelector(target).innerHTML = (header ? `<div class="note">${header}</div>` : "") + `<table class="flipt"><thead><tr>${head}</tr></thead><tbody>${sorted.length ? sorted.map((r) => {
       const m = meta2[r.hash] || {};
       const ok = good ? good(r) : true;
       const name = `<td>${itemCell({ hash: r.hash, name: m.name || r.hash, icon: m.icon || r.icon, color: m.color, appid: r.appid })}</td>`;
@@ -12610,9 +13194,9 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
         body2 = `${name}<td><span class="chipst ${v.c}" title="${esc(v.reasons.join(" \xB7 "))}">${esc(v.label)}</span></td>
           <td class="${fr ? cls(fr.profit) : ""}"><b>${fr ? fmt(fr.profit) : "-"}</b></td><td class="${fr ? cls(fr.roi) : ""}">${fr ? sp(fr.roi, 1) : "-"}</td>
           <td>${fr ? fmt(fr.buy) : "-"}</td>
-          <td${fr && fr.sell24 > fr.sell ? ` title="${L("flip.todaySalesGoAtBut", { sell24: fmt(fr.sell24) })}"` : ""}>${fr ? `${fmt(fr.sell)}<div class="sub">${L("flip.youGet")} ${fmt(fr.net)}${fr.sell24 > fr.sell ? ` \xB7 ${L("flip.today")} ${fmt(fr.sell24)}` : ""}</div>` : "-"}</td>
+          <td${fr && fr.sell24 > fr.sell ? ` title="${L("flip.todaySalesGoAtBut", { sell24: fmt(fr.sell24) })}"` : ""}>${fr ? `${fmt(fr.sell)}<div class="sub">${L("flip.youGet")} ${fmt(fr.net)}</div>` : "-"}</td>
           <td class="${fr && sig != null && fr.roi > 0 && fr.roi < sig ? "warn" : ""}">${sig != null ? "\xB1" + pct(sig, 1) : "-"}</td>
-          <td class="${fr && fr.week === 0 ? "neg" : fr && fr.week < MIN_FILL_WEEK ? "warn" : ""}">${fr ? `${fr.week} ${L("flip.pcs")}<div class="sub">${pct(fr.fill7, 0)} ${L("flip.ofVolume")}</div>` : "-"}</td>${volCell(r)}`;
+          <td class="${fr && fr.week === 0 ? "neg" : fr && fr.week < MIN_FILL_WEEK ? "warn" : ""}"${fr ? ` title="${pct(fr.fill7, 0)} ${L("flip.ofVolume")}"` : ""}>${fr ? `${fr.week} ${L("flip.pcs")}<div class="sub">${pct(fr.fill7, 0)}</div>` : "-"}</td>${volCell(r)}`;
       }
       return `<tr style="${good && !ok ? "opacity:.55" : ""}">${body2}${actions(r)}</tr>`;
     }).join("") : `<tr><td colspan="${cols}" class="empty">${isWatch ? Object.keys(watch.all()).length ? `${L("flip.youWatchClickScanWatchlist", { watch: Object.keys(watch.all()).length })}: ${Object.keys(watch.all()).slice(0, 8).map(esc).join(", ")}${Object.keys(watch.all()).length > 8 ? "\u2026" : ""}` : L("flip.addItemsToTheWatchlist") : esc(empty)}</td></tr>`}</tbody></table>`;
@@ -13213,10 +13797,8 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     return r;
   }
   function keyCost() {
-    const near = nearestKeyPrice(Date.now(), "PLN");
-    if (near && Date.now() - near.t < 400 * 864e5) return { price: near.price, src: L("cases.likeYourLastKey", { t: new Date(near.t).toLocaleDateString() }) };
-    const rate = usdRate || get("caseList", {}).usdRate;
-    return { price: rate ? Math.round(249 * rate) : 0, src: L("cases.249UsdAtThe") };
+    const k = keyPriceNow();
+    return { price: k?.price ?? null, src: k?.at ? L("cases.likeYourLastKey", { t: new Date(k.at).toLocaleDateString() }) : L("cases.249UsdAtThe") };
   }
   function mount6(root2) {
     el6 = root2;
@@ -13264,6 +13846,11 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     });
     del("caseKeyManual");
     recalcKey();
+    keyPriceReady().then(() => {
+      recalcKey();
+      render5();
+    }).catch(() => {
+    });
     root2.querySelector("#k-liq").onchange = render5;
     root2.querySelector("#k-kind").value = get("caseKind", "case");
     root2.querySelector("#k-kind").onchange = (e) => {
@@ -13294,7 +13881,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       const r = cache3.get(c.hash);
       if (!r) continue;
       if (rate && c.priceUsd > 0) r.casePrice = Math.round(c.priceUsd * rate);
-      r.keyCost = r.kind === "capsule" ? 0 : k;
+      r.keyCost = r.kind === "capsule" ? 0 : k ?? r.keyCost;
       r.cost = r.casePrice + r.keyCost;
       r.roi = r.cost ? r.ev / r.cost - 1 : null;
       changed = true;
@@ -13313,6 +13900,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
         await loadCases();
         recalcKey();
       }
+      await keyPriceReady();
       const k = keyCost();
       const db = await load().catch(() => null);
       const liq = el6.querySelector("#k-liq").checked;
@@ -13334,6 +13922,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
         return !r || r.v !== 4 || Date.now() - r.at > EV_TTL;
       };
       const todo = list.filter((c) => (only ? only.includes(c.hash) : want(c) && (!liq || c.listings >= 100) && stale2(c)) && (c.kind === "capsule" ? db?.caps?.[c.hash] : c.set || db?.cases[c.hash]));
+      if (k.price == null && todo.some((c) => c.kind !== "capsule")) throw new Error(L("cases.noUsdRate"));
       log(L("cases.casesCalculatingKey", { todo: todo.length, price: fmt(k.price), src: k.src, kind: kind2 === "cap" ? L("cases.capsules") : kind2 === "all" ? L("cases.casesAndCapsules2") : L("cases.cases3") }));
       let i = 0;
       const tStart = Date.now();
@@ -13801,5 +14390,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "23.11.2026, 18:30:07" : "?");
+  console.info("[Flipster] build", true ? "23.11.2026, 19:35:58" : "?");
 })();
