@@ -7,6 +7,7 @@ import { settings } from '../core/store.js';
 import { token } from '../core/jobs.js';
 import { flipReal, flipCeiling, flipDepth, buyPlan, holdStats, dealCheck, historyStats, isWeaponCase } from '../core/analysis.js';
 import { parsePrice, toInput, esc, pct, sleep, keepTime } from '../core/util.js';
+import { priceChart } from '../core/pricechart.js';
 import { MIN_BUYER } from '../core/fees.js';
 import { RESEARCH_ITEMS } from './research-items.js';
 import * as research from './research.js';
@@ -355,13 +356,6 @@ async function analyze() {
       med: st.med7 ? dealCheck({ price: mine, sellPrice: st.med7, wallet: steam.wallet() }) : null,
     } : null;
 
-    const sell30 = hist.filter((p) => p.t > Date.now() - 30 * 86400000);
-    const chart = ui.lineChart([
-      { points: sell30.map((p) => [p.t, p.price]), color: '#66c0f4', label: L('flip.salePrice') },
-      ...(fr ? [{ points: [[sell30[0]?.t || Date.now() - 2592000000, fr.bid], [Date.now(), fr.bid]], color: '#a4d007', dash: true, label: L('flip.buyOrdersNow') }] : []),
-      ...(h.lowestSell ? [{ points: [[sell30[0]?.t || Date.now() - 2592000000, h.lowestSell], [Date.now(), h.lowestSell]], color: '#e5b84c', dash: true, label: L('flip.lowestListingNow') }] : []),
-    ], { fmtY: (x) => steam.fmt(Math.round(x)), bars: sell30.map((p) => [p.t, p.vol]) });
-
     const depth = (g, n = 6) => g.slice(0, n).map(([p, c], i) => `<tr><td>${steam.fmt(p)}</td><td>${c - (i ? g[i - 1][1] : 0)}</td><td class="sub">${c}</td></tr>`).join('');
     const m = store.get('itemMeta', {})[hash];
     const box = (k, v, sub = '', c = '') => `<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
@@ -400,7 +394,8 @@ async function analyze() {
       </div>
       <div id="f-plan"></div>
       ${deal ? `<div class="note" style="font-size:13px">${L('flip.yourPurchaseForSellingNow', { mine: steam.fmt(mine), sell: steam.fmt(sell), net: steam.fmt(deal.now.net) })} <b class="${deal.now.profit >= 0 ? 'pos' : 'neg'}">${steam.fmt(deal.now.profit)} (${pct(deal.now.roi)})</b>${deal.med ? `${L('flip.atThe7dMedian')} <b class="${deal.med.profit >= 0 ? 'pos' : 'neg'}">${steam.fmt(deal.med.profit)}</b>` : ''}. ${L('flip.toComeOutEvenList')} <b>${steam.fmt(deal.now.breakEven)}</b>.</div>` : ''}
-      <div style="padding:0 14px">${chart}</div>`;
+      <div id="f-chart"></div>`;
+    priceChart(out.querySelector('#f-chart'), { points: hist, bid: fr?.bid, ask: h.lowestSell, fmt: (v) => steam.fmt(Math.round(v)) });
     renderPlan();
     const bookHead = `<tr><th>${L('flip.price')}</th><th>${L('flip.qty')}</th><th>${L('flip.cumul')}</th></tr>`;
     out.insertAdjacentHTML('beforeend', `
@@ -585,9 +580,9 @@ function renderTable(target, rows, isWatch, header = '', good = null, goal = 'fl
   const rec = (x) => (x ? `<b>${pct(x.win, 0)}</b> <span class="${cls(x.med)}">${sp(x.med)}</span>` : '<span class="sub">-</span>');
   const actions = (r) => `<td style="white-space:nowrap"><button class="b s" data-an="${esc(r.hash)}" data-app="${r.appid}">${L('flip.analysis')}</button>
         <button class="b s" data-w="${esc(r.hash)}" data-app="${r.appid}" title="${L('flip.watch')}">${watch.get(r.hash) ? '★' : '☆'}</button>
-        ${r.fr ? `<button class="b s" data-bo="${esc(r.hash)}" data-price="${r.fr.buy}" data-app="${r.appid}" title="${L('flip.placeABuyOrderFor', { buy: steam.fmt(r.fr.buy) })}">${L('flip.order')}</button>` : ''}
+        ${r.fr ? `<button class="b s" data-bo="${esc(r.hash)}" data-price="${r.fr.buy}" data-app="${r.appid}" title="${L('flip.placeABuyOrderFor', { buy: steam.fmt(r.fr.buy) })}" aria-label="${L('flip.order')}">+</button>` : ''}
         ${isWatch ? '' : `<button class="b s" data-hide="${esc(r.hash)}" data-app="${r.appid}" title="${L('flip.hideItTheScannerWont')}">✕</button>`}</td>`;
-  el.querySelector(target).innerHTML = (header ? `<div class="note">${header}</div>` : '') + `<table><thead><tr>${head}</tr></thead><tbody>${sorted.length ? sorted.map((r) => {
+  el.querySelector(target).innerHTML = (header ? `<div class="note">${header}</div>` : '') + `<table class="flipt"><thead><tr>${head}</tr></thead><tbody>${sorted.length ? sorted.map((r) => {
       const m = meta[r.hash] || {};
       const ok = good ? good(r) : true;
       const name = `<td>${ui.itemCell({ hash: r.hash, name: m.name || r.hash, icon: m.icon || r.icon, color: m.color, appid: r.appid })}</td>`;
@@ -605,9 +600,9 @@ function renderTable(target, rows, isWatch, header = '', good = null, goal = 'fl
         body = `${name}<td><span class="chipst ${v.c}" title="${esc(v.reasons.join(' · '))}">${esc(v.label)}</span></td>
           <td class="${fr ? cls(fr.profit) : ''}"><b>${fr ? steam.fmt(fr.profit) : '-'}</b></td><td class="${fr ? cls(fr.roi) : ''}">${fr ? sp(fr.roi, 1) : '-'}</td>
           <td>${fr ? steam.fmt(fr.buy) : '-'}</td>
-          <td${fr && fr.sell24 > fr.sell ? ` title="${L('flip.todaySalesGoAtBut', { sell24: steam.fmt(fr.sell24) })}"` : ''}>${fr ? `${steam.fmt(fr.sell)}<div class="sub">${L('flip.youGet')} ${steam.fmt(fr.net)}${fr.sell24 > fr.sell ? ` · ${L('flip.today')} ${steam.fmt(fr.sell24)}` : ''}</div>` : '-'}</td>
+          <td${fr && fr.sell24 > fr.sell ? ` title="${L('flip.todaySalesGoAtBut', { sell24: steam.fmt(fr.sell24) })}"` : ''}>${fr ? `${steam.fmt(fr.sell)}<div class="sub">${L('flip.youGet')} ${steam.fmt(fr.net)}</div>` : '-'}</td>
           <td class="${fr && sig != null && fr.roi > 0 && fr.roi < sig ? 'warn' : ''}">${sig != null ? '±' + pct(sig, 1) : '-'}</td>
-          <td class="${fr && fr.week === 0 ? 'neg' : fr && fr.week < MIN_FILL_WEEK ? 'warn' : ''}">${fr ? `${fr.week} ${L('flip.pcs')}<div class="sub">${pct(fr.fill7, 0)} ${L('flip.ofVolume')}</div>` : '-'}</td>${volCell(r)}`;
+          <td class="${fr && fr.week === 0 ? 'neg' : fr && fr.week < MIN_FILL_WEEK ? 'warn' : ''}"${fr ? ` title="${pct(fr.fill7, 0)} ${L('flip.ofVolume')}"` : ''}>${fr ? `${fr.week} ${L('flip.pcs')}<div class="sub">${pct(fr.fill7, 0)}</div>` : '-'}</td>${volCell(r)}`;
       }
       return `<tr style="${good && !ok ? 'opacity:.55' : ''}">${body}${actions(r)}</tr>`;
     }).join('') : `<tr><td colspan="${cols}" class="empty">${isWatch ? (Object.keys(watch.all()).length ? `${L('flip.youWatchClickScanWatchlist', { watch: Object.keys(watch.all()).length })}: ${Object.keys(watch.all()).slice(0, 8).map(esc).join(', ')}${Object.keys(watch.all()).length > 8 ? '…' : ''}` : L('flip.addItemsToTheWatchlist')) : esc(empty)}</td></tr>`}</tbody></table>`;

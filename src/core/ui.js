@@ -159,6 +159,41 @@ const CSS = `
 #stt .msel-pop div:hover{background:#2a475e}
 #stt .msel-pop div::before{content:'';flex:none;width:13px;height:13px;border:1px solid #4a6a82;border-radius:2px;font-size:10px;line-height:13px;text-align:center;color:#fff}
 #stt .msel-pop div.on::before{content:'✓';background:#2a6f9c;border-color:#66c0f4}
+#stt table.flipt th{white-space:normal;line-height:1.25;vertical-align:bottom}
+#stt table.flipt th,#stt table.flipt td{padding-left:6px;padding-right:6px}
+#stt table.flipt th .stt-i{margin-left:3px}
+#stt table.flipt th:last-child,#stt table.flipt td:last-child{position:sticky;right:0;z-index:1;background:var(--bg)}
+#stt table.flipt th:last-child{z-index:2;background:var(--bg2)}
+#stt table.flipt tr:hover td:last-child{background:#1f2f42}
+#stt table.flipt td:last-child .b.s{padding:3px 6px}
+#stt .sf-lim > label:has(#s-find){min-width:92px}
+#stt table.mt{margin-bottom:8px}
+#stt .mt th.num,#stt .mt td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+#stt .mt .nil{color:#55636f}
+#stt .mt tr.y{cursor:pointer;background:rgba(255,255,255,.035)}
+#stt .mt tr.y:hover{background:rgba(255,255,255,.07)}
+#stt .mt tr.y button{display:inline-flex;align-items:center;padding:0;background:none;border:0;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+#stt .mt tr.y .car{width:16px;color:var(--mut)}
+#stt .mt tr.m td:first-child{padding-left:30px}
+#stt .mt tr.idle td{color:#7d8a96}
+#stt .mt tr.sum td{border-top:2px solid var(--ln);font-weight:600}
+#stt .pc{position:relative;padding:6px 14px 12px}
+#stt .pc-top{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;margin-bottom:8px}
+#stt .pc-seg{display:inline-flex;gap:2px;padding:2px;background:var(--bg3);border:1px solid var(--ln);border-radius:4px}
+#stt .pc-seg button{padding:3px 10px;background:none;border:0;border-radius:3px;color:var(--mut);font:inherit;font-size:12px;cursor:pointer}
+#stt .pc-seg button:hover{color:#fff}
+#stt .pc-seg button.on{background:var(--ln);color:#fff}
+#stt .pc-leg{display:flex;flex-wrap:wrap;gap:4px 16px;margin-left:auto;font-size:12px;color:var(--tx)}
+#stt .pc-leg span{display:inline-flex;align-items:center;gap:6px}
+#stt .pc-leg i{display:inline-block;width:18px;border-top:2px solid}
+#stt .pc-leg i.d{border-top-style:dashed}
+#stt .pc-plot{position:relative;width:100%}
+#stt .pc-plot svg{display:block;width:100%;height:auto;outline:none;touch-action:pan-y}
+#stt .pc-plot svg:focus-visible{outline:1px solid var(--acc);outline-offset:2px}
+#stt .pc-sel{position:absolute;background:rgba(102,192,244,.16);border:1px solid rgba(102,192,244,.55);pointer-events:none}
+#stt .pc-tip{position:absolute;z-index:5;min-width:96px;padding:7px 10px;background:var(--bg3);border:1px solid var(--ln);border-radius:4px;box-shadow:0 4px 14px #0008;pointer-events:none;white-space:nowrap}
+#stt .pc-tip .v{color:#fff;font-size:14px;font-weight:600}
+#stt .pc-tip .s{margin-top:1px;color:var(--mut);font-size:11px}
 #stt .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--acc,#66c0f4);border-radius:50%;animation:stt-spin .8s linear infinite;vertical-align:-2px;margin-right:8px}
 @keyframes stt-spin{to{transform:rotate(360deg)}}
 #stt .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:10px;padding:12px 14px 48px}
@@ -250,13 +285,14 @@ const CSS = `
 #stt .row2{display:flex;gap:10px;flex-wrap:wrap;padding:12px 14px;align-items:flex-end}
 #stt .row2 > label{flex-direction:column;align-items:flex-start;gap:3px;font-size:12px;color:var(--mut)}
 #stt .row2 > label > .lt{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-#stt svg.chart{width:100%;height:220px;display:block}
 #stt .modal{position:fixed;inset:0;background:#0009;display:flex;align-items:center;justify-content:center;z-index:99999}
 #stt .modal > div{background:var(--bg);border:1px solid var(--ln);border-radius:8px;padding:18px;max-width:520px;width:calc(100% - 32px);box-shadow:0 10px 40px #000}
 #stt .modal h3{margin:0 0 10px;color:#fff;font-weight:500}
 #stt .modal .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 .stt-i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:6px;border-radius:50%;border:1px solid #66c0f4;color:#66c0f4;font:700 10px/1 Georgia,serif;font-style:italic;text-transform:none;cursor:help;vertical-align:1px;user-select:none}
 .stt-i:hover,.stt-i.on{background:#66c0f4;color:#0e1621}
+.stt-i.alert{border-color:#e5b84c;color:#e5b84c;font-family:inherit;font-style:normal}
+.stt-i.alert:hover,.stt-i.alert.on{background:#e5b84c;color:#0e1621}
 #stt-tip{position:fixed;z-index:100002;max-width:300px;white-space:pre-line;background:#0e1621;border:1px solid #66c0f4;color:#c6d4df;padding:9px 11px;border-radius:6px;font:12.5px/1.5 "Motiva Sans",Arial,sans-serif;box-shadow:0 6px 24px #000c;pointer-events:none}
 .stt-badge{position:absolute;left:2px;top:2px;right:2px;font:600 10px Arial,sans-serif;color:#fff;background:#000b;padding:1px 3px;border-radius:2px;pointer-events:none;display:flex;justify-content:space-between;z-index:3}
 .stt-badge .f{color:#9bd}
@@ -592,40 +628,4 @@ export function sorter(defaultKey, defaultDir = -1) {
     },
     arrow: (k) => (k === key ? (dir > 0 ? ' ▲' : ' ▼') : ''),
   };
-}
-
-/** SVG line chart. series: [{points:[[x,y]], color, label}] ; fmtY for labels */
-export function lineChart(series, { fmtY = (v) => v, fmtX = (v) => new Date(v).toLocaleDateString(), height = 220, bars = null, zero = false } = {}) {
-  const all = series.flatMap((s) => s.points);
-  if (!all.length) return L('ui.noData');
-  const W = 1000, H = height, P = { l: 70, r: 12, t: 12, b: 26 };
-  const xs = all.map((p) => p[0]), ys = all.map((p) => p[1]);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  let y0 = Math.min(...ys), y1 = Math.max(...ys);
-  if (zero) { y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
-  if (y0 === y1) { y0 -= 1; y1 += 1; }
-  const pad = (y1 - y0) * 0.08; y0 -= pad; y1 += pad;
-  const X = (v) => P.l + ((v - x0) / (x1 - x0 || 1)) * (W - P.l - P.r);
-  const Y = (v) => P.t + (1 - (v - y0) / (y1 - y0)) * (H - P.t - P.b);
-  let g = '';
-  for (let i = 0; i <= 4; i++) {
-    const v = y0 + ((y1 - y0) * i) / 4;
-    g += `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#2a475e" stroke-width="1"/><text x="${P.l - 6}" y="${Y(v) + 4}" fill="#8f98a0" font-size="11" text-anchor="end">${esc(fmtY(v))}</text>`;
-  }
-  for (let i = 0; i <= 5; i++) {
-    const v = x0 + ((x1 - x0) * i) / 5;
-    g += `<text x="${X(v)}" y="${H - 6}" fill="#8f98a0" font-size="11" text-anchor="${i === 0 ? 'start' : i === 5 ? 'end' : 'middle'}">${esc(fmtX(v))}</text>`;
-  }
-  if (bars?.length) {
-    const bm = Math.max(...bars.map((b) => b[1])) || 1;
-    const bw = Math.max(1, (W - P.l - P.r) / bars.length - 1);
-    g += bars.map(([x, v]) => `<rect x="${X(x) - bw / 2}" width="${bw}" y="${H - P.b - (v / bm) * 40}" height="${(v / bm) * 40}" fill="#2a475e"/>`).join('');
-  }
-  if (zero) g += `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#8f98a0" stroke-width="1" stroke-dasharray="4 4"/><text x="${W - P.r - 4}" y="${Y(0) - 4}" fill="#8f98a0" font-size="11" text-anchor="end">0 (${L('ui.breakEven')})</text>`;
-  for (const s of series) {
-    const d = s.points.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
-    g += `<path d="${d}" fill="none" stroke="${s.color || '#66c0f4'}" stroke-width="${s.width || 1.8}" ${s.dash ? 'stroke-dasharray="5 4"' : ''}/>`;
-  }
-  const legend = series.filter((s) => s.label).map((s, i) => `<text x="${P.l + 8 + i * 160}" y="${P.t + 12}" fill="${s.color}" font-size="12">● ${esc(s.label)}</text>`).join('');
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="height:${H}px">${g}${legend}</svg>`;
 }
