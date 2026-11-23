@@ -9,7 +9,7 @@ import * as disk from '../core/cache.js';
 import { token } from '../core/jobs.js';
 import { esc, pct, timeAgo, keepTime } from '../core/util.js';
 import { searchRate, isWeaponCase } from '../core/analysis.js';
-import * as sh from './storehist.js';
+import { keyPriceNow, keyPriceReady } from './history.js';
 import * as casedb from './casedb.js';
 import { ownedCount } from './inventory.js';
 import { L } from '../core/i18n.js';
@@ -313,10 +313,9 @@ async function computeCase(c, keyCost) {
 
 // ---------------------------------------------------------------- key price
 function keyCost() {
-  const near = sh.nearestKeyPrice(Date.now(), 'PLN');
-  if (near && Date.now() - near.t < 400 * 86400000) return { price: near.price, src: L('cases.likeYourLastKey', { t: new Date(near.t).toLocaleDateString() }) };
-  const rate = usdRate || store.get('caseList', {}).usdRate;
-  return { price: rate ? Math.round(249 * rate) : 0, src: L('cases.249UsdAtThe') };
+  // (not the search's price rate: logged in, the search can answer in your currency, and 2.49 "USD" became 2,49 zł)
+  const k = keyPriceNow();
+  return { price: k?.price ?? null, src: k?.at ? L('cases.likeYourLastKey', { t: new Date(k.at).toLocaleDateString() }) : L('cases.249UsdAtThe') };
 }
 
 // ---------------------------------------------------------------- UI
@@ -352,6 +351,7 @@ export function mount(root) {
   });
   store.del('caseKeyManual');
   recalcKey();
+  keyPriceReady().then(() => { recalcKey(); render(); }).catch(() => {}); // saved results get the key at the real rate
   root.querySelector('#k-liq').onchange = render;
   root.querySelector('#k-kind').value = store.get('caseKind', 'case');
   root.querySelector('#k-kind').onchange = (e) => { store.set('caseKind', e.target.value); render(); };
@@ -380,7 +380,7 @@ function recalcKey() {
     const r = cache.get(c.hash);
     if (!r) continue;
     if (rate && c.priceUsd > 0) r.casePrice = Math.round(c.priceUsd * rate); // case price from the fresher case list
-    r.keyCost = r.kind === 'capsule' ? 0 : k; r.cost = r.casePrice + r.keyCost; r.roi = r.cost ? r.ev / r.cost - 1 : null;
+    r.keyCost = r.kind === 'capsule' ? 0 : k ?? r.keyCost; r.cost = r.casePrice + r.keyCost; r.roi = r.cost ? r.ev / r.cost - 1 : null;
     changed = true;
   }
   if (changed) cache.replace(cache.all()); // saved once: each save writes every computed case
@@ -398,6 +398,7 @@ async function scan(only) {
       await loadCases();
       recalcKey();
     }
+    await keyPriceReady();
     const k = keyCost();
     const db = await casedb.load().catch(() => null);
     const liq = el.querySelector('#k-liq').checked;
@@ -415,6 +416,7 @@ async function scan(only) {
     }
     const stale = (c) => { const r = cache.get(c.hash); return !r || r.v !== 4 || Date.now() - r.at > EV_TTL; };
     const todo = list.filter((c) => (only ? only.includes(c.hash) : want(c) && (!liq || c.listings >= 100) && stale(c)) && (c.kind === 'capsule' ? db?.caps?.[c.hash] : c.set || db?.cases[c.hash]));
+    if (k.price == null && todo.some((c) => c.kind !== 'capsule')) throw new Error(L('cases.noUsdRate'));
     ui.log(L('cases.casesCalculatingKey', { todo: todo.length, price: steam.fmt(k.price), src: k.src, kind: kind === 'cap' ? L('cases.capsules') : kind === 'all' ? L('cases.casesAndCapsules2') : L('cases.cases3') }));
     let i = 0;
     const tStart = Date.now();
