@@ -5,8 +5,8 @@ import * as store from '../core/store.js';
 import * as disk from '../core/cache.js';
 import { settings } from '../core/store.js';
 import { token } from '../core/jobs.js';
-import { flipReal, flipCeiling, buyPlan, holdStats, dealCheck, historyStats } from '../core/analysis.js';
-import { parsePrice, toInput, esc, pct, sleep } from '../core/util.js';
+import { flipReal, flipCeiling, flipDepth, buyPlan, holdStats, dealCheck, historyStats, isWeaponCase } from '../core/analysis.js';
+import { parsePrice, toInput, esc, pct, sleep, keepTime } from '../core/util.js';
 import { MIN_BUYER } from '../core/fees.js';
 import { RESEARCH_ITEMS } from './research-items.js';
 import * as research from './research.js';
@@ -25,16 +25,37 @@ let openBuyOrder = () => {};
 export const setBuyOrderOpener = (fn) => (openBuyOrder = fn);
 
 const CATS = [
-  ['', L('flip.everything')], ['case', L('flip.cases')], ['capsule', L('flip.capsulesAndPackages')], ['tag_CSGO_Tool_Sticker', L('flip.stickers')], ['tag_CSGO_Type_Rifle', L('flip.rifles')],
+  ['', L('flip.everything')], ['case', L('flip.cases')], ['capsule', L('flip.capsulesAndPackages')], ['souvenir', L('flip.souvenirPackages')], ['tag_CSGO_Tool_Sticker', L('flip.stickers')], ['tag_CSGO_Type_Rifle', L('flip.rifles')],
   ['tag_CSGO_Type_Pistol', L('flip.pistols')], ['tag_CSGO_Type_SMG', L('flip.smgs')], ['tag_CSGO_Type_Knife', L('flip.knives')], ['tag_Type_Hands', L('flip.gloves')],
   ['tag_Type_CustomPlayer', L('flip.agents')], ['tag_CSGO_Type_Spray', 'Graffiti'], ['tag_CSGO_Type_MusicKit', L('flip.musicKits')],
 ];
 
 // Steam has one type for every container (weapon cases, sticker capsules, souvenir packages, graffiti / music boxes):
-// the two entries above share its tag and are told apart by name. Only weapon cases have the back-tested record.
-const isCase = (hash = '') => / Case$/.test(hash) && !/Souvenir/i.test(hash);
-const CAT_TAG = { case: 'tag_CSGO_Type_WeaponCase', capsule: 'tag_CSGO_Type_WeaponCase' };
-const CAT_NAME = { case: isCase, capsule: (h) => !isCase(h) };
+// the three entries above share its tag and are told apart by name. Only weapon cases have the back-tested record.
+const isCase = isWeaponCase;
+const CONTAINER_TAG = 'tag_CSGO_Type_WeaponCase';
+const CONTAINER_KINDS = ['case', 'capsule', 'souvenir'];
+// a container's market name has no " | " (other than the 2015 "Autograph Capsule | Team | Event") and no ★, every sticker,
+// skin, agent, graffiti and music kit has one of them: checked on all 471 containers and ~37 000 other names of the game
+const isContainer = (h = '') => h.startsWith('Autograph Capsule | ') || (!h.includes(' | ') && !h.startsWith('★'));
+const containerKind = (h) => (isCase(h) ? 'case' : /souvenir/i.test(h) ? 'souvenir' : 'capsule');
+/** the picked categories as a market search: Steam's type tags, and a name check when only some container kinds are wanted */
+function catFilters(picked) {
+  const kinds = picked.filter((v) => CONTAINER_KINDS.includes(v));
+  return {
+    cats: [...new Set(picked.map((v) => (CONTAINER_KINDS.includes(v) ? CONTAINER_TAG : v)))],
+    nameOk: kinds.length && kinds.length < CONTAINER_KINDS.length ? (h) => !isContainer(h) || kinds.includes(containerKind(h)) : null,
+    casesOnly: picked.length === 1 && picked[0] === 'case',
+  };
+}
+let catPick = []; // the picked categories, empty = everything
+function renderCats() {
+  const names = CATS.filter(([v]) => catPick.includes(v)).map(([, n]) => n);
+  const btn = el.querySelector('#s-cat');
+  btn.textContent = !names.length ? CATS[0][1] : names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
+  btn.title = names.join(', ') || CATS[0][1];
+  el.querySelectorAll('#s-cat-pop [data-cat]').forEach((d) => d.classList.toggle('on', d.dataset.cat ? catPick.includes(d.dataset.cat) : !catPick.length));
+}
 
 // default upper price = what you can spend right now: the wallet balance Steam reports on the page (funds still
 // on hold after a sale aren't part of it). Under 1 zł (or unknown) the old 50 zł default is used.
@@ -79,21 +100,29 @@ export function mount(root) {
       <div class="tw" id="w-table"></div>
     </section>
     <section data-s="scan" hidden>
-      <div class="row2">
+      <div class="sf">
+      <div class="row2 sf-top">
         <label>${L('flip.goal')}<select id="s-goal"><option value="hold">${L('flip.longTermCaseSeason')}</option><option value="flip">${L('flip.quickFlip7DayLock')}</option></select></label>
-        <label>${L('flip.category')}<select id="s-cat">${CATS.map(([v, n]) => `<option value="${v}">${n}</option>`).join('')}</select></label>
-        <label>${L('flip.search')}<input type="text" id="s-q" style="width:150px" placeholder="${L('flip.optional')}"></label>
-        <label>${L('flip.priceFrom')}<input class="p" id="s-min" value="${toInput(100)}"></label>
-        <label>${L('flip.to')}<input class="p" id="s-max" data-auto="1" value="${toInput(maxDefault())}"></label>
-        <label>${L('flip.minListings')}<input type="number" id="s-list" value="100" style="width:80px"></label>
-        <label data-only="hold">${L('flip.itemsToCheck')}<input type="number" id="s-n" value="40" style="width:70px"></label>
-        <label data-only="flip">${L('flip.howManyToFind')}<input type="number" id="s-find" value="${esc(store.get('flipFind', '5'))}" min="0" placeholder="${L('flip.noLimit')}" style="width:92px"></label>
-        <label data-only="flip">${L('flip.minSales24h')}<input type="number" id="s-vol" value="${settings.minVolume}" style="width:70px"></label>
-        <label data-only="flip">Min. ROI %<input type="number" id="s-roi" value="${Math.round(settings.minRoi * 100)}" style="width:60px"></label>
-        <label data-only="flip" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:6px" title="${L('flip.onlyItemsWithTheFlip')}"><input type="checkbox" id="s-only" ${store.get('flipOnlyOk', true) ? 'checked' : ''}> ${L('flip.profitableOnly')}</label>
-        <label data-only="flip" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:6px" title="${L('flip.tickedTheScannerReusesWhat')}"><input type="checkbox" id="s-skip" ${store.get('flipSkipSeen', true) ? 'checked' : ''}> ${L('flip.useRememberedData')}</label>
-        <button class="b go" data-a="scan">${L('flip.scan')}</button>
-        <button class="b" data-a="sclear" title="${L('flip.removesTheResultsOfThe')}">${L('flip.clearList')}</button>
+        <label id="s-cat-box" style="position:relative">${L('flip.category')}<button type="button" class="msel" id="s-cat"></button><div class="msel-pop" id="s-cat-pop" hidden>${CATS.map(([v, n]) => `<div data-cat="${v}">${n}</div>`).join('')}</div></label>
+        <label class="sf-q">${L('flip.search')}<input type="text" id="s-q" placeholder="${L('flip.optional')}"></label>
+        <div class="sf-act">
+          <button class="b" data-a="sclear" title="${L('flip.removesTheResultsOfThe')}">${L('flip.clearList')}</button>
+          <button class="b go" data-a="scan">${L('flip.scan')}</button>
+        </div>
+      </div>
+      <div class="row2 sf-lim">
+        <label class="sf-from">${L('flip.priceFrom')}<input class="p" id="s-min" value="${toInput(100)}"></label>
+        <label class="sf-to">${L('flip.to')}<input class="p" id="s-max" data-auto="1" value="${toInput(maxDefault())}"></label>
+        <label>${L('flip.minListings')}<input type="number" id="s-list" value="100"></label>
+        <label data-only="hold">${L('flip.itemsToCheck')}<input type="number" id="s-n" value="40"></label>
+        <label data-only="flip">${L('flip.howManyToFind')}<input type="number" id="s-find" value="${esc(store.get('flipFind', '5'))}" min="0" placeholder="${L('flip.noLimit')}"></label>
+        <label data-only="flip">${L('flip.minSales24h')}<input type="number" id="s-vol" value="${settings.minVolume}"></label>
+        <label data-only="flip">Min. ROI %<input type="number" id="s-roi" value="${Math.round(settings.minRoi * 100)}"></label>
+        <div class="sf-tg" data-only="flip">
+          <label class="tgl" title="${L('flip.onlyItemsWithTheFlip')}"><input type="checkbox" id="s-only" ${store.get('flipOnlyOk', true) ? 'checked' : ''}><span class="tr"></span>${L('flip.profitableOnly')}</label>
+          <label class="tgl" title="${L('flip.tickedTheScannerReusesWhat')}"><input type="checkbox" id="s-skip" ${store.get('flipSkipSeen', true) ? 'checked' : ''}><span class="tr"></span>${L('flip.useRememberedData')}</label>
+        </div>
+      </div>
       </div>
       <details><summary>${L('flip.howDoesItWork')}</summary><div class="note" style="font-size:13px">${L('flip.theScannerTakesTheMost')}
       </div></details>
@@ -121,7 +150,20 @@ export function mount(root) {
   };
   goalSel.value = store.get('flipGoal2', 'hold');
   // the evidence for holding is about cases → start there
-  if (goalSel.value === 'hold') root.querySelector('#s-cat').value = 'case';
+  const savedCats = store.get('flipCats', null);
+  catPick = Array.isArray(savedCats) ? savedCats.filter((v) => v && CATS.some(([x]) => x === v)) : goalSel.value === 'hold' ? ['case'] : [];
+  renderCats();
+  const catPop = root.querySelector('#s-cat-pop');
+  root.querySelector('#s-cat').addEventListener('click', () => { catPop.hidden = !catPop.hidden; });
+  catPop.addEventListener('click', (e) => {
+    e.preventDefault(); // the list stays open for picking several (the label around it would close it)
+    const v = e.target.closest('[data-cat]')?.dataset.cat;
+    if (v == null) return;
+    catPick = !v ? [] : catPick.includes(v) ? catPick.filter((x) => x !== v) : [...catPick, v];
+    store.set('flipCats', catPick);
+    renderCats();
+  });
+  root.addEventListener('click', (e) => { if (!e.target.closest('#s-cat-box')) catPop.hidden = true; });
   applyGoal();
   root.querySelector('#s-only').onchange = (e) => { store.set('flipOnlyOk', e.target.checked); renderScan(); };
   goalSel.onchange = () => { store.set('flipGoal2', goalSel.value); applyGoal(); renderScan(); if (view === 'watch') renderWatch(); };
@@ -229,6 +271,10 @@ function metricsRow(hash, appid, h, po, st, hist) {
     at: Date.now(),
   };
 }
+
+// the "Ocena" column sorts by the verdict you see, best first; inside one verdict by the winter record (holdScore)
+const HOLD_RANK = { ok: 7, wait: 6, thin: 5, young: 4, weak: 3, short: 2, new: 1, cheap: 1, none: 0 };
+const holdSort = (r) => HOLD_RANK[holdVerdict(r).k] * 1e5 + Math.max(-5e4, Math.min(5e4, r.holdScore ?? -5e4));
 
 /** is this item a candidate to buy and hold? Based on its own record + the two things that mattered in the back-test */
 function holdVerdict(r) {
@@ -406,6 +452,9 @@ async function runMetrics(list, target, isWatch, preFilter = null) {
   for (const { hash, appid } of list) {
     if (task.cancelled) break;
     ui.progress(++i, list.length);
+    // the scanner reuses a full check from the last half hour; the watchlist button always asks for fresh data
+    const known = results.get(hash);
+    if (!isWatch && known?.hs && Date.now() - known.at < FRESH) continue;
     try {
       // order book + full price history from Steam, in parallel (two request lanes)
       const [h, hist] = await Promise.all([
@@ -441,7 +490,7 @@ function seasonNote(rows) {
     : m >= 4 && m <= 8
       ? L('flip.sellingSeasonAprilToAugust')
       : L('flip.inBetweenHistoricallyItWas');
-  const cs = rows.filter((r) => r.hs && r.hs.ageDays >= 365 && / Case$/.test(r.hash));
+  const cs = rows.filter((r) => r.hs && r.hs.ageDays >= 365 && isCase(r.hash));
   const t = medianOf(cs.map((r) => r.hs.trend30).filter((x) => x != null)), y = medianOf(cs.map((r) => r.hs.vsYear).filter((x) => x != null));
   const mk = cs.length >= 3 && t != null
     ? L('flip.oldCasesInThisScan', { t: cls(t), t2: sp(t), y: cls(y), y2: sp(y) })
@@ -521,7 +570,7 @@ function renderTable(target, rows, isWatch, header = '', good = null, goal = 'fl
     name: (r) => r.hash, sell: (r) => (hold ? r.h?.lowestSell : r.fr?.sell), vol: (r) => r.vol,
     buy: (r) => r.fr?.buy, profit: (r) => r.fr?.profit, roi: (r) => r.fr?.roi, sigma: (r) => r.hs?.sigmaWeek, fill: (r) => r.fr?.fill7,
     winter: (r) => (r.hs?.winter ? r.hs.winter.win + r.hs.winter.med / 100 : null), y1: (r) => r.hs?.y1?.med, y2: (r) => r.hs?.y2?.med,
-    vsyear: (r) => r.hs?.vsYear, trend: (r) => r.hs?.trend30, hold: (r) => r.holdScore,
+    vsyear: (r) => r.hs?.vsYear, trend: (r) => r.hs?.trend30, hold: holdSort,
     verdict: (r) => ({ ok: 4, risk: 3, slow: 2, no: 1, none: 0 }[flipVerdict(r).k] * 10 + (r.fr?.roi ?? -1)), // best verdict first, then ROI
   });
   const th = (k, t) => `<th data-sort="${k}">${t}${sort.arrow(k)}</th>`;
@@ -569,13 +618,13 @@ function renderTable(target, rows, isWatch, header = '', good = null, goal = 'fl
  * middle of the list. Steam does that under load, an empty page with total_count 0 that looks exactly like the end
  * of the list, so an empty page before the known total is asked for again (after 5, 15, 30, 60 s) instead of trusted.
  */
-async function eachCandidate({ cat, nameOk, q, min, max, minListings, fresh }, fn, info = {}) {
+async function eachCandidate({ cats, nameOk, casesOnly, q, min, max, minListings, fresh }, fn, info = {}) {
   let rate = null; // search/render answers in USD → one priceoverview call gives the conversion rate
   const meta = store.bucket('itemMeta');
   // own lane (the one the cases tab uses for the same endpoint), so paging doesn't slow the price-history requests
   // a page of the list is reused for a few minutes (Ustawienia → pamięć danych rynku), but never an empty one
   const page = (start) => {
-    const path = `/market/search/render/?norender=1&appid=730&l=${steam.uiLanguage()}&start=${start}&count=100&search_descriptions=0&sort_column=popular&sort_dir=desc&query=${encodeURIComponent(q)}${cat ? `&category_730_Type[]=${cat}` : ''}`;
+    const path = `/market/search/render/?norender=1&appid=730&l=${steam.uiLanguage()}&start=${start}&count=100&search_descriptions=0&sort_column=popular&sort_dir=desc&query=${encodeURIComponent(q)}${cats.map((c) => `&category_730_Type[]=${c}`).join('')}`;
     return disk.cached('q|' + path, fresh ? 0 : disk.ttl(), () => steam.schedule('search', async () => {
       const r = await fetch(steam.ORIGIN + path, { credentials: 'include' });
       if (r.status === 429) throw new steam.HttpError(429, L('flip.steamTooManyRequests429'));
@@ -583,12 +632,29 @@ async function eachCandidate({ cat, nameOk, q, min, max, minListings, fresh }, f
       try { return disk.slimSearch(await r.json()); } catch { return null; }
     }), (d) => d?.results?.length > 0);
   };
+  // weapon cases have no variants for the new search to merge: 100 rows a request, in the wallet currency (only cases:
+  // it can merge a souvenir package with its highlight package). Any problem with it and the walk carries on from the
+  // same place with the old search; `walked` drops what the two lists share
+  let quickList = !q && casesOnly;
+  const quickPage = (at) => disk.cached(`qs|730|containers|${at}`, fresh ? 0 : disk.ttl(), () => steam.marketSearchPage({ appid: 730, start: at, filters: { Type: ['CSGO_Type_WeaponCase'] } }), (x) => x?.results?.length > 0);
+  const fetchPage = async (at) => {
+    if (quickList) {
+      const x = await quickPage(at).catch((e) => { console.warn('[Flipster] quick container list failed, using the old search', e); return null; });
+      if (x?.results?.length) return { d: x, inWallet: true };
+      quickList = false;
+    }
+    return { d: await page(at), inWallet: false };
+  };
+  let ahead = null; // the next page, already on its way on its own lane while this page's items are being checked
+  const walked = new Set();
   const WAIT = [5, 15, 30, 60];
   let total = Infinity, start = 0, empties = 0;
   while (start < total) {
     if (task.cancelled) return 'cancel';
     if (info.stop?.()) return 'stop';
-    const d = await page(start);
+    const got = ahead?.at === start ? ahead.p : fetchPage(start);
+    ahead = null;
+    const { d, inWallet } = await got;
     const res = d?.results || [];
     if (d?.total_count > 0) total = d.total_count; // an empty answer says 0, keep the last real total
     info.pos = start; info.total = total === Infinity ? null : total;
@@ -601,16 +667,23 @@ async function eachCandidate({ cat, nameOk, q, min, max, minListings, fresh }, f
       continue;
     }
     empties = 0;
-    if (rate == null) {
+    if (info.readAhead && start + res.length < total) {
+      ahead = { at: start + res.length, p: fetchPage(start + res.length) };
+      ahead.p.catch(() => {}); // a failure is handled when the walk gets to that page
+    }
+    if (!inWallet && rate == null) {
       const top = res.find((r) => r.sell_price > 0);
       if (top) {
         const local = /\$/.test(top.sell_price_text) ? (await prices.steamPrice(730, top.hash_name)).lowest : top.sell_price;
         rate = local / top.sell_price;
       }
     }
-    for (let i = 0; rate != null && i < res.length; i++) {
+    const pageRate = inWallet ? 1 : rate;
+    for (let i = 0; pageRate != null && i < res.length; i++) {
       const r = res[i];
-      const p = Math.round(r.sell_price * rate);
+      if (walked.has(r.hash_name)) continue;
+      walked.add(r.hash_name);
+      const p = Math.round(r.sell_price * pageRate);
       if (!(p >= min && p <= max && r.sell_listings >= minListings && (!nameOk || nameOk(r.hash_name)))) continue;
       if (!meta.get(r.hash_name)) meta.set(r.hash_name, { name: r.name, icon: r.asset_description?.icon_url, color: r.asset_description?.name_color, appid: 730 });
       if (task.cancelled) return 'cancel';
@@ -681,11 +754,11 @@ const ageNote = (rows) => {
 async function scan() {
   if (scanning) return;
   scanning = true;
+  const releaseClock = keepTime(); // started on the click: the scan keeps its pace when you switch to another tab
   await Promise.race([syncMax(), sleep(8000)]); // fresh balance for the "do" field; never holds the scan up for long
-  const catSel = el.querySelector('#s-cat').value;
+  el.querySelector('#s-cat-pop').hidden = true;
   const filters = {
-    cat: CAT_TAG[catSel] ?? catSel,
-    nameOk: CAT_NAME[catSel] || null,
+    ...catFilters(catPick),
     q: el.querySelector('#s-q').value.trim(),
     min: parsePrice(el.querySelector('#s-min').value) || 0,
     max: parsePrice(el.querySelector('#s-max').value) || Infinity,
@@ -722,6 +795,7 @@ async function scan() {
   } catch (e) {
     ui.log(L('flip.scanner') + e.message, 'err');
   }
+  releaseClock();
   scanning = false;
   saveRows(true);
   ui.progress(0);
@@ -745,6 +819,7 @@ async function scanFind(filters) {
   scanSet = new Set();
   const st = (findState = { want, checked: 0, found: 0, risky: 0, failed: 0, quick: 0, skipped: 0, state: 'run', walk: {} });
   st.walk.stop = () => st.found >= want;
+  st.walk.readAhead = true;
   renderScan(); // also stores Min. ROI / Min. sprzedaży from the form (the verdict reads them)
   ui.log(want === Infinity ? L('flip.scannerSearchingForFlipPossible') : L('flip.scannerSearchingForFlipPossible2', { want }));
   const seen = loadSeen();
@@ -779,7 +854,7 @@ async function scanFind(filters) {
         let q = useSeen ? quick.get(hash) : null;
         if (!q || Date.now() - q.at > FRESH) {
           const h0 = await prices.hist(appid, hash, useSeen ? 5 * 60000 : 0);
-          q = { at: Date.now(), max: flipCeiling({ buyGraph: h0.buyGraph, sellGraph: h0.sellGraph, net }) };
+          q = { at: Date.now(), max: flipCeiling({ buyGraph: h0.buyGraph, sellGraph: h0.sellGraph, net, depth: flipDepth(h0.sellCount) }) };
           quick.set(hash, q);
         }
         if (!(q.max != null && q.max > 0 && q.max >= settings.minRoi)) {

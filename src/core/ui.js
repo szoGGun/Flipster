@@ -128,6 +128,37 @@ const CSS = `
 #stt label.spot b:empty{display:none}
 #stt .grid>.empty{grid-column:1/-1}
 #stt .sugg{position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--bg2,#1b2838);border:1px solid #2a475e;border-radius:4px;max-height:320px;overflow:auto;box-shadow:0 6px 18px #0009}#stt .sugg div{display:flex;gap:8px;align-items:center;padding:5px 8px;cursor:pointer;font-size:12px;color:#c6d4df}#stt .sugg div:hover{background:#2a475e}#stt .sugg img{width:40px;height:30px;object-fit:contain}#stt .sugg .p2{margin-left:auto;color:var(--mut)}
+#stt button.msel{width:172px;padding:0 26px 0 9px;background-color:var(--bg3);border:1px solid var(--ln);border-radius:4px;color:#fff;font:inherit;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#stt .sf{background:var(--bg2);border-bottom:1px solid var(--ln)}
+#stt .sf .row2{gap:10px;padding:12px 14px 0;align-items:flex-end}
+#stt .sf .row2.sf-lim{gap:10px 12px;padding:10px 14px 12px}
+#stt .sf .row2 > label{align-items:stretch;gap:4px;min-width:74px;font-size:11px;color:var(--mut)}
+#stt .sf input:not([type=checkbox]),#stt .sf select,#stt .sf button.msel{box-sizing:border-box;height:32px;border-radius:4px;font-size:13px;outline:none;transition:border-color .12s,background-color .12s}
+#stt .sf input:not([type=checkbox]){padding:0 9px}
+#stt .sf input::placeholder{color:#5c6b7a}
+#stt .sf input:hover,#stt .sf select:hover,#stt .sf button.msel:hover{border-color:#3d6a8a}
+#stt .sf input:focus,#stt .sf select:focus,#stt .sf button.msel:focus{border-color:var(--acc)}
+#stt .sf input[type=number]{-moz-appearance:textfield;appearance:textfield}
+#stt .sf input[type=number]::-webkit-inner-spin-button,#stt .sf input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#stt .sf select,#stt .sf button.msel{-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8f98a0 50%),linear-gradient(135deg,#8f98a0 50%,transparent 50%);background-position:calc(100% - 14px) 50%,calc(100% - 9px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+#stt .sf select{min-width:206px;padding:0 26px 0 9px;cursor:pointer}
+#stt .sf .row2 > label.sf-q{flex:1 1 170px}
+#stt .sf-q input,#stt .sf-lim > label > input{width:0;min-width:100%}
+#stt .sf-act{display:flex;gap:8px;margin-left:auto}
+#stt .sf-act button.b{height:32px;padding:0 14px;border-radius:4px}
+#stt .sf-act button.b.go{min-width:104px;font-weight:600}
+#stt .sf .row2 > label.sf-from,#stt .sf .row2 > label.sf-to{width:84px;min-width:84px}
+#stt .sf .row2 > label.sf-from input{border-radius:4px 0 0 4px}
+#stt .sf .row2 > label.sf-to{margin-left:-13px}
+#stt .sf .row2 > label.sf-to input{border-radius:0 4px 4px 0}
+#stt .sf .row2 > label.sf-from input:focus,#stt .sf .row2 > label.sf-to input:focus{position:relative;z-index:1}
+#stt .sf-tg{display:flex;flex-direction:column;gap:2px;margin-left:auto;padding-left:14px;border-left:1px solid rgba(255,255,255,.07)}
+#stt .msel-pop{position:absolute;top:100%;left:0;z-index:20;min-width:210px;max-height:340px;margin-top:2px;padding:3px;overflow:auto;background:var(--bg2,#1b2838);border:1px solid #2a475e;border-radius:4px;box-shadow:0 6px 18px #0009}
+#stt .msel-pop[hidden]{display:none}
+#stt .msel-pop div{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:3px;color:#c6d4df;font-size:12px;white-space:nowrap;cursor:pointer}
+#stt .msel-pop div:hover{background:#2a475e}
+#stt .msel-pop div::before{content:'';flex:none;width:13px;height:13px;border:1px solid #4a6a82;border-radius:2px;font-size:10px;line-height:13px;text-align:center;color:#fff}
+#stt .msel-pop div.on::before{content:'✓';background:#2a6f9c;border-color:#66c0f4}
 #stt .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--acc,#66c0f4);border-radius:50%;animation:stt-spin .8s linear infinite;vertical-align:-2px;margin-right:8px}
 @keyframes stt-spin{to{transform:rotate(360deg)}}
 #stt .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:10px;padding:12px 14px 48px}
