@@ -3957,7 +3957,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 18:24:00" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 18:25:10" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -12031,21 +12031,23 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       <button class="b" data-a="stop" hidden>\u25A0 Stop</button>
     </div>
     <section data-s="analyze">
-      <div class="row2">
-        <label style="position:relative">${L("flip.itemNameInEnglishOr")}<input type="text" id="f-q" style="width:420px" placeholder="${L("flip.eG")} Budapest 2025 Champions Autograph Capsule" autocomplete="off"><div id="f-sugg" class="sugg" hidden></div></label>
-        <label>AppID<input type="number" id="f-app" value="730" style="width:70px"></label>
+      <div class="sf"><div class="row2 sf-lim">
+        <label class="sf-q" style="position:relative">${L("flip.itemNameInEnglishOr")}<input type="text" id="f-q" placeholder="${L("flip.eG")} Budapest 2025 Champions Autograph Capsule" autocomplete="off"><div id="f-sugg" class="sugg" hidden></div></label>
+        <label>AppID<input type="number" id="f-app" value="730"></label>
         <label>${L("flip.yourBuyPriceOptional")}<input class="p" id="f-mine" placeholder="-"></label>
-        <label>${L("flip.unitsToBuy")}<input type="number" id="f-n" value="1" min="1" style="width:70px"></label>
-        <button class="b go" data-a="analyze">${L("flip.analyse")}</button>
-      </div>
+        <label>${L("flip.unitsToBuy")}<input type="number" id="f-n" value="1" min="1"></label>
+        <div class="sf-act"><button class="b go" data-a="analyze">${L("flip.analyse")}</button></div>
+      </div></div>
       <div id="f-out"></div>
     </section>
     <section data-s="watch" hidden>
-      <div class="row2">
-        <label>${L("flip.addToWatchlist")}<input type="text" id="w-add" style="width:380px" placeholder="${L("flip.nameInEnglishOrPolish")}"></label>
-        <button class="b" data-a="wadd">${L("flip.add")}</button>
-        <button class="b go" data-a="wscan">${L("flip.scanWatchlist")}</button>
-      </div>
+      <div class="sf"><div class="row2 sf-lim">
+        <label class="sf-q">${L("flip.addToWatchlist")}<input type="text" id="w-add" placeholder="${L("flip.nameInEnglishOrPolish")}"></label>
+        <div class="sf-act">
+          <button class="b" data-a="wadd">${L("flip.add")}</button>
+          <button class="b go" data-a="wscan">${L("flip.scanWatchlist")}</button>
+        </div>
+      </div></div>
       <div class="tw" id="w-table"></div>
     </section>
     <section data-s="scan" hidden>
@@ -13799,5 +13801,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "23.11.2026, 18:24:00" : "?");
+  console.info("[Flipster] build", true ? "23.11.2026, 18:25:10" : "?");
 })();
