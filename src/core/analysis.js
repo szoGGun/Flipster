@@ -750,6 +750,16 @@ export function flipCeiling({ buyGraph, sellGraph, net, depth = 50 }) {
   return (net(Math.max(MIN_BUYER, deep(asks) - 1)) - buy) / buy;
 }
 
+/** a weapon case by its market name; the two oldest sequels end in a number ("CS:GO Weapon Case 2") */
+export const isWeaponCase = (hash = '') => (/ Case$/.test(hash) || /^CS:GO Weapon Case \d$/.test(hash)) && !/souvenir|terminal/i.test(hash);
+
+/**
+ * How deep flipCeiling has to read a book. flipReal looks max(3, 0.2% of the daily volume) units deep, so 3 is an exact
+ * bound up to 1500 sales a day. In the 753-item market sample everything selling more had at least 15 230 listings, so
+ * from 3000 listings the deep check stays. Cut the price-history requests from 78% to 15% of items, all 32 known hits kept.
+ */
+export const flipDepth = (sellCount) => (sellCount >= 3000 ? 50 : 3);
+
 /**
  * Up to what price is it worth buying `qty` units to resell at `sell` (buyer price; what trades really go for)?
  *  maxZero, paying this leaves exactly nothing after the fee; maxRoi, the highest price that still leaves minRoi

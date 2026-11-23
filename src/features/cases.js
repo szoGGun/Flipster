@@ -7,8 +7,8 @@ import * as prices from '../core/prices.js';
 import * as store from '../core/store.js';
 import * as disk from '../core/cache.js';
 import { token } from '../core/jobs.js';
-import { esc, pct, timeAgo } from '../core/util.js';
-import { searchRate } from '../core/analysis.js';
+import { esc, pct, timeAgo, keepTime } from '../core/util.js';
+import { searchRate, isWeaponCase } from '../core/analysis.js';
 import * as sh from './storehist.js';
 import * as casedb from './casedb.js';
 import { ownedCount } from './inventory.js';
@@ -27,7 +27,8 @@ const CAP_W = { mil: 79.92, res: 15.98, cla: 3.2, cov: 0.64 };
 const CAP_NAME = { mil: L('cases.highGradeNormal'), res: L('cases.remarkableHoloGlitterEmbroidered'), cla: 'Exotic (foil / holo)', cov: L('cases.extraordinaryGold') };
 const kindSel = () => el?.querySelector('#k-kind')?.value || 'case';
 const TTL = 6 * 3600000; // case list (case prices)
-const EV_TTL = 24 * 3600000; // drop prices change slowly → a computed case stays valid for a day
+const LIST_V = 2; // a saved list from before CS:GO Weapon Case 2 and 3 were recognised is loaded again
+const EV_TTL = 6 * 3600000; // a computed case and the prices behind it are reused this long, also after Stop or a reload
 
 const cache = store.bucket('caseEV2'); // case hash -> result
 let el, task = null, list = []; // [{hash, name, icon, priceUsd, listings, set}]
@@ -121,14 +122,14 @@ async function loadCases() {
   const res = quick ? quick.res : await searchAll(CASES_QUERY, 1000);
   const tags = await loadSetTags();
   const db = await casedb.load().catch(() => null);
-  list = res.filter((r) => (/Case$/.test(r.hash_name) && !/souvenir|terminal/i.test(r.hash_name)) || db?.caps?.[r.hash_name]).map((r) => {
-    const cap = !!db?.caps?.[r.hash_name] && !/Case$/.test(r.hash_name);
+  list = res.filter((r) => isWeaponCase(r.hash_name) || db?.caps?.[r.hash_name]).map((r) => {
+    const cap = !!db?.caps?.[r.hash_name] && !isWeaponCase(r.hash_name);
     const set = cap ? null : setNames(r.hash_name).map((n) => tags.get(n.toLowerCase())).find(Boolean) || null;
     return { hash: r.hash_name, name: r.name, icon: r.asset_description?.icon_url, color: r.asset_description?.name_color, priceUsd: r.sell_price, listings: r.sell_listings, set, kind: cap ? 'capsule' : 'case' };
   });
   if (quick) usdRate = quick.rate;
   else await refreshRate(list);
-  store.set('caseList', { at: Date.now(), list, usdRate });
+  store.set('caseList', { at: Date.now(), v: LIST_V, list, usdRate });
 }
 
 // ---------------------------------------------------------------- expected value
@@ -144,16 +145,17 @@ const parseHash = (h) => {
 };
 const net = (p) => steam.receivedFromBuyer(p);
 
-// search results cached across cases (knife/glove pools are shared by many cases) and across runs (24 h)
+// prices cached across cases (knife/glove pools are shared by many cases) and across runs
 const qCache = store.bucket('caseQ');
-async function searchCached(params, max) {
-  const hit = qCache.get(params);
-  if (hit && Date.now() - hit.at < EV_TTL) return hit.res;
-  const res = (await searchAll(params, max)).map((r) => ({ hash_name: r.hash_name, sell_price: r.sell_price, sell_listings: r.sell_listings, asset_description: { name_color: r.asset_description?.name_color, icon_url: r.asset_description?.icon_url, type: r.asset_description?.type } }));
-  qCache.set(params, { at: Date.now(), res });
+let priceAt = 0; // when the oldest price behind the case being computed was read: the age its result shows
+async function cachedQ(key, load) {
+  const hit = qCache.get(key);
+  if (hit && Date.now() - hit.at < EV_TTL) { priceAt = Math.min(priceAt, hit.at); return hit.res; }
+  const res = await load();
+  qCache.set(key, { at: Date.now(), res });
   return res;
 }
-
+const searchCached = (params, max) => cachedQ(params, async () => (await searchAll(params, max)).map((r) => ({ hash_name: r.hash_name, sell_price: r.sell_price, sell_listings: r.sell_listings, asset_description: { name_color: r.asset_description?.name_color, icon_url: r.asset_description?.icon_url, type: r.asset_description?.type } })));
 /** value of one skin (wear-weighted by its float range, net) for normal / StatTrak variants */
 function skinValue(variants, st, range) {
   const v = variants.filter((x) => x.st === st && x.price > 0);
@@ -176,6 +178,7 @@ function commonEvent(names) {
 async function computeCapsule(c, def) {
   const rate = usdRate || store.get('caseList', {}).usdRate;
   if (!rate) throw new Error(L('cases.noUsdRate'));
+  priceAt = Date.now();
   const pre = def.kind === 'Patch' ? 'Patch | ' : 'Sticker | ';
   const found = new Map(def.items.map(([n]) => [pre + n, null]));
   // prices: one search for the event's stickers (shared by its capsules), then exact searches for what it missed
@@ -216,7 +219,7 @@ async function computeCapsule(c, def) {
   const tail = [];
   for (let i = 0; i <= 32; i++) { const x = Math.round(cost * 16 ** (i / 32 - 0.5)); tail.push([x, Math.round(outcomes.filter((o) => o.value >= x).reduce((q, o) => q + o.p, 0) * 1e5) / 1e5]); }
   const top = [...outcomes].sort((a, b) => b.value - a.value)[0];
-  const r = { hash: c.hash, at: Date.now(), v: 4, kind: 'capsule', exact: true, casePrice, keyCost: 0, cost, ev: evv, roi: cost ? evv / cost - 1 : null, pOk, tail, covered, odds, tiers, best: top ? { hash: top.hash, value: top.value } : null, nItems: def.items.length };
+  const r = { hash: c.hash, at: priceAt, v: 4, kind: 'capsule', exact: true, casePrice, keyCost: 0, cost, ev: evv, roi: cost ? evv / cost - 1 : null, pOk, tail, covered, odds, tiers, best: top ? { hash: top.hash, value: top.value } : null, nItems: def.items.length };
   cache.set(c.hash, r);
   return r;
 }
@@ -224,6 +227,7 @@ async function computeCapsule(c, def) {
 async function computeCase(c, keyCost) {
   const rate = usdRate || store.get('caseList', {}).usdRate;
   if (!rate) throw new Error(L('cases.noUsdRate'));
+  priceAt = Date.now();
   const db = await casedb.load().catch((e) => { ui.log(L('cases.cases') + e.message, 'warn'); return null; });
   const def = db?.cases[c.hash];
   if (!def && !c.set) throw new Error(L('cases.caseContentsNotFound'));
@@ -257,10 +261,10 @@ async function computeCase(c, keyCost) {
       if (base.includes('|')) {
         (await searchCached(`query=${encodeURIComponent(base)}&search_descriptions=0`, 20)).filter((r) => r.hash_name.startsWith('★') && parseHash(r.hash_name).base === base).forEach(add);
       } else {
-        // vanilla knife: no wear, a search would return every finish of that knife → two direct price checks
+        // vanilla knife: no wear, a search would return every finish of that knife → two order books (the fast lane)
         for (const h of [`★ ${base}`, `★ StatTrak™ ${base}`]) {
-          const p = await prices.steamPrice(730, h).catch(() => null);
-          if (p?.lowest) add({ hash_name: h, sell_price: p.lowest / rate, sell_listings: p.volume || 1, asset_description: {} });
+          const b = await cachedQ(`book|${h}`, async () => { const x = await prices.hist(730, h, 0); return { low: x.lowestSell, n: x.sellCount }; }).catch(() => null);
+          if (b?.low) add({ hash_name: h, sell_price: b.low / rate, sell_listings: b.n || 1, asset_description: {} });
         }
       }
     }
@@ -302,7 +306,7 @@ async function computeCase(c, keyCost) {
   const tail = [];
   for (let i = 0; i <= 32; i++) { const x = Math.round(cost * 16 ** (i / 32 - 0.5)); tail.push([x, Math.round(outcomes.filter((o) => o.value >= x).reduce((q, o) => q + o.p, 0) * 1e5) / 1e5]); }
   const top = [...outcomes].sort((a, b) => b.value - a.value)[0];
-  const r = { hash: c.hash, at: Date.now(), v: 4, exact: !!def, casePrice, keyCost, cost, ev, roi: cost ? ev / cost - 1 : null, pOk, tail, covered, tiers, best: top ? { hash: top.hash, value: top.value } : null, nItems: found.length };
+  const r = { hash: c.hash, at: priceAt, v: 4, exact: !!def, casePrice, keyCost, cost, ev, roi: cost ? ev / cost - 1 : null, pOk, tail, covered, tiers, best: top ? { hash: top.hash, value: top.value } : null, nItems: found.length };
   cache.set(c.hash, r);
   return r;
 }
@@ -370,22 +374,26 @@ export function show() { render(); }
 /** key or case price changed → costs/ROI change, EV (drop values) stays */
 function recalcKey() {
   const k = keyCost().price;
+  const rate = usdRate || store.get('caseList', {}).usdRate;
+  let changed = false;
   for (const c of list) {
     const r = cache.get(c.hash);
     if (!r) continue;
-    const rate = usdRate || store.get('caseList', {}).usdRate;
     if (rate && c.priceUsd > 0) r.casePrice = Math.round(c.priceUsd * rate); // case price from the fresher case list
     r.keyCost = r.kind === 'capsule' ? 0 : k; r.cost = r.casePrice + r.keyCost; r.roi = r.cost ? r.ev / r.cost - 1 : null;
-    cache.set(c.hash, r);
+    changed = true;
   }
+  if (changed) cache.replace(cache.all()); // saved once: each save writes every computed case
 }
 
 async function scan(only) {
   if (task) return;
   task = token();
+  const releaseClock = keepTime(); // the calculation keeps its pace when you switch to another tab
   el.querySelector('[data-a="stop"]').hidden = false;
   try {
-    if (!list.length || list.some((c) => !c.kind) || Date.now() - (store.get('caseList', {}).at || 0) > TTL) {
+    const savedList = store.get('caseList', {});
+    if (!list.length || list.some((c) => !c.kind) || savedList.v !== LIST_V || Date.now() - (savedList.at || 0) > TTL) {
       ui.log(L('cases.casesLoadingTheCaseList'));
       await loadCases();
       recalcKey();
@@ -393,12 +401,18 @@ async function scan(only) {
     const k = keyCost();
     const db = await casedb.load().catch(() => null);
     const liq = el.querySelector('#k-liq').checked;
-    // full recalculation: drop old results and cached prices, the table fills in as cases are computed
+    // full recalculation: only what is older than EV_TTL is dropped and computed again, so Stop or a reload loses nothing
     fullScan = !only;
     // (before the cleanup below, which already asks which kind is being recalculated)
     const kind = kindSel();
     const want = (c) => kind === 'all' || (kind === 'cap') === (c.kind === 'capsule');
-    if (!only) { const keep = Object.fromEntries(Object.entries(cache.all()).filter(([h]) => { const c = list.find((x) => x.hash === h); return c && !want(c); })); cache.replace(keep); qCache.replace({}); render(); }
+    if (!only) {
+      const now = Date.now();
+      cache.replace(Object.fromEntries(Object.entries(cache.all()).filter(([h, r]) => { const c = list.find((x) => x.hash === h); return c && (!want(c) || (r.v === 4 && now - r.at <= EV_TTL)); })));
+      qCache.replace(Object.fromEntries(Object.entries(qCache.all()).filter(([, q]) => now - q.at < EV_TTL)));
+      recalcKey();
+      render();
+    }
     const stale = (c) => { const r = cache.get(c.hash); return !r || r.v !== 4 || Date.now() - r.at > EV_TTL; };
     const todo = list.filter((c) => (only ? only.includes(c.hash) : want(c) && (!liq || c.listings >= 100) && stale(c)) && (c.kind === 'capsule' ? db?.caps?.[c.hash] : c.set || db?.cases[c.hash]));
     ui.log(L('cases.casesCalculatingKey', { todo: todo.length, price: steam.fmt(k.price), src: k.src, kind: kind === 'cap' ? L('cases.capsules') : kind === 'all' ? L('cases.casesAndCapsules2') : L('cases.cases3') }));
@@ -418,6 +432,7 @@ async function scan(only) {
   } catch (e) {
     ui.log(L('cases.cases') + e.message, 'err');
   }
+  releaseClock();
   ui.progress(0);
   task = null;
   fullScan = false;
