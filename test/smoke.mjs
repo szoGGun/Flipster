@@ -137,7 +137,7 @@ const GM_DATA = {
       { name: 'MP5-SD | Liquidation', rarity: { id: 'rarity_rare_weapon' } }, { name: 'P250 | Re.built', rarity: { id: 'rarity_rare_weapon' } },
       { name: 'MAC-10 | Sakkaku', rarity: { id: 'rarity_mythical_weapon' } }, { name: 'Glock-18 | Umbral Rabbit', rarity: { id: 'rarity_legendary_weapon' } },
       { name: 'M4A4 | Temukau', rarity: { id: 'rarity_ancient_weapon' } }],
-    contains_rare: [{ name: '★ Sport Gloves | Slingshot' }] }],
+    contains_rare: [{ name: '★ Sport Gloves | Slingshot' }, { name: '★ Flip Knife' }] }],
   skins: ['MP5-SD | Liquidation', 'P250 | Re.built', 'MAC-10 | Sakkaku', 'Glock-18 | Umbral Rabbit', 'M4A4 | Temukau', '★ Sport Gloves | Slingshot'].map((name) => ({ name, min_float: name.startsWith('★') ? 0.06 : 0, max_float: name.startsWith('★') ? 0.8 : 1 })),
   storeHtml: `<html><body>var g_sessionID = "store123"; <table class="wallet_history_table"><tbody>
     <tr class="wallet_table_row"><td class="wht_date">${ihDate(now - 20 * DAY)}</td><td class="wht_items"><div>Counter-Strike 2</div><div>Revolution Case Key</div></td><td class="wht_type"><div>In-Game Purchase</div></td><td class="wht_total">10,35zł</td></tr>
@@ -181,7 +181,7 @@ function search(q) {
   const cat = q.get('category_730_Type[]'), set = q.get('category_730_ItemSet[]'), wear = q.get('category_730_Exterior[]'), text = q.get('query') || '';
   const page = (list) => ({ success: true, start: +q.get('start') || 0, total_count: list.length, results: +q.get('start') ? [] : list });
   if (wear) { const i = +wear.replace('tag_WearCategory', ''); return page([{ ...sr('AK-47 | Slate', 100, 10), asset_description: { market_name: `AK-47 | Łupek (${WEAR_PL[i]})` } }]); }
-  if (set === 'tag_set_community_32') return page(SET_REVOLUTION);
+  if (set === 'tag_set_community_32') { state.setHits = (state.setHits || 0) + 1; return page(SET_REVOLUTION); }
   if (set === 'tag_set_community_26') return page(SET_FRACTURE);
   if (/Sport Gloves/.test(text)) return page(GLOVES);
   if (/test case/i.test(text)) {
@@ -241,7 +241,13 @@ function respond(url, method, body) {
     return +u.searchParams.get('start') ? { success: true, total_count: HIST.length, results_html: '' } : histHtml();
   }
   if (p.startsWith('/market/search/render')) return search(u.searchParams);
-  if (p === '/market/actions' && u.searchParams.get('q') === 'Search') return { status: 500 }; // the new search is down: the old way must work
+  if (p === '/market/actions' && u.searchParams.get('q') === 'Search') {
+    if (!state.newSearch) return { status: 500 }; // the new search is down: the old way must work
+    state.newSearchHits = (state.newSearchHits || 0) + 1;
+    const row = (strHash, strMinSellSubtotal) => ({ strHash, strMinSellSubtotal, cSellOrders: 5000, eCurrency: 6, asset_description: { name: strHash, icon_url: 'x', name_color: 'D2D2D2', type: 'Base Grade Container' } });
+    const results = [row('Austin 2025 Legends Sticker Capsule', '5,00 zł'), row('Revolution Case', '40,00 zł'), row('Fracture Case', '20,00 zł')];
+    return { data: { total_count: results.length, results } };
+  }
   if (p.startsWith('/market/appfilters')) return { success: true, facets: { '730_ItemSet': { tags: { set_community_32: { localized_name: 'The Revolution Collection' }, set_community_26: { localized_name: 'The Fracture Collection' } } } } };
   // Steam filters the history by game: the Steam items' one (app 753, cards and backgrounds) is empty here
   if (/\/inventoryhistory/.test(p)) return u.searchParams.get('cursor[time]') || u.searchParams.getAll('app[]').includes('753') ? { success: true, html: '', descriptions: {} } : invHistory();
@@ -586,6 +592,23 @@ await run('Okazje', async () => {
   check(/Revolution Case/.test(sc) && /Fracture Case/.test(sc), 'skaner: 2 skrzynie w wynikach');
   check(!/Capsule/.test(sc), 'skaner: kategoria „Skrzynie” pomija kapsuły z naklejkami');
   check(/Fracture Case.*kandydat/.test(sc) && /Revolution Case.*za tani/.test(sc), 'ocena: skrzynia 4,5-letnia za 2,41 zł = kandydat, skrzynia za 0,57 zł = za tani');
+  const scansDone = () => page.evaluate(() => (document.querySelector('#stt .log').innerText.match(/Skaner zakończony/g) || []).length);
+  const scanAgain = async () => {
+    const n = await scansDone();
+    await clickEl(`${T} [data-a="scan"]`);
+    await page.waitForFunction((n) => (document.querySelector('#stt .log').innerText.match(/Skaner zakończony/g) || []).length > n, { timeout: 60000 }, n);
+  };
+  // (only the scanned cases: the inventory loads histories of its own items in the background)
+  const caseHist = () => `${histHits['Revolution Case']}|${histHits['Fracture Case']}`;
+  const histBefore = caseHist();
+  await scanAgain();
+  check(caseHist() === histBefore, 'drugi skan w ciągu 30 min nie pobiera historii cen od nowa');
+  state.newSearch = true;
+  await scanAgain();
+  const quickScan = (await text('#s-table tbody')).replace(/\s+/g, ' ');
+  check(state.newSearchHits === 1, 'lista skrzynek idzie jednym zapytaniem nowej wyszukiwarki');
+  check(/Fracture Case/.test(quickScan) && !/Revolution Case/.test(quickScan) && !/Capsule/.test(quickScan), 'nowa lista: ceny w złotówkach trafiają w filtr „do”, kapsuły odpadają');
+  state.newSearch = false;
   await setInput('#s-goal', 'flip');
   await sleep(300);
   check(/Ustaw filtry i kliknij/.test(await text('#s-table tbody')), 'po przełączeniu na „szybki flip” lista jest pusta (żadna z tych skrzyń się nie opłaca), z podpowiedzią');
@@ -650,6 +673,13 @@ await run('Czy warto otwierać?', async () => {
   const ev = (await gm('caseEV2'))?.['Revolution Case'];
   check(!!ev && ev.exact && Math.abs(ev.covered - 1) < 1e-9, 'Revolution Case: zawartość z plików gry, wszystkie rzadkości wycenione');
   check(!!ev && ev.cost === ev.casePrice + 1035 && ev.best?.hash.startsWith('★ Sport Gloves'), `koszt = skrzynia + klucz (${ev && zl(ev.cost)}), najlepszy drop: rękawice`);
+  check(bookHits['★ Flip Knife'] === 1 && bookHits['★ StatTrak™ Flip Knife'] === 1, 'nóż bez wzoru: cena z arkusza zleceń, po jednym zapytaniu');
+  const doneLogs = () => page.evaluate(() => (document.querySelector('#stt .log').innerText.match(/Skrzynie: gotowe\./g) || []).length);
+  const setHits = state.setHits, doneBefore = await doneLogs();
+  await clickEl(`${T} [data-a="scan"]`);
+  await page.waitForFunction((n) => (document.querySelector('#stt .log').innerText.match(/Skrzynie: gotowe\./g) || []).length > n, { timeout: 30000 }, doneBefore);
+  check(state.setHits === setHits && bookHits['★ Flip Knife'] === 1, 'ponowne „Przelicz” w ciągu 6 h nie pyta Steama o te same ceny');
+  check((await page.$$eval('#k-tbl tbody tr[data-hash]', (r) => r.length)) === 2, 'po ponownym „Przelicz” obie skrzynie zostają w tabeli');
   await clickEl('#k-tbl tbody tr[data-hash="Revolution Case"] td:nth-child(2)');
   await waitText('#k-tbl', /Mil-Spec/, 5000);
   check(/nóż \/ rękawice/.test(await text('#k-tbl')), 'rozwinięcie skrzyni pokazuje rzadkości i skiny');
