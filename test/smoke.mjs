@@ -237,6 +237,7 @@ function respond(url, method, body) {
   if (p.startsWith('/market/pricehistory')) { const h = u.searchParams.get('market_hash_name'); histHits[h] = (histHits[h] || 0) + 1; return historyFor(h); }
   if (p.startsWith('/market/myhistory')) {
     if (state.failHistory) return { status: 500 };
+    if (state.emptyHistory) return { success: true, total_count: 0, start: 0, events: [], results_html: '' };
     if (u.searchParams.get('norender')) return +u.searchParams.get('start') ? { success: true, total_count: 2, events: [] } : histJson();
     return +u.searchParams.get('start') ? { success: true, total_count: HIST.length, results_html: '' } : histHtml();
   }
@@ -547,6 +548,14 @@ await run('Historia', async () => {
   // the rest of that full run (inventory histories, store purchases) first: the buttons are greyed out until then
   await page.waitForFunction((T) => !document.querySelector(`${T} [data-a="fullall"]`).disabled, { timeout: 30000 }, T);
   check(true, 'przyciski synchronizacji są wyszarzone, dopóki trwa poprzednia');
+  // Steam under load: a successful answer with nothing in it must not wipe them either
+  state.emptyHistory = true;
+  await clickEl(`${T} [data-a="fullall"]`);
+  await confirmModal();
+  await waitLog(/Steam nie zwrócił całej historii/, 30000);
+  state.emptyHistory = false;
+  check(Object.keys(await gm('trades')).length === 6, 'pusta odpowiedź Steama przy pełnej synchronizacji nie kasuje transakcji');
+  await page.waitForFunction((T) => !document.querySelector(`${T} [data-a="fullall"]`).disabled, { timeout: 30000 }, T);
   await clickEl(`${T} [data-a="fullall"]`);
   console.log('    okno: ' + (await confirmModal()));
   await page.waitForFunction(() => (document.querySelector('#stt .log').innerText.match(/Historia: \+\d+ nowych transakcji \(razem 6\)/g) || []).length >= 2, { timeout: 30000 });

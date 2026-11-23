@@ -75,6 +75,53 @@ test('fifoPnL', () => {
   assert.equal(r.items.find((i) => i.hash === 'B').unmatchedSells, 1);
 });
 
+test('fifoPnL: a copy opened or traded away is not sold again', () => {
+  const trades = [{ t: 1, type: 'buy', hash: 'Case', amount: 1, price: 134, key: 'b1' }, { t: 5, type: 'sell', hash: 'Case', amount: 1, price: 42, key: 's1' }];
+  const r = A.fifoPnL(trades, [{ t: 2, op: 'out', hash: 'Case', qty: 1 }, { t: 3, op: 'in', hash: 'Case', qty: 1 }]);
+  const a = r.items[0];
+  assert.equal(r.realized.length, 0);
+  assert.equal(a.unmatchedSells, 1);
+  assert.equal(a.gone, 1);
+  assert.equal(a.holdQty, 0);
+  assert.deepEqual(r.copies.get('b1'), { sold: 0, gone: 1 });
+});
+
+test('fifoPnL: the oldest copy goes first, also when it was a drop', () => {
+  const trades = [{ t: 2, type: 'buy', hash: 'A', amount: 1, price: 100, key: 'b' }, { t: 3, type: 'sell', hash: 'A', amount: 1, price: 90, key: 's' }];
+  const r = A.fifoPnL(trades, [{ t: 1, op: 'in', hash: 'A', qty: 1 }]);
+  assert.equal(r.realized.length, 0);
+  assert.equal(r.items[0].holdQty, 1);
+  assert.equal(r.items[0].holdCost, 100);
+  // a sale known only by its day comes after the drop of that day
+  const late = A.fifoPnL([{ t: 5, at: 9, type: 'sell', hash: 'B', amount: 1, price: 10 }, { t: 1, type: 'buy', hash: 'B', amount: 1, price: 8 }], [{ t: 7, op: 'out', hash: 'B', qty: 1 }]);
+  assert.equal(late.realized.length, 0);
+});
+
+test('inventoryMoves: skips the market, changed items and the second copy of a trade', () => {
+  const it = (hash) => ({ hash });
+  const m = A.inventoryMoves([
+    { t: 1, kind: 'rynek', plus: [it('X')], minus: [] },
+    { t: 2, kind: 'naklejka', plus: [it('AK')], minus: [it('AK'), it('Sticker')] },
+    { t: 600000, kind: 'wymiana', plus: [it('T'), it('T'), it('T')], minus: [] },
+    { t: 600000, kind: 'wymiana', plus: [it('T'), it('T'), it('T')], minus: [] },
+  ]);
+  assert.deepEqual(m, [{ t: 2, op: 'out', hash: 'Sticker', qty: 1 }, { t: 600000, op: 'in', hash: 'T', qty: 3 }]);
+});
+
+test('tradeYearFixes: a purchase in the wrong year moves to its real one', () => {
+  const noon = (y) => new Date(y, 10, 14, 12).getTime(), real = new Date(2026, 10, 14, 20, 28).getTime(), real2 = new Date(2026, 10, 14, 20, 32).getTime();
+  const fix = A.tradeYearFixes([{ key: 'a', hash: 'Horizon', t: noon(2016) }, { key: 'b', hash: 'Horizon', t: noon(2024) }, { key: 'c', hash: 'Other', t: noon(2025) }], [{ hash: 'Horizon', t: real }, { hash: 'Horizon', t: real2 }, { hash: 'Other', t: new Date(2025, 10, 14, 9).getTime() }]);
+  assert.equal(fix.get('a'), real);
+  assert.equal(fix.get('b'), real2);
+  assert.equal(fix.has('c'), false);
+});
+
+test('wholeHistory: only a walk through every row may replace the saved trades', () => {
+  assert.equal(A.wholeHistory(0, 0), false); // an empty answer
+  assert.equal(A.wholeHistory(1789, 700), false); // cut off in the middle
+  assert.equal(A.wholeHistory(1789, 1800), true);
+});
+
 test('historyStats', () => {
   const now = Date.UTC(2026, 10, 14);
   const pts = [
