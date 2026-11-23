@@ -47,25 +47,28 @@ const pendingRow = (r) => `<tr class="pend" style="opacity:.62">
       <td>${ui.itemCell({ ...r, sub: `${r.amount > 1 ? `${r.amount} ${L('listings.pcs')} · ` : ''}${L('listings.notOnTheMarketYet')}` })}</td>
       <td><b>${steam.fmt(r.buyer)}</b><div class="sub">${L('listings.youGet')} ${steam.fmt(r.recv)}</div></td>
       <td><span class="chipst mid" title="${L('listings.steamListsThisItemOnly')}">⏳ ${L('listings.waitingForConfirmation')}</span></td>
-      <td colspan="2"><span class="sub">${L('listings.confirmItInTheSteam')}${r.local ? L('listings.newPriceSetInFlipster') : ''}</span></td></tr>`;
+      <td><span class="sub">${L('listings.confirmItInTheSteam')}${r.local ? L('listings.newPriceSetInFlipster') : ''}</span></td></tr>`;
 // planned sales of trade-locked items (made in Ekwipunek, listed there when the lock ends)
 const sellPlans = store.bucket('sellPlans');
 const planList = () => Object.entries(sellPlans.all()).map(([hash, p]) => ({ ...p, hash, name: p.name || hash, appid: p.appid || 730 }))
   .sort((a, b) => (a.until || Infinity) - (b.until || Infinity));
-const planRow = (p) => `<tr class="plan" style="background:rgba(102,192,244,.04)">
+// the row shows the decision; the numbers behind it wait in the (i) next to the buttons, a warning turns it into (!)
+const infoTip = (text, alert) => (text ? `<span class="stt-i${alert ? ' alert' : ''}" tabindex="0" data-tip="${esc(text)}">${alert ? '!' : 'i'}</span>` : '');
+const planRow = (p) => { const st = planStatus(p); return `<tr class="plan" style="background:rgba(102,192,244,.04)">
       <td></td>
       <td>${ui.itemCell({ ...p, sub: `${p.qty > 1 ? `${p.qty} ${L('listings.pcs')} · ` : ''}${L('listings.tradeLocked')}${p.guard ? L('listings.thenTheAutomation') : ''}` })}</td>
       <td>${p.mode === 'fixed' ? `<b>${steam.fmt(p.price)}</b><div class="sub">${L('listings.youGet')} ${steam.fmt(steam.receivedFromBuyer(p.price))}</div>` : `<b>${L('listings.suggested')}</b><div class="sub">${p.min != null ? L('listings.notBelow', { min: steam.fmt(p.min) }) : L('listings.noLowerLimit')}</div>`}</td>
-      <td><span class="chipst" style="color:#66c0f4;border-color:#2a6f9c" title="${L('listings.whenTheLockEndsFlipster')}">⏰ ${L('listings.illListIt')} ${fmtWhen(p.until)}</span>${planStatus(p)}</td>
-      <td colspan="2"><div class="acts" style="flex-wrap:nowrap;align-items:center">
+      <td><span class="chipst" style="color:#66c0f4;border-color:#2a6f9c" title="${L('listings.whenTheLockEndsFlipster')}">⏰ ${L('listings.illListIt')} ${fmtWhen(p.until)}</span>${st.html}</td>
+      <td><div class="acts" style="flex-wrap:nowrap;align-items:center">
+        ${infoTip(st.tip, st.alert)}
         <button class="b" data-a="planedit" data-hash="${esc(p.hash)}" data-app="${p.appid}" title="${L('listings.youChangeThePlanOn')}">${L('listings.changeInInventory')} ↗</button>
         <button class="b red" data-a="plandel" data-hash="${esc(p.hash)}">${L('listings.removePlan')}</button>
-      </div></td></tr>`;
+      </div></td></tr>`; };
 const planMarket = new Map(); // hash → order book of a planned item (checked on refresh)
-/** the plan on today's market: the price it would list at, its chance to sell, and a word on whether to change it */
+/** the plan on today's market: one word on the row, and the price, chance and reason behind it for the (i) */
 function planStatus(p) {
   const h = planMarket.get(p.hash);
-  if (!h) return L('listings.checkingTheMarket');
+  if (!h) return { html: L('listings.checkingTheMarket'), tip: '', alert: false };
   const f = steam.fmt, N = waitDays(), days = daysTxt(N);
   const table = sig.fill(p.hash);
   const low = h.lowestSell;
@@ -75,17 +78,17 @@ function planStatus(p) {
     price = a?.price ?? p.min ?? null;
     if (p.min != null && price != null && price < p.min) { price = p.min; atMin = true; }
   }
-  const cheapest = low ? ` · ${L('listings.cheapest')} ${f(low)}` : '';
-  if (price == null) return `<div class="sub" style="margin-top:4px">${L('listings.todayNoMarketData')}${cheapest}</div>`;
+  const cheapest = low ? `${L('listings.cheapest')} ${f(low)}` : '';
+  if (price == null) return { html: `<div class="sub" style="margin-top:4px">${L('listings.todayNoMarketData')}</div>`, tip: cheapest, alert: false };
   const c = table ? sellChance(table, N, price, h.sellGraph) : null;
   const what = p.mode === 'fixed' ? L('listings.yourPrice') : atMin ? L('listings.yourMinimum') : L('listings.suggestion');
-  const line = `${L('listings.today')}: ${what} <b>${f(price)}</b>${c != null ? ` · ${L('listings.chanceWithin', { days })}: ${Math.round(c * 100)}%` : ''}${cheapest}`;
-  let verdict;
-  if (h.highestBuy && price <= h.highestBuy) verdict = `<span class="warn">${L('listings.notAboveTheBuyOrder', { highestBuy: f(h.highestBuy) })}</span>`;
-  else if (c != null && c < 0.25) verdict = `<span class="err">${L('listings.tooPriceyTodaySmallChance')}${atMin || p.mode === 'fixed' ? L('listings.considerALowerPrice') : ''}</span>`;
-  else if (c != null && c < 0.5) verdict = `<span class="warn">${L('listings.willProbablyWaitLongerThan', { days })}</span>`;
-  else if (c != null) verdict = `<span class="ok">${L('listings.looksGood')}</span>`;
-  return `<div class="sub" style="margin-top:4px">${line}</div>${verdict ? `<div class="sub">${verdict}</div>` : ''}`;
+  const lines = [`${L('listings.today')}: ${what} ${f(price)}`, c != null ? `${L('listings.chanceWithin', { days })}: ${Math.round(c * 100)}%` : '', cheapest];
+  let word = '', cls = '', why = '';
+  if (h.highestBuy && price <= h.highestBuy) { word = L('listings.planSellsAtOnce'); cls = 'warn'; why = L('listings.notAboveTheBuyOrder', { highestBuy: f(h.highestBuy) }); }
+  else if (c != null && c < 0.25) { word = L('listings.tooPricey'); cls = 'err'; why = L('listings.tooPriceyTodaySmallChance') + (atMin || p.mode === 'fixed' ? L('listings.considerALowerPrice') : ''); }
+  else if (c != null && c < 0.5) { word = L('listings.pricey'); cls = 'warn'; why = L('listings.willProbablyWaitLongerThan', { days }); }
+  else if (c != null) { word = L('listings.looksGood'); cls = 'ok'; }
+  return { html: word ? `<div class="sub ${cls}" style="margin-top:4px">${word}</div>` : '', tip: [...lines, why].filter(Boolean).join('\n'), alert: cls === 'err' || cls === 'warn' };
 }
 async function checkPlans() {
   for (const p of planList()) {
@@ -157,7 +160,7 @@ export function mount(root) {
     </div>
     <table><thead><tr>
       <th style="width:1%"><input type="checkbox" id="l-all" title="${L('listings.selectAll')}"></th>
-      <th data-sort="name">${L('listings.item')}</th><th data-sort="buyer">${L('listings.yourPrice2')}</th><th data-sort="comp">${L('listings.market')}</th><th>${L('listings.suggestedPrice')}</th><th></th>
+      <th data-sort="name">${L('listings.item')}</th><th data-sort="buyer">${L('listings.yourPrice2')}</th><th data-sort="comp">${L('listings.market')}</th><th></th>
     </tr></thead><tbody></tbody></table>`;
 
   root.addEventListener('click', (e) => {
@@ -289,13 +292,15 @@ function graphWithout(sellGraph, mine = {}) {
 }
 function suggest(r) {
   if (!pass) return suggestNow(r);
-  const k = [r.appid, r.hash, r.pub, r.comp, r.item?.float != null || r.item?.stickers?.length ? 1 : 0].join('|');
+  const k = [r.appid, r.hash, r.pub, r.comp, r.h ? 1 : 0, r.item?.float != null || r.item?.stickers?.length ? 1 : 0].join('|');
   if (!pass.sug.has(k)) pass.sug.set(k, suggestNow(r));
   return pass.sug.get(k);
 }
 function suggestNow(r) {
   const rule = r.rule || {};
   const typ = sig.typical(r.hash);
+  // no proposal without today's order book: "Ustaw" relists for real, and a price made up without the competition isn't one
+  if (!r.h) return { price: null, why: '', warn: '', typ };
   const unique = r.item?.float != null || r.item?.stickers?.length;
   let price = null, why = '', warn = '';
   // only prices that exist after fees (2,29 zł doesn't: it would be listed as 2,27 zł and proposed again forever)
@@ -375,9 +380,9 @@ function floatSub(r) {
 
 function evalListing(r, s = null) {
   const t = sig.fill(r.hash);
-  if (!t) return null;
+  if (!t || !r.h) return null; // the chance depends on who else is selling
   const N = waitDays();
-  const c = sellChance(t, N, r.buyer, r.h ? othersGraph(r) : null);
+  const c = sellChance(t, N, r.buyer, othersGraph(r));
   if (c == null) return null;
   const days = daysTxt(N);
   if (c < 0.25) return { c, days, k: 'high', label: L('listings.tooPricey'), cls: 'err' };
@@ -387,10 +392,24 @@ function evalListing(r, s = null) {
 }
 
 function chip(r) {
-  if (r.comp == null) return r.lowest != null ? `<span class="chipst mut">${L('listings.nobodyElseSells')}</span>` : compRunning ? `<span class="chipst mut">${L('listings.checking')}</span>` : '<span class="chipst mut">-</span>';
+  // no order book yet says nothing about the competition: a price remembered from earlier isn't "nobody else sells"
+  if (!r.h) return busy() ? `<span class="chipst mut">${L('listings.checking')}</span>` : '<span class="chipst mut">-</span>';
+  if (r.comp == null) return `<span class="chipst mut">${L('listings.nobodyElseSells')}</span>`;
   if (r.comp > r.buyer) return `<span class="chipst ok">${L('listings.cheapest')}</span>`;
   if (r.comp === r.buyer) return `<span class="chipst mid">${L('listings.tie')}</span>`;
   return `<span class="chipst bad">${L('listings.someoneIsCheaper', { buyer: steam.fmt(r.buyer - r.comp) })}</span>`;
+}
+
+/** what stays off the row: the proposal and why, warnings, the chance to sell, what the item sells at */
+function rowDetails(r, s, e) {
+  const f = steam.fmt, out = [];
+  if (e) out.push(`${L('listings.yourPrice')}, ${L('listings.chanceWithin2')} ${e.days}: ${Math.round(e.c * 100)}%`);
+  if (s.price != null) out.push(`${L('listings.suggestedPrice')}: ${f(s.price)}, ${L('listings.youGet')} ${f(steam.receivedFromBuyer(s.price, r.pub))}`);
+  if (s.why) out.push(s.why);
+  if (s.warn) out.push(...s.warn.split('; '));
+  if (s.typ?.d7) out.push(`${L('listings.sellsAt')} ~${f(Math.round(s.typ.d7))}`);
+  if (r.stray != null) out.push(`${L('listings.skippingUnderpricedCheapest')} ${f(r.stray)}`);
+  return out.join('\n');
 }
 
 // background checks finish an item every fraction of a second: they redraw together, a few times a second at most
@@ -430,24 +449,22 @@ function drawTable() {
     // "auto": this offer is in the automat's care; grey when the main switch is off (then nothing happens to it)
     const autoOff = !settings.autoRelist;
     const autoTag = rule.auto ? `<span class="chipst ${autoOff ? 'mut' : rule.min != null ? 'ok' : 'mid'}" title="${rule.min == null ? L('listings.theAutomationShouldWatchThis') : autoOff ? L('listings.theAutomationShouldWatchThis2', { min: steam.fmt(rule.min) }) : L('listings.theAutomationWatchesThePrice', { min: steam.fmt(rule.min) })}">auto${autoOff ? L('listings.off2') : ''}</span>` : '';
+    const e = evalListing(r, s);
     const main = `<tr data-id="${r.listingid}">
       <td><input type="checkbox" data-f="chk" ${r.checked ? 'checked' : ''}></td>
       <td>${ui.itemCell({ ...r, sub })}</td>
-      <td><b>${steam.fmt(r.buyer)}</b><div class="sub">${L('listings.youGet')} ${steam.fmt(r.recv)}</div>${(() => {
-        const e = evalListing(r, s);
-        return e ? `<div class="sub ${e.cls}" title="${L('listings.theChanceThatSomeonePays', { days: e.days })}">${L('listings.chanceWithin2')} ${e.days}: ${Math.round(e.c * 100)}% · ${e.label}</div>` : '';
-      })()}</td>
-      <td>${chip(r)} ${autoTag}<div class="sub" style="margin-top:3px">${r.comp != null ? `${L('listings.cheapestOther')}: ${steam.fmt(r.comp)}` : ''}${r.stray != null ? ` <span title="${L('listings.theCheaperListingsAreBelow')}">(${L('listings.skippingUnderpricedCheapest')} ${steam.fmt(r.stray)})</span>` : ''}${s.typ?.d7 ? `${r.comp != null ? ' · ' : ''}<span title="${esc(L('listings.theAveragePriceThisItem', { d7: steam.fmt(Math.round(s.typ.d7)), sold7: s.typ.sold7, d30: s.typ.d30 ? L('listings.last30Days', { d30: steam.fmt(Math.round(s.typ.d30)) }) : '' }))}">${L('listings.sellsAt')} ~${steam.fmt(Math.round(s.typ.d7))}</span>` : ''} · <a class="acc" target="_blank" href="${esc(ui.marketUrl(r.appid, r.hash))}">${L('listings.market2')} ↗</a></div></td>
-      <td>${s.price != null ? `<b>${steam.fmt(s.price)}</b><div class="sub" title="${esc(s.why)}">${L('listings.youGet')} ${steam.fmt(steam.receivedFromBuyer(s.price, r.pub))} · ${esc(s.why)}</div>${s.warn ? `<div class="sub warn">${esc(s.warn)}</div>` : ''}` : L('listings.waitingForMarketData')}${r.status ? `<div class="sub ${r.cls || ''}">${esc(r.status)}</div>` : ''}</td>
+      <td><b>${steam.fmt(r.buyer)}</b><div class="sub">${L('listings.youGet')} ${steam.fmt(r.recv)}</div>${e && e.k !== 'ok' ? `<div class="sub ${e.cls}" title="${L('listings.theChanceThatSomeonePays', { days: e.days })}">${e.label}</div>` : ''}</td>
+      <td>${chip(r)} ${autoTag}${r.h && r.comp != null ? `<div class="sub" style="margin-top:3px">${L('listings.cheapestOther')} ${steam.fmt(r.comp)}</div>` : ''}${r.status ? `<div class="sub ${r.cls || ''}">${esc(r.status)}</div>` : ''}</td>
       <td style="white-space:nowrap"><div class="acts" style="flex-wrap:nowrap;align-items:center">
-        ${s.price != null && !same ? `<button class="b ${s.price < r.buyer ? '' : 'go'}" data-a="set" data-id="${r.listingid}" title="${L('listings.removesTheListingAndLists', { price: steam.fmt(s.price) })}">${L('listings.set')} ${steam.fmt(s.price)}</button>` : same ? `<span class="sub ok" style="white-space:nowrap">${L('listings.priceOk')}</span>` : ''}
+        ${r.h ? infoTip(rowDetails(r, s, e), !!s.warn || e?.k === 'high' || e?.k === 'pricey') : ''}
+        ${s.price == null ? L('listings.waitingForMarketData') : !same ? `<button class="b ${s.price < r.buyer ? '' : 'go'}" data-a="set" data-id="${r.listingid}" title="${L('listings.removesTheListingAndLists', { price: steam.fmt(s.price) })}">${L('listings.set')} ${steam.fmt(s.price)}</button>` : `<span class="sub ok" style="white-space:nowrap">${L('listings.priceOk')}</span>`}
         <button class="b red" data-a="rm" data-id="${r.listingid}" title="${L('listings.removeFromTheMarketIt')}">${L('listings.remove')}</button>
         <button class="b ${openCfg === r.listingid ? 'on' : ''}" data-a="cfg" data-id="${r.listingid}" title="${L('listings.yourOwnPriceMinimumMaximum')}">⚙</button>
       </div></td></tr>`;
     if (openCfg !== r.listingid) return main;
     // two different things: a one-off price change now, and this item's lasting price limits (the proposal and the
     // automat stay inside them)
-    return main + `<tr class="cfg" data-id="${r.listingid}"><td></td><td colspan="5"><div class="cfgbox">
+    return main + `<tr class="cfg" data-id="${r.listingid}"><td></td><td colspan="4"><div class="cfgbox">
       <div>
         <div class="lb">${L('listings.changeThePriceNow')}</div>
         <div class="line">
@@ -473,7 +490,7 @@ function drawTable() {
   const once = (k) => { const n = seen.get(k) || 0; seen.set(k, n + 1); return n ? `${k}#${n}` : k; };
   const blocks = sorted.map((r) => ({ key: once(r.pending ? `p|${r.hash}|${r.recv}` : r.listingid), html: rowHtml(r) }));
   if (plans.length) {
-    blocks.push({ key: 'plans', html: `<tr><td colspan="6" class="sub" style="padding:10px 8px 4px;font-weight:600">${L('listings.plannedListedWhenTheTrade')}</td></tr>` });
+    blocks.push({ key: 'plans', html: `<tr><td colspan="5" class="sub" style="padding:10px 8px 4px;font-weight:600">${L('listings.plannedListedWhenTheTrade')}</td></tr>` });
     for (const p of plans) blocks.push({ key: once(`plan|${p.hash}`), html: planRow(p) });
   }
   ui.patchRows(tb, blocks);
@@ -600,6 +617,7 @@ async function autoComp() {
   await competitionFor(rows, tk, { quiet: true });
   compRunning = false;
   lastComp = Date.now();
+  render(); // a row whose order book didn't come stops saying "checking"
   summary();
   tick();
 }
@@ -607,9 +625,9 @@ async function autoComp() {
 function summary(running = false) {
   const box = el?.querySelector('#l-comp');
   if (!box) return;
-  const checked = rows.filter((r) => r.comp != null || r.lowest != null);
-  const beaten = rows.filter((r) => r.comp != null && r.comp < r.buyer);
-  const tied = rows.filter((r) => r.comp != null && r.comp === r.buyer);
+  const checked = rows.filter((r) => r.h);
+  const beaten = checked.filter((r) => r.comp != null && r.comp < r.buyer);
+  const tied = checked.filter((r) => r.comp != null && r.comp === r.buyer);
   const parts = [];
   if (beaten.length) parts.push(`<b class="err">${beaten.length} ${beaten.length === 1 ? L('listings.listingUndercut') : L('listings.listingsUndercut')}</b>`);
   if (tied.length) parts.push(`<span class="warn">${tied.length} ${L('listings.tied')}</span>`);
@@ -618,7 +636,7 @@ function summary(running = false) {
   const high = evals.filter((e) => e.k === 'high').length, cheap = evals.filter((e) => e.k === 'cheap').length;
   if (high) parts.push(`<span class="err" title="${L('listings.atTheCurrentPriceThe')}">${high} ${L('listings.tooPriceyByTheHistory')}</span>`);
   if (cheap) parts.push(`<span class="warn" title="${L('listings.theyWillSellAlmostSurely')}">${cheap} ${L('listings.tooCheap')}</span>`);
-  if (checked.length && !beaten.length && !tied.length && !running) parts.push(`<span class="ok">${L('listings.allYourListingsAreThe')}</span>`);
+  if (checked.length && checked.length === rows.length && !beaten.length && !tied.length && !running) parts.push(`<span class="ok">${L('listings.allYourListingsAreThe')}</span>`);
   box.innerHTML = parts.join(' · ');
   ui.status('undercut', beaten.length ? `<b class="err">${L('listings.undercutListings')}: ${beaten.length}</b>` : null);
 }
@@ -709,7 +727,7 @@ async function autoCycle() {
           }
         }
         const row = rows.find((x) => x.listingid === l.listingid);
-        if (row) { row.comp = comp; row.lowest = h.lowestSell; }
+        if (row) { row.comp = comp; row.lowest = h.lowestSell; row.h = h; }
         if (t.price != null) {
           jobs.push({ listing: l, price: t.price });
           ui.log(`[auto] ${l.hash}: ${steam.fmt(l.buyer)} → ${steam.fmt(t.price)} (${t.reason})`);
