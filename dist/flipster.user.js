@@ -459,6 +459,7 @@
       everything: "Everything",
       cases: "Cases",
       capsulesAndPackages: "Capsules and packages",
+      souvenirPackages: "Souvenir packages",
       stickers: "Stickers",
       rifles: "Rifles",
       pistols: "Pistols",
@@ -1970,6 +1971,7 @@
       everything: "Wszystko",
       cases: "Skrzynie",
       capsulesAndPackages: "Kapsu\u0142y i paczki",
+      souvenirPackages: "Zestawy pami\u0105tkowe",
       stickers: "Naklejki",
       rifles: "Karabiny",
       pistols: "Pistolety",
@@ -3231,7 +3233,51 @@
   var dec = (x, digits) => getLang() === "pl" ? x.toFixed(digits).replace(".", ",") : x.toFixed(digits);
 
   // src/core/util.js
-  var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  var audio = null;
+  var mute = null;
+  var holders = 0;
+  function keepTime() {
+    holders++;
+    try {
+      if (!audio && typeof AudioContext !== "undefined") {
+        audio = new AudioContext();
+        mute = audio.createGain();
+        mute.gain.value = 0;
+        mute.connect(audio.destination);
+      }
+      if (audio?.state === "suspended") audio.resume().catch(() => {
+      });
+    } catch {
+      audio = mute = null;
+    }
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      if (--holders > 0 || !audio) return;
+      const a = audio;
+      audio = mute = null;
+      a.close().catch(() => {
+      });
+    };
+  }
+  var sleep = (ms) => new Promise((r) => {
+    const t = setTimeout(r, ms);
+    if (audio?.state !== "running" || !(ms > 0)) return;
+    try {
+      const s = audio.createConstantSource();
+      s.offset.value = 0;
+      s.connect(mute);
+      s.onended = () => {
+        s.disconnect();
+        clearTimeout(t);
+        r();
+      };
+      s.start();
+      s.stop(audio.currentTime + ms / 1e3);
+    } catch {
+    }
+  });
   var displayName = (hash, name) => !hash || /^\d+-/.test(hash) ? name || hash || "" : hash;
   var esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   function parsePrice(s) {
@@ -3751,6 +3797,37 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
 #stt label.spot b:empty{display:none}
 #stt .grid>.empty{grid-column:1/-1}
 #stt .sugg{position:absolute;top:100%;left:0;right:0;z-index:20;background:var(--bg2,#1b2838);border:1px solid #2a475e;border-radius:4px;max-height:320px;overflow:auto;box-shadow:0 6px 18px #0009}#stt .sugg div{display:flex;gap:8px;align-items:center;padding:5px 8px;cursor:pointer;font-size:12px;color:#c6d4df}#stt .sugg div:hover{background:#2a475e}#stt .sugg img{width:40px;height:30px;object-fit:contain}#stt .sugg .p2{margin-left:auto;color:var(--mut)}
+#stt button.msel{width:172px;padding:0 26px 0 9px;background-color:var(--bg3);border:1px solid var(--ln);border-radius:4px;color:#fff;font:inherit;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+#stt .sf{background:var(--bg2);border-bottom:1px solid var(--ln)}
+#stt .sf .row2{gap:10px;padding:12px 14px 0;align-items:flex-end}
+#stt .sf .row2.sf-lim{gap:10px 12px;padding:10px 14px 12px}
+#stt .sf .row2 > label{align-items:stretch;gap:4px;min-width:74px;font-size:11px;color:var(--mut)}
+#stt .sf input:not([type=checkbox]),#stt .sf select,#stt .sf button.msel{box-sizing:border-box;height:32px;border-radius:4px;font-size:13px;outline:none;transition:border-color .12s,background-color .12s}
+#stt .sf input:not([type=checkbox]){padding:0 9px}
+#stt .sf input::placeholder{color:#5c6b7a}
+#stt .sf input:hover,#stt .sf select:hover,#stt .sf button.msel:hover{border-color:#3d6a8a}
+#stt .sf input:focus,#stt .sf select:focus,#stt .sf button.msel:focus{border-color:var(--acc)}
+#stt .sf input[type=number]{-moz-appearance:textfield;appearance:textfield}
+#stt .sf input[type=number]::-webkit-inner-spin-button,#stt .sf input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#stt .sf select,#stt .sf button.msel{-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,#8f98a0 50%),linear-gradient(135deg,#8f98a0 50%,transparent 50%);background-position:calc(100% - 14px) 50%,calc(100% - 9px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+#stt .sf select{min-width:206px;padding:0 26px 0 9px;cursor:pointer}
+#stt .sf .row2 > label.sf-q{flex:1 1 170px}
+#stt .sf-q input,#stt .sf-lim > label > input{width:0;min-width:100%}
+#stt .sf-act{display:flex;gap:8px;margin-left:auto}
+#stt .sf-act button.b{height:32px;padding:0 14px;border-radius:4px}
+#stt .sf-act button.b.go{min-width:104px;font-weight:600}
+#stt .sf .row2 > label.sf-from,#stt .sf .row2 > label.sf-to{width:84px;min-width:84px}
+#stt .sf .row2 > label.sf-from input{border-radius:4px 0 0 4px}
+#stt .sf .row2 > label.sf-to{margin-left:-13px}
+#stt .sf .row2 > label.sf-to input{border-radius:0 4px 4px 0}
+#stt .sf .row2 > label.sf-from input:focus,#stt .sf .row2 > label.sf-to input:focus{position:relative;z-index:1}
+#stt .sf-tg{display:flex;flex-direction:column;gap:2px;margin-left:auto;padding-left:14px;border-left:1px solid rgba(255,255,255,.07)}
+#stt .msel-pop{position:absolute;top:100%;left:0;z-index:20;min-width:210px;max-height:340px;margin-top:2px;padding:3px;overflow:auto;background:var(--bg2,#1b2838);border:1px solid #2a475e;border-radius:4px;box-shadow:0 6px 18px #0009}
+#stt .msel-pop[hidden]{display:none}
+#stt .msel-pop div{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:3px;color:#c6d4df;font-size:12px;white-space:nowrap;cursor:pointer}
+#stt .msel-pop div:hover{background:#2a475e}
+#stt .msel-pop div::before{content:'';flex:none;width:13px;height:13px;border:1px solid #4a6a82;border-radius:2px;font-size:10px;line-height:13px;text-align:center;color:#fff}
+#stt .msel-pop div.on::before{content:'\u2713';background:#2a6f9c;border-color:#66c0f4}
 #stt .spin{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--acc,#66c0f4);border-radius:50%;animation:stt-spin .8s linear infinite;vertical-align:-2px;margin-right:8px}
 @keyframes stt-spin{to{transform:rotate(360deg)}}
 #stt .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:10px;padding:12px 14px 48px}
@@ -3880,7 +3957,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     ov.id = "stt-ov";
     ov.hidden = true;
     ov.innerHTML = `<div id="stt">
-    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 00:31:44" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
+    <header><h2><span class="logo">${MARK}</span>Flipster <span class="sub" style="font-size:11px">Steam Market<span class="dbg"> \xB7 build ${true ? "23.11.2026, 18:23:57" : "?"}</span></span></h2><nav></nav><button class="b" data-x>\u2715</button></header>
     <div class="prog"><i style="width:0"></i></div>
     <div class="body"></div>
     <div class="status"></div>
@@ -4782,13 +4859,13 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       return lo;
     };
     const win = (a, b) => hs.slice(after(a), after(b));
-    const priceAt = (t) => {
+    const priceAt2 = (t) => {
       const j = after(t);
       let i = j, u = 0;
       while (i > 0 && hs[i - 1].t > t - 7 * DAY_MS && (hs[i - 1].t > t - DAY_MS || u < REF_UNITS)) u += hs[--i].vol;
       return u >= REF_UNITS ? vwMedian(hs.slice(i, j)) : null;
     };
-    const ref = priceAt(end);
+    const ref = priceAt2(end);
     if (!ref) return null;
     const P = {}, D = {};
     let n = 0;
@@ -4797,7 +4874,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
       const hits = FILL_K.map(() => 0);
       let starts = 0, dsum = 0;
       for (let t = hs[0].t + 7 * DAY_MS; t <= end - N * DAY_MS; t += 3 * HOUR_MS) {
-        if (!rOf.has(t)) rOf.set(t, priceAt(t));
+        if (!rOf.has(t)) rOf.set(t, priceAt2(t));
         const r = rOf.get(t);
         const next = win(t, t + N * DAY_MS);
         if (!r || !next.length) continue;
@@ -5036,6 +5113,8 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     const buy = priceAbove(deep(bids), net4);
     return (net4(Math.max(MIN_BUYER, deep(asks) - 1)) - buy) / buy;
   }
+  var isWeaponCase = (hash = "") => (/ Case$/.test(hash) || /^CS:GO Weapon Case \d$/.test(hash)) && !/souvenir|terminal/i.test(hash);
+  var flipDepth = (sellCount) => sellCount >= 3e3 ? 50 : 3;
   function buyPlan({ buyGraph, sellGraph, points, net: net4, sell: sell2, from, qty = 1, minRoi = 0.03 }) {
     const got = net4(sell2);
     if (!(got > 0)) return null;
@@ -5267,7 +5346,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     }
   };
   var LANES = {
-    hist: { start: 900, min: 350, max: 8e3 },
+    hist: { start: 350, min: 350, max: 8e3 },
     // /market/orderbook (prices, competition)
     price: { start: 3e3, min: 2e3, max: 15e3 },
     // /market/priceoverview (volume), strict
@@ -5275,9 +5354,9 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
     // legacy listing page
     inv: { start: 2500, min: 1500, max: 2e4 },
     // /inventory, strict
-    market: { start: 1200, min: 600, max: 1e4 },
+    market: { start: 600, min: 600, max: 1e4 },
     // mylistings, history, search
-    search: { start: 1e3, min: 500, max: 15e3 },
+    search: { start: 500, min: 500, max: 15e3 },
     // /market/search/render (case contents), own lane so a long scan doesn't slow relisting
     quote: { start: 1e3, min: 600, max: 15e3 },
     // /market/actions Search (Steam items, 100 per request), own lane so a scan doesn't hold up a refresh
@@ -5350,7 +5429,11 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
   function schedule(lane, fn, { retry = true } = {}) {
     const cfg = LANES[lane] || { start: 1e3, min: 500, max: 1e4 };
     const l = lanes[lane] ||= { chain: Promise.resolve(), ok: 0 };
-    const interval = () => cfg.fixed ? cfg.fixed() : Math.min(cfg.max, Math.max(cfg.min, shared()[lane]?.iv ?? cfg.start));
+    const floor = () => {
+      const s = shared()[lane];
+      return s?.floorUntil > Date.now() ? Math.max(cfg.min, s.floor) : cfg.min;
+    };
+    const interval = () => cfg.fixed ? cfg.fixed() : Math.min(cfg.max, Math.max(floor(), shared()[lane]?.iv ?? cfg.start));
     const run = async () => {
       for (let attempt = 0; ; attempt++) {
         for (; ; ) {
@@ -5366,7 +5449,7 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
           const r = await fn();
           if (!cfg.fixed && ++l.ok >= 8) {
             l.ok = 0;
-            saveShared(lane, { iv: Math.max(cfg.min, Math.round(interval() * 0.93)), backoff: 0 });
+            saveShared(lane, { iv: Math.max(floor(), Math.round(interval() * 0.93)), backoff: 0 });
           }
           return r;
         } catch (e) {
@@ -5375,10 +5458,13 @@ Drops, cases, trades and what you still own don't count. How much your wallet gr
             l.ok = 0;
             const s = shared()[lane] || {};
             const backoff = Math.min((s.backoff || 15e3) * 2, 6e5);
+            const pace = interval();
             saveShared(lane, {
-              iv: cfg.fixed ? void 0 : Math.min(cfg.max, interval() * 2),
+              iv: cfg.fixed ? void 0 : Math.min(cfg.max, pace * 2),
               backoff,
-              pauseUntil: Date.now() + backoff
+              pauseUntil: Date.now() + backoff,
+              // only the first 429 says this pace is too fast: the next ones are the same cooldown still running
+              ...!cfg.fixed && !s.backoff ? { floor: Math.min(cfg.max, Math.round(pace * 1.15)), floorUntil: Date.now() + 24 * 36e5 } : {}
             });
             bus.emit("ratelimit", lane, backoff);
             if (retry && attempt < 3) continue;
@@ -11886,6 +11972,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     ["", L("flip.everything")],
     ["case", L("flip.cases")],
     ["capsule", L("flip.capsulesAndPackages")],
+    ["souvenir", L("flip.souvenirPackages")],
     ["tag_CSGO_Tool_Sticker", L("flip.stickers")],
     ["tag_CSGO_Type_Rifle", L("flip.rifles")],
     ["tag_CSGO_Type_Pistol", L("flip.pistols")],
@@ -11896,9 +11983,27 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     ["tag_CSGO_Type_Spray", "Graffiti"],
     ["tag_CSGO_Type_MusicKit", L("flip.musicKits")]
   ];
-  var isCase = (hash = "") => / Case$/.test(hash) && !/Souvenir/i.test(hash);
-  var CAT_TAG = { case: "tag_CSGO_Type_WeaponCase", capsule: "tag_CSGO_Type_WeaponCase" };
-  var CAT_NAME = { case: isCase, capsule: (h) => !isCase(h) };
+  var isCase = isWeaponCase;
+  var CONTAINER_TAG = "tag_CSGO_Type_WeaponCase";
+  var CONTAINER_KINDS = ["case", "capsule", "souvenir"];
+  var isContainer = (h = "") => h.startsWith("Autograph Capsule | ") || !h.includes(" | ") && !h.startsWith("\u2605");
+  var containerKind = (h) => isCase(h) ? "case" : /souvenir/i.test(h) ? "souvenir" : "capsule";
+  function catFilters(picked2) {
+    const kinds = picked2.filter((v) => CONTAINER_KINDS.includes(v));
+    return {
+      cats: [...new Set(picked2.map((v) => CONTAINER_KINDS.includes(v) ? CONTAINER_TAG : v))],
+      nameOk: kinds.length && kinds.length < CONTAINER_KINDS.length ? (h) => !isContainer(h) || kinds.includes(containerKind(h)) : null,
+      casesOnly: picked2.length === 1 && picked2[0] === "case"
+    };
+  }
+  var catPick = [];
+  function renderCats() {
+    const names = CATS.filter(([v]) => catPick.includes(v)).map(([, n]) => n);
+    const btn = el5.querySelector("#s-cat");
+    btn.textContent = !names.length ? CATS[0][1] : names.length === 1 ? names[0] : `${names[0]} +${names.length - 1}`;
+    btn.title = names.join(", ") || CATS[0][1];
+    el5.querySelectorAll("#s-cat-pop [data-cat]").forEach((d) => d.classList.toggle("on", d.dataset.cat ? catPick.includes(d.dataset.cat) : !catPick.length));
+  }
   var maxDefault = () => {
     const b = wallet().balance;
     return b >= 100 ? b : 5e3;
@@ -11944,21 +12049,29 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       <div class="tw" id="w-table"></div>
     </section>
     <section data-s="scan" hidden>
-      <div class="row2">
+      <div class="sf">
+      <div class="row2 sf-top">
         <label>${L("flip.goal")}<select id="s-goal"><option value="hold">${L("flip.longTermCaseSeason")}</option><option value="flip">${L("flip.quickFlip7DayLock")}</option></select></label>
-        <label>${L("flip.category")}<select id="s-cat">${CATS.map(([v, n]) => `<option value="${v}">${n}</option>`).join("")}</select></label>
-        <label>${L("flip.search")}<input type="text" id="s-q" style="width:150px" placeholder="${L("flip.optional")}"></label>
-        <label>${L("flip.priceFrom")}<input class="p" id="s-min" value="${toInput(100)}"></label>
-        <label>${L("flip.to")}<input class="p" id="s-max" data-auto="1" value="${toInput(maxDefault())}"></label>
-        <label>${L("flip.minListings")}<input type="number" id="s-list" value="100" style="width:80px"></label>
-        <label data-only="hold">${L("flip.itemsToCheck")}<input type="number" id="s-n" value="40" style="width:70px"></label>
-        <label data-only="flip">${L("flip.howManyToFind")}<input type="number" id="s-find" value="${esc(get("flipFind", "5"))}" min="0" placeholder="${L("flip.noLimit")}" style="width:92px"></label>
-        <label data-only="flip">${L("flip.minSales24h")}<input type="number" id="s-vol" value="${settings.minVolume}" style="width:70px"></label>
-        <label data-only="flip">Min. ROI %<input type="number" id="s-roi" value="${Math.round(settings.minRoi * 100)}" style="width:60px"></label>
-        <label data-only="flip" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:6px" title="${L("flip.onlyItemsWithTheFlip")}"><input type="checkbox" id="s-only" ${get("flipOnlyOk", true) ? "checked" : ""}> ${L("flip.profitableOnly")}</label>
-        <label data-only="flip" style="flex-direction:row;align-items:center;gap:6px;padding-bottom:6px" title="${L("flip.tickedTheScannerReusesWhat")}"><input type="checkbox" id="s-skip" ${get("flipSkipSeen", true) ? "checked" : ""}> ${L("flip.useRememberedData")}</label>
-        <button class="b go" data-a="scan">${L("flip.scan")}</button>
-        <button class="b" data-a="sclear" title="${L("flip.removesTheResultsOfThe")}">${L("flip.clearList")}</button>
+        <label id="s-cat-box" style="position:relative">${L("flip.category")}<button type="button" class="msel" id="s-cat"></button><div class="msel-pop" id="s-cat-pop" hidden>${CATS.map(([v, n]) => `<div data-cat="${v}">${n}</div>`).join("")}</div></label>
+        <label class="sf-q">${L("flip.search")}<input type="text" id="s-q" placeholder="${L("flip.optional")}"></label>
+        <div class="sf-act">
+          <button class="b" data-a="sclear" title="${L("flip.removesTheResultsOfThe")}">${L("flip.clearList")}</button>
+          <button class="b go" data-a="scan">${L("flip.scan")}</button>
+        </div>
+      </div>
+      <div class="row2 sf-lim">
+        <label class="sf-from">${L("flip.priceFrom")}<input class="p" id="s-min" value="${toInput(100)}"></label>
+        <label class="sf-to">${L("flip.to")}<input class="p" id="s-max" data-auto="1" value="${toInput(maxDefault())}"></label>
+        <label>${L("flip.minListings")}<input type="number" id="s-list" value="100"></label>
+        <label data-only="hold">${L("flip.itemsToCheck")}<input type="number" id="s-n" value="40"></label>
+        <label data-only="flip">${L("flip.howManyToFind")}<input type="number" id="s-find" value="${esc(get("flipFind", "5"))}" min="0" placeholder="${L("flip.noLimit")}"></label>
+        <label data-only="flip">${L("flip.minSales24h")}<input type="number" id="s-vol" value="${settings.minVolume}"></label>
+        <label data-only="flip">Min. ROI %<input type="number" id="s-roi" value="${Math.round(settings.minRoi * 100)}"></label>
+        <div class="sf-tg" data-only="flip">
+          <label class="tgl" title="${L("flip.onlyItemsWithTheFlip")}"><input type="checkbox" id="s-only" ${get("flipOnlyOk", true) ? "checked" : ""}><span class="tr"></span>${L("flip.profitableOnly")}</label>
+          <label class="tgl" title="${L("flip.tickedTheScannerReusesWhat")}"><input type="checkbox" id="s-skip" ${get("flipSkipSeen", true) ? "checked" : ""}><span class="tr"></span>${L("flip.useRememberedData")}</label>
+        </div>
+      </div>
       </div>
       <details><summary>${L("flip.howDoesItWork")}</summary><div class="note" style="font-size:13px">${L("flip.theScannerTakesTheMost")}
       </div></details>
@@ -11992,7 +12105,24 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       root2.querySelectorAll("[data-only]").forEach((x) => x.hidden = x.dataset.only !== g);
     };
     goalSel.value = get("flipGoal2", "hold");
-    if (goalSel.value === "hold") root2.querySelector("#s-cat").value = "case";
+    const savedCats = get("flipCats", null);
+    catPick = Array.isArray(savedCats) ? savedCats.filter((v) => v && CATS.some(([x]) => x === v)) : goalSel.value === "hold" ? ["case"] : [];
+    renderCats();
+    const catPop = root2.querySelector("#s-cat-pop");
+    root2.querySelector("#s-cat").addEventListener("click", () => {
+      catPop.hidden = !catPop.hidden;
+    });
+    catPop.addEventListener("click", (e) => {
+      e.preventDefault();
+      const v = e.target.closest("[data-cat]")?.dataset.cat;
+      if (v == null) return;
+      catPick = !v ? [] : catPick.includes(v) ? catPick.filter((x) => x !== v) : [...catPick, v];
+      set("flipCats", catPick);
+      renderCats();
+    });
+    root2.addEventListener("click", (e) => {
+      if (!e.target.closest("#s-cat-box")) catPop.hidden = true;
+    });
     applyGoal();
     root2.querySelector("#s-only").onchange = (e) => {
       set("flipOnlyOk", e.target.checked);
@@ -12160,6 +12290,8 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       at: Date.now()
     };
   }
+  var HOLD_RANK = { ok: 7, wait: 6, thin: 5, young: 4, weak: 3, short: 2, new: 1, cheap: 1, none: 0 };
+  var holdSort = (r) => HOLD_RANK[holdVerdict(r).k] * 1e5 + Math.max(-5e4, Math.min(5e4, r.holdScore ?? -5e4));
   function holdVerdict(r) {
     const hs = r.hs;
     if (!hs) return { k: "none", label: L("flip.noHistory"), c: "mut", why: L("flip.steamReturnedNoPriceHistory") };
@@ -12333,6 +12465,8 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     for (const { hash, appid } of list2) {
       if (task5.cancelled) break;
       progress(++i, list2.length);
+      const known = results.get(hash);
+      if (!isWatch && known?.hs && Date.now() - known.at < FRESH) continue;
       try {
         const [h, hist3] = await Promise.all([
           hist(appid, hash, 5 * 6e4),
@@ -12366,7 +12500,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   function seasonNote(rows3) {
     const m = (/* @__PURE__ */ new Date()).getMonth() + 1;
     const txt = [11, 12, 1, 2].includes(m) ? L("flip.buyingSeasonNovemberToFebruary") : m >= 4 && m <= 8 ? L("flip.sellingSeasonAprilToAugust") : L("flip.inBetweenHistoricallyItWas");
-    const cs = rows3.filter((r) => r.hs && r.hs.ageDays >= 365 && / Case$/.test(r.hash));
+    const cs = rows3.filter((r) => r.hs && r.hs.ageDays >= 365 && isCase(r.hash));
     const t = medianOf2(cs.map((r) => r.hs.trend30).filter((x) => x != null)), y = medianOf2(cs.map((r) => r.hs.vsYear).filter((x) => x != null));
     const mk = cs.length >= 3 && t != null ? L("flip.oldCasesInThisScan", { t: cls(t), t2: sp(t), y: cls(y), y2: sp(y) }) + (t < -0.1 ? L("flip.theMarketIsStillFalling") : "") : "";
     return `${txt}${mk} <span class="sub">${L("flip.numbersFromResearchOn108")}</span>`;
@@ -12442,7 +12576,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       y2: (r) => r.hs?.y2?.med,
       vsyear: (r) => r.hs?.vsYear,
       trend: (r) => r.hs?.trend30,
-      hold: (r) => r.holdScore,
+      hold: holdSort,
       verdict: (r) => ({ ok: 4, risk: 3, slow: 2, no: 1, none: 0 })[flipVerdict(r).k] * 10 + (r.fr?.roi ?? -1)
       // best verdict first, then ROI
     });
@@ -12481,11 +12615,11 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       return `<tr style="${good && !ok ? "opacity:.55" : ""}">${body2}${actions(r)}</tr>`;
     }).join("") : `<tr><td colspan="${cols}" class="empty">${isWatch ? Object.keys(watch.all()).length ? `${L("flip.youWatchClickScanWatchlist", { watch: Object.keys(watch.all()).length })}: ${Object.keys(watch.all()).slice(0, 8).map(esc).join(", ")}${Object.keys(watch.all()).length > 8 ? "\u2026" : ""}` : L("flip.addItemsToTheWatchlist") : esc(empty)}</td></tr>`}</tbody></table>`;
   }
-  async function eachCandidate({ cat, nameOk, q, min, max, minListings, fresh: fresh3 }, fn, info2 = {}) {
+  async function eachCandidate({ cats, nameOk, casesOnly, q, min, max, minListings, fresh: fresh3 }, fn, info2 = {}) {
     let rate = null;
     const meta2 = bucket("itemMeta");
     const page = (start2) => {
-      const path = `/market/search/render/?norender=1&appid=730&l=${uiLanguage()}&start=${start2}&count=100&search_descriptions=0&sort_column=popular&sort_dir=desc&query=${encodeURIComponent(q)}${cat ? `&category_730_Type[]=${cat}` : ""}`;
+      const path = `/market/search/render/?norender=1&appid=730&l=${uiLanguage()}&start=${start2}&count=100&search_descriptions=0&sort_column=popular&sort_dir=desc&query=${encodeURIComponent(q)}${cats.map((c) => `&category_730_Type[]=${c}`).join("")}`;
       return cached("q|" + path, fresh3 ? 0 : ttl(), () => schedule("search", async () => {
         const r = await fetch(ORIGIN + path, { credentials: "include" });
         if (r.status === 429) throw new HttpError(429, L("flip.steamTooManyRequests429"));
@@ -12497,12 +12631,29 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
         }
       }), (d) => d?.results?.length > 0);
     };
+    let quickList = !q && casesOnly;
+    const quickPage = (at) => cached(`qs|730|containers|${at}`, fresh3 ? 0 : ttl(), () => marketSearchPage({ appid: 730, start: at, filters: { Type: ["CSGO_Type_WeaponCase"] } }), (x) => x?.results?.length > 0);
+    const fetchPage2 = async (at) => {
+      if (quickList) {
+        const x = await quickPage(at).catch((e) => {
+          console.warn("[Flipster] quick container list failed, using the old search", e);
+          return null;
+        });
+        if (x?.results?.length) return { d: x, inWallet: true };
+        quickList = false;
+      }
+      return { d: await page(at), inWallet: false };
+    };
+    let ahead = null;
+    const walked = /* @__PURE__ */ new Set();
     const WAIT = [5, 15, 30, 60];
     let total = Infinity, start = 0, empties = 0;
     while (start < total) {
       if (task5.cancelled) return "cancel";
       if (info2.stop?.()) return "stop";
-      const d = await page(start);
+      const got = ahead?.at === start ? ahead.p : fetchPage2(start);
+      ahead = null;
+      const { d, inWallet } = await got;
       const res = d?.results || [];
       if (d?.total_count > 0) total = d.total_count;
       info2.pos = start;
@@ -12516,16 +12667,24 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
         continue;
       }
       empties = 0;
-      if (rate == null) {
+      if (info2.readAhead && start + res.length < total) {
+        ahead = { at: start + res.length, p: fetchPage2(start + res.length) };
+        ahead.p.catch(() => {
+        });
+      }
+      if (!inWallet && rate == null) {
         const top = res.find((r) => r.sell_price > 0);
         if (top) {
           const local = /\$/.test(top.sell_price_text) ? (await steamPrice(730, top.hash_name)).lowest : top.sell_price;
           rate = local / top.sell_price;
         }
       }
-      for (let i = 0; rate != null && i < res.length; i++) {
+      const pageRate = inWallet ? 1 : rate;
+      for (let i = 0; pageRate != null && i < res.length; i++) {
         const r = res[i];
-        const p = Math.round(r.sell_price * rate);
+        if (walked.has(r.hash_name)) continue;
+        walked.add(r.hash_name);
+        const p = Math.round(r.sell_price * pageRate);
         if (!(p >= min && p <= max && r.sell_listings >= minListings && (!nameOk || nameOk(r.hash_name)))) continue;
         if (!meta2.get(r.hash_name)) meta2.set(r.hash_name, { name: r.name, icon: r.asset_description?.icon_url, color: r.asset_description?.name_color, appid: 730 });
         if (task5.cancelled) return "cancel";
@@ -12590,11 +12749,11 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   async function scan() {
     if (scanning) return;
     scanning = true;
+    const releaseClock = keepTime();
     await Promise.race([syncMax(), sleep(8e3)]);
-    const catSel = el5.querySelector("#s-cat").value;
+    el5.querySelector("#s-cat-pop").hidden = true;
     const filters = {
-      cat: CAT_TAG[catSel] ?? catSel,
-      nameOk: CAT_NAME[catSel] || null,
+      ...catFilters(catPick),
       q: el5.querySelector("#s-q").value.trim(),
       min: parsePrice(el5.querySelector("#s-min").value) || 0,
       max: parsePrice(el5.querySelector("#s-max").value) || Infinity,
@@ -12633,6 +12792,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     } catch (e) {
       log(L("flip.scanner") + e.message, "err");
     }
+    releaseClock();
     scanning = false;
     saveRows(true);
     progress(0);
@@ -12648,6 +12808,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     scanSet = /* @__PURE__ */ new Set();
     const st = findState = { want, checked: 0, found: 0, risky: 0, failed: 0, quick: 0, skipped: 0, state: "run", walk: {} };
     st.walk.stop = () => st.found >= want;
+    st.walk.readAhead = true;
     renderScan();
     log(want === Infinity ? L("flip.scannerSearchingForFlipPossible") : L("flip.scannerSearchingForFlipPossible2", { want }));
     const seen = loadSeen();
@@ -12704,7 +12865,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
           let q = useSeen ? quick.get(hash) : null;
           if (!q || Date.now() - q.at > FRESH) {
             const h0 = await hist(appid, hash, useSeen ? 5 * 6e4 : 0);
-            q = { at: Date.now(), max: flipCeiling({ buyGraph: h0.buyGraph, sellGraph: h0.sellGraph, net: net2 }) };
+            q = { at: Date.now(), max: flipCeiling({ buyGraph: h0.buyGraph, sellGraph: h0.sellGraph, net: net2, depth: flipDepth(h0.sellCount) }) };
             quick.set(hash, q);
           }
           if (!(q.max != null && q.max > 0 && q.max >= settings.minRoi)) {
@@ -12781,7 +12942,8 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   var CAP_NAME = { mil: L("cases.highGradeNormal"), res: L("cases.remarkableHoloGlitterEmbroidered"), cla: "Exotic (foil / holo)", cov: L("cases.extraordinaryGold") };
   var kindSel = () => el6?.querySelector("#k-kind")?.value || "case";
   var TTL2 = 6 * 36e5;
-  var EV_TTL = 24 * 36e5;
+  var LIST_V = 2;
+  var EV_TTL = 6 * 36e5;
   var cache3 = bucket("caseEV2");
   var el6;
   var task6 = null;
@@ -12858,14 +13020,14 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     const res = quick2 ? quick2.res : await searchAll(CASES_QUERY, 1e3);
     const tags = await loadSetTags();
     const db = await load().catch(() => null);
-    list = res.filter((r) => /Case$/.test(r.hash_name) && !/souvenir|terminal/i.test(r.hash_name) || db?.caps?.[r.hash_name]).map((r) => {
-      const cap = !!db?.caps?.[r.hash_name] && !/Case$/.test(r.hash_name);
+    list = res.filter((r) => isWeaponCase(r.hash_name) || db?.caps?.[r.hash_name]).map((r) => {
+      const cap = !!db?.caps?.[r.hash_name] && !isWeaponCase(r.hash_name);
       const set2 = cap ? null : setNames(r.hash_name).map((n) => tags.get(n.toLowerCase())).find(Boolean) || null;
       return { hash: r.hash_name, name: r.name, icon: r.asset_description?.icon_url, color: r.asset_description?.name_color, priceUsd: r.sell_price, listings: r.sell_listings, set: set2, kind: cap ? "capsule" : "case" };
     });
     if (quick2) usdRate = quick2.rate;
     else await refreshRate(list);
-    set("caseList", { at: Date.now(), list, usdRate });
+    set("caseList", { at: Date.now(), v: LIST_V, list, usdRate });
   }
   var COLOR_TIER = { "4b69ff": "mil", "8847ff": "res", "d32ce6": "cla", "eb4b4b": "cov" };
   var tierOf = (hash = "", color = "", type = "") => /★/.test(hash) || /★/.test(type) ? "gold" : COLOR_TIER[String(color).toLowerCase()] || (/Covert/i.test(type) ? "cov" : /Classified/i.test(type) ? "cla" : /Restricted/i.test(type) ? "res" : /Mil-Spec/i.test(type) ? "mil" : null);
@@ -12877,13 +13039,18 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   };
   var net3 = (p) => receivedFromBuyer2(p);
   var qCache = bucket("caseQ");
-  async function searchCached(params, max) {
-    const hit = qCache.get(params);
-    if (hit && Date.now() - hit.at < EV_TTL) return hit.res;
-    const res = (await searchAll(params, max)).map((r) => ({ hash_name: r.hash_name, sell_price: r.sell_price, sell_listings: r.sell_listings, asset_description: { name_color: r.asset_description?.name_color, icon_url: r.asset_description?.icon_url, type: r.asset_description?.type } }));
-    qCache.set(params, { at: Date.now(), res });
+  var priceAt = 0;
+  async function cachedQ(key, load5) {
+    const hit = qCache.get(key);
+    if (hit && Date.now() - hit.at < EV_TTL) {
+      priceAt = Math.min(priceAt, hit.at);
+      return hit.res;
+    }
+    const res = await load5();
+    qCache.set(key, { at: Date.now(), res });
     return res;
   }
+  var searchCached = (params, max) => cachedQ(params, async () => (await searchAll(params, max)).map((r) => ({ hash_name: r.hash_name, sell_price: r.sell_price, sell_listings: r.sell_listings, asset_description: { name_color: r.asset_description?.name_color, icon_url: r.asset_description?.icon_url, type: r.asset_description?.type } })));
   function skinValue(variants, st, range) {
     const v = variants.filter((x) => x.st === st && x.price > 0);
     if (!v.length) return null;
@@ -12902,6 +13069,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   async function computeCapsule(c, def) {
     const rate = usdRate || get("caseList", {}).usdRate;
     if (!rate) throw new Error(L("cases.noUsdRate"));
+    priceAt = Date.now();
     const pre = def.kind === "Patch" ? "Patch | " : "Sticker | ";
     const found = new Map(def.items.map(([n]) => [pre + n, null]));
     const ev = commonEvent(def.items.map(([n]) => n));
@@ -12947,13 +13115,14 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       tail.push([x, Math.round(outcomes.filter((o) => o.value >= x).reduce((q, o) => q + o.p, 0) * 1e5) / 1e5]);
     }
     const top = [...outcomes].sort((a, b) => b.value - a.value)[0];
-    const r = { hash: c.hash, at: Date.now(), v: 4, kind: "capsule", exact: true, casePrice, keyCost: 0, cost, ev: evv, roi: cost ? evv / cost - 1 : null, pOk, tail, covered, odds, tiers, best: top ? { hash: top.hash, value: top.value } : null, nItems: def.items.length };
+    const r = { hash: c.hash, at: priceAt, v: 4, kind: "capsule", exact: true, casePrice, keyCost: 0, cost, ev: evv, roi: cost ? evv / cost - 1 : null, pOk, tail, covered, odds, tiers, best: top ? { hash: top.hash, value: top.value } : null, nItems: def.items.length };
     cache3.set(c.hash, r);
     return r;
   }
   async function computeCase(c, keyCost2) {
     const rate = usdRate || get("caseList", {}).usdRate;
     if (!rate) throw new Error(L("cases.noUsdRate"));
+    priceAt = Date.now();
     const db = await load().catch((e) => {
       log(L("cases.cases") + e.message, "warn");
       return null;
@@ -12987,8 +13156,11 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
           (await searchCached(`query=${encodeURIComponent(base)}&search_descriptions=0`, 20)).filter((r2) => r2.hash_name.startsWith("\u2605") && parseHash(r2.hash_name).base === base).forEach(add);
         } else {
           for (const h of [`\u2605 ${base}`, `\u2605 StatTrak\u2122 ${base}`]) {
-            const p = await steamPrice(730, h).catch(() => null);
-            if (p?.lowest) add({ hash_name: h, sell_price: p.lowest / rate, sell_listings: p.volume || 1, asset_description: {} });
+            const b = await cachedQ(`book|${h}`, async () => {
+              const x = await hist(730, h, 0);
+              return { low: x.lowestSell, n: x.sellCount };
+            }).catch(() => null);
+            if (b?.low) add({ hash_name: h, sell_price: b.low / rate, sell_listings: b.n || 1, asset_description: {} });
           }
         }
       }
@@ -13034,7 +13206,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       tail.push([x, Math.round(outcomes.filter((o) => o.value >= x).reduce((q, o) => q + o.p, 0) * 1e5) / 1e5]);
     }
     const top = [...outcomes].sort((a, b) => b.value - a.value)[0];
-    const r = { hash: c.hash, at: Date.now(), v: 4, exact: !!def, casePrice, keyCost: keyCost2, cost, ev, roi: cost ? ev / cost - 1 : null, pOk, tail, covered, tiers, best: top ? { hash: top.hash, value: top.value } : null, nItems: found.length };
+    const r = { hash: c.hash, at: priceAt, v: 4, exact: !!def, casePrice, keyCost: keyCost2, cost, ev, roi: cost ? ev / cost - 1 : null, pOk, tail, covered, tiers, best: top ? { hash: top.hash, value: top.value } : null, nItems: found.length };
     cache3.set(c.hash, r);
     return r;
   }
@@ -13114,23 +13286,27 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   }
   function recalcKey() {
     const k = keyCost().price;
+    const rate = usdRate || get("caseList", {}).usdRate;
+    let changed = false;
     for (const c of list) {
       const r = cache3.get(c.hash);
       if (!r) continue;
-      const rate = usdRate || get("caseList", {}).usdRate;
       if (rate && c.priceUsd > 0) r.casePrice = Math.round(c.priceUsd * rate);
       r.keyCost = r.kind === "capsule" ? 0 : k;
       r.cost = r.casePrice + r.keyCost;
       r.roi = r.cost ? r.ev / r.cost - 1 : null;
-      cache3.set(c.hash, r);
+      changed = true;
     }
+    if (changed) cache3.replace(cache3.all());
   }
   async function scan2(only) {
     if (task6) return;
     task6 = token();
+    const releaseClock = keepTime();
     el6.querySelector('[data-a="stop"]').hidden = false;
     try {
-      if (!list.length || list.some((c) => !c.kind) || Date.now() - (get("caseList", {}).at || 0) > TTL2) {
+      const savedList = get("caseList", {});
+      if (!list.length || list.some((c) => !c.kind) || savedList.v !== LIST_V || Date.now() - (savedList.at || 0) > TTL2) {
         log(L("cases.casesLoadingTheCaseList"));
         await loadCases();
         recalcKey();
@@ -13142,12 +13318,13 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
       const kind2 = kindSel();
       const want = (c) => kind2 === "all" || kind2 === "cap" === (c.kind === "capsule");
       if (!only) {
-        const keep = Object.fromEntries(Object.entries(cache3.all()).filter(([h]) => {
+        const now = Date.now();
+        cache3.replace(Object.fromEntries(Object.entries(cache3.all()).filter(([h, r]) => {
           const c = list.find((x) => x.hash === h);
-          return c && !want(c);
-        }));
-        cache3.replace(keep);
-        qCache.replace({});
+          return c && (!want(c) || r.v === 4 && now - r.at <= EV_TTL);
+        })));
+        qCache.replace(Object.fromEntries(Object.entries(qCache.all()).filter(([, q]) => now - q.at < EV_TTL)));
+        recalcKey();
         render5();
       }
       const stale2 = (c) => {
@@ -13176,6 +13353,7 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
     } catch (e) {
       log(L("cases.cases") + e.message, "err");
     }
+    releaseClock();
     progress(0);
     task6 = null;
     fullScan = false;
@@ -13621,5 +13799,5 @@ ${L("sellsignals.thisOnlyTellsWhatAlready")}` });
   } catch (e) {
     console.error("[Flipster]", e);
   }
-  console.info("[Flipster] build", true ? "23.11.2026, 00:31:44" : "?");
+  console.info("[Flipster] build", true ? "23.11.2026, 18:23:57" : "?");
 })();

@@ -191,16 +191,18 @@ export class HttpError extends Error {
 // Adaptive, cross-tab rate limiting.
 //  - each lane starts at `start` ms between requests, speeds up by 7% after every 8 successes (down to `min`),
 //    and on HTTP 429 doubles its interval (up to `max`) and pauses the lane (30 s → 60 s → … 10 min)
+//  - the first 429 of an incident also keeps the lane 15% slower than the pace that got limited for a day, so it doesn't
+//    climb straight back into the same limit (Ustawienia → "zacznij od nowa" clears it)
 //  - the learned interval is persisted, so the next visit starts at a known-safe pace
 //  - the "next allowed request" time and pauses are shared through GM storage by ALL open Steam tabs,
 //    so three tabs don't hit Steam three times as fast
 const LANES = {
-  hist:   { start: 900,  min: 350,  max: 8000 },   // /market/orderbook (prices, competition)
+  hist:   { start: 350,  min: 350,  max: 8000 },   // /market/orderbook (prices, competition)
   price:  { start: 3000, min: 2000, max: 15000 },  // /market/priceoverview (volume), strict
   page:   { start: 4000, min: 3000, max: 20000 },  // legacy listing page
   inv:    { start: 2500, min: 1500, max: 20000 },  // /inventory, strict
-  market: { start: 1200, min: 600,  max: 10000 },  // mylistings, history, search
-  search: { start: 1000, min: 500,  max: 15000 },  // /market/search/render (case contents), own lane so a long scan doesn't slow relisting
+  market: { start: 600,  min: 600,  max: 10000 },  // mylistings, history, search
+  search: { start: 500,  min: 500,  max: 15000 },  // /market/search/render (case contents), own lane so a long scan doesn't slow relisting
   quote:  { start: 1000, min: 600,  max: 15000 },  // /market/actions Search (Steam items, 100 per request), own lane so a scan doesn't hold up a refresh
   write:  { fixed: () => settings.delay },         // remove/sell/order, never adaptive
   ext:    { fixed: () => 500 },                    // outside services (NBP exchange rates)
@@ -264,7 +266,8 @@ export function laneStats() {
 export function schedule(lane, fn, { retry = true } = {}) {
   const cfg = LANES[lane] || { start: 1000, min: 500, max: 10000 };
   const l = (lanes[lane] ||= { chain: Promise.resolve(), ok: 0 });
-  const interval = () => (cfg.fixed ? cfg.fixed() : Math.min(cfg.max, Math.max(cfg.min, shared()[lane]?.iv ?? cfg.start)));
+  const floor = () => { const s = shared()[lane]; return s?.floorUntil > Date.now() ? Math.max(cfg.min, s.floor) : cfg.min; };
+  const interval = () => (cfg.fixed ? cfg.fixed() : Math.min(cfg.max, Math.max(floor(), shared()[lane]?.iv ?? cfg.start)));
   const run = async () => {
     for (let attempt = 0; ; attempt++) {
       // wait for the shared slot (other tabs may have used it) and any shared 429 pause
@@ -281,7 +284,7 @@ export function schedule(lane, fn, { retry = true } = {}) {
         const r = await fn();
         if (!cfg.fixed && ++l.ok >= 8) {
           l.ok = 0;
-          saveShared(lane, { iv: Math.max(cfg.min, Math.round(interval() * 0.93)), backoff: 0 });
+          saveShared(lane, { iv: Math.max(floor(), Math.round(interval() * 0.93)), backoff: 0 });
         }
         return r;
       } catch (e) {
@@ -290,10 +293,13 @@ export function schedule(lane, fn, { retry = true } = {}) {
           l.ok = 0;
           const s = shared()[lane] || {};
           const backoff = Math.min((s.backoff || 15000) * 2, 600000);
+          const pace = interval();
           saveShared(lane, {
-            iv: cfg.fixed ? undefined : Math.min(cfg.max, interval() * 2),
+            iv: cfg.fixed ? undefined : Math.min(cfg.max, pace * 2),
             backoff,
             pauseUntil: Date.now() + backoff,
+            // only the first 429 says this pace is too fast: the next ones are the same cooldown still running
+            ...(!cfg.fixed && !s.backoff ? { floor: Math.min(cfg.max, Math.round(pace * 1.15)), floorUntil: Date.now() + 24 * 3600000 } : {}),
           });
           bus.emit('ratelimit', lane, backoff);
           if (retry && attempt < 3) continue;

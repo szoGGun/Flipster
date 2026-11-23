@@ -1,5 +1,43 @@
 import { L } from './i18n.js';
-export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Chrome wakes the timers of a hidden tab once a second, which turned the 350 ms between order books into a full second.
+// During a long scan pauses also run on a silent Web Audio clock, which keeps its time there (Steam's pages forbid
+// workers). The request lanes still check the real time after every pause, so requests never go out faster than before.
+let audio = null, mute = null, holders = 0;
+/** keeps pauses accurate in a hidden tab until the returned function is called */
+export function keepTime() {
+  holders++;
+  try {
+    if (!audio && typeof AudioContext !== 'undefined') {
+      audio = new AudioContext();
+      mute = audio.createGain();
+      mute.gain.value = 0;
+      mute.connect(audio.destination);
+    }
+    if (audio?.state === 'suspended') audio.resume().catch(() => {});
+  } catch { audio = mute = null; }
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    if (--holders > 0 || !audio) return;
+    const a = audio;
+    audio = mute = null;
+    a.close().catch(() => {});
+  };
+}
+export const sleep = (ms) => new Promise((r) => {
+  const t = setTimeout(r, ms); // also the fallback when the audio clock isn't running or gets closed
+  if (audio?.state !== 'running' || !(ms > 0)) return;
+  try {
+    const s = audio.createConstantSource();
+    s.offset.value = 0;
+    s.connect(mute);
+    s.onended = () => { s.disconnect(); clearTimeout(t); r(); };
+    s.start();
+    s.stop(audio.currentTime + ms / 1000);
+  } catch { /* the timer above still runs */ }
+});
 
 /** an item's name as Flipster shows it: the English market name (market_hash_name); Steam community items
  * ("63380-Lenin", a trading card) keep their own name */
