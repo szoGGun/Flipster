@@ -1,9 +1,11 @@
 import * as ui from '../core/ui.js';
+import { profitChart } from '../core/pricechart.js';
+import { monthsHtml } from './monthstable.js';
 import * as steam from '../core/steam.js';
 import * as prices from '../core/prices.js';
 import * as store from '../core/store.js';
 import { token } from '../core/jobs.js';
-import { fifoPnL, parseMyHistoryHtml } from '../core/analysis.js';
+import { fifoPnL, inventoryMoves, tradeYearFixes, wholeHistory, parseMyHistoryHtml } from '../core/analysis.js';
 import { esc, pct, toInput, timeAgo, parsePrice, matchSearch, lockUntil, displayName, downloadText } from '../core/util.js';
 import * as ih from './invhistory.js';
 import * as sh from './storehist.js';
@@ -125,21 +127,20 @@ const saveTrades = (t) => store.set('trades', t);
 const CUR_NAME = { 1: 'USD', 2: 'GBP', 3: 'EUR', 5: 'RUB', 6: 'PLN', 7: 'BRL', 17: 'TRY', 18: 'UAH', 20: 'CAD', 21: 'AUD', 23: 'CNY' };
 const FX_ITEM = [440, 'Mann Co. Supply Crate Key'];
 const fx = store.bucket('fx'); // cur -> {r, at}
-const fxLoading = new Set();
+const fxLoading = new Map(); // cur -> the running request
 function rateFor(cur) {
   const w = steam.wallet().currency;
   if (!cur || cur === w) return 1;
   const c = fx.get(String(cur));
   if (c && Date.now() - c.at < 86400000) return c.r;
   if (!fxLoading.has(cur)) {
-    fxLoading.add(cur);
-    Promise.all([steam.priceOverview(FX_ITEM[0], FX_ITEM[1], cur), steam.priceOverview(FX_ITEM[0], FX_ITEM[1], w)])
+    fxLoading.set(cur, Promise.all([steam.priceOverview(FX_ITEM[0], FX_ITEM[1], cur), steam.priceOverview(FX_ITEM[0], FX_ITEM[1], w)])
       .then(([a, b]) => {
         const r = (b.median || b.lowest) / (a.median || a.lowest);
         if (isFinite(r) && r > 0) { fx.set(String(cur), { r, at: Date.now() }); ui.log(L('history.rateToFromSteamPrices', { CUR_NAME: CUR_NAME[cur] || cur, CUR_NAME2: CUR_NAME[w] || w, r: r.toFixed(3) })); invalidate(); render(); }
       })
       .catch((e) => ui.log(L('history.couldntGetTheExchangeRate', { CUR_NAME: CUR_NAME[cur] || cur, message: e.message }), 'warn'))
-      .finally(() => fxLoading.delete(cur));
+      .finally(() => fxLoading.delete(cur)));
   }
   return c ? c.r : null; // stale rate is better than nothing
 }
@@ -277,6 +278,14 @@ function marketTimed() {
   const market = Object.entries(loadTrades()).map(([key, t]) => ({ ...t, key }));
   const day = (t) => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
   const noon = (t) => { const d = new Date(t); return d.getHours() === 12 && !d.getMinutes() && !d.getSeconds() && !d.getMilliseconds(); };
+  // a date-only purchase saved in the wrong year goes to the year the inventory history has it in
+  const dated = market.filter((t) => t.type === 'buy' && noon(t.t) && ih.isComplete(+t.appid || 730)).sort((a, b) => numCmp(String(a.key), String(b.key)));
+  if (dated.length) {
+    const bought = [];
+    for (const e of allEvents()) if (e.kind === 'rynek' && /purchased/i.test(e.desc)) for (const it of e.plus) if (it.hash) bought.push({ hash: it.hash, t: e.t });
+    const fixes = tradeYearFixes(dated, bought);
+    for (const t of dated) if (fixes.has(t.key)) t.t = fixes.get(t.key);
+  }
   const times = new Map(); // side|item|day -> inventory-history times
   for (const e of ih.all()) {
     if (e.kind !== 'rynek') continue;
@@ -294,6 +303,8 @@ function marketTimed() {
     rs.forEach((r, i) => { if (i < ts.length) exact.set(r.key, ts[i]); });
   }
   for (const t of market) if (exact.has(t.key)) t.t = exact.get(t.key);
+  // a sale known only by its day comes after what arrived that day
+  for (const t of market) if (t.type === 'sell' && noon(t.t)) { const d = new Date(t.t); d.setHours(23, 59, 59, 0); t.at = d.getTime(); }
   return market;
 }
 
@@ -460,8 +471,9 @@ export function mount(root) {
       <select id="h-view" title="${L('history.everyTradeOnItsOwn')}"><option value="tx">${L('history.everyTrade')}</option><option value="item">${L('history.totalPerItem')}</option></select>
       <input type="search" id="h-q" placeholder="${L('history.filterItems')}" style="width:180px">
       <span class="sp"></span>
-      <button class="b pane" data-a="months" title="${L('history.showHideTheResultMonth')}">📅 ${L('history.months')}</button>
-      <button class="b pane" data-a="chart" title="${L('history.showHideTheFlipProfit')}">📈 ${L('history.chart')}</button>
+      <button class="b pane" data-a="months" title="${L('history.showHideTheResultMonth')}">📅 ${L('history.resultByMonth')}</button>
+      <button class="b pane" data-a="chart" title="${L('history.showHideTheFlipProfit')}">📈 ${L('history.chartFlips')}</button>
+      <button class="b pane" data-a="chartbal" title="${L('history.showHideTheBalance')}">📈 ${L('history.chartBalance')}</button>
     </div>
     <div class="cards" id="h-cards" style="grid-template-columns:repeat(auto-fill,minmax(max(170px,calc(25% - 10px)),1fr))"></div>
     <div id="h-months" style="padding:0 14px"></div>
@@ -512,7 +524,7 @@ export function mount(root) {
     const th = e.target.closest('th[data-sort]');
     if (th) { if (!th.closest('#h-tbl')) return; (view === 'tx' ? txSort : sort).click(th.dataset.sort); render(true); return; }
     const a = e.target.closest('button')?.dataset.a;
-    ({ months: () => { store.set('histMonths', !store.get('histMonths', false)); render(true); }, dump: exportHistory, syncall: () => syncAll(false), fullall: () => syncAll(true), stop: () => { task?.cancel(); ihTask?.cancel(); }, chart: () => { store.set('histChart', !store.get('histChart', false)); if (chartZoom) { chartZoom = null; render(true); } else drawChart(); }, chartreset: () => { chartZoom = null; pages.tx = 0; render(true); } })[a]?.();
+    ({ months: () => { store.set('histMonths', !store.get('histMonths', false)); render(true); }, dump: exportHistory, syncall: () => syncAll(false), fullall: () => syncAll(true), stop: () => { task?.cancel(); ihTask?.cancel(); }, chartbal: () => { store.set('histChartBal', !store.get('histChartBal', false)); drawChart(); }, chart: () => { store.set('histChart', !store.get('histChart', false)); if (chartZoom) { chartZoom = null; render(true); } else drawChart(); }, chartreset: () => { chartZoom = null; pages.tx = 0; render(true); } })[a]?.();
   });
   period = store.get('histPeriod', 0);
   root.querySelector('#h-per').value = String(period);
@@ -597,7 +609,7 @@ async function syncMarket(full) {
   // a full sync that didn't reach the end (stopped, rate limit) must not throw away what was saved before
   const keep = () => saveTrades(full ? { ...saved, ...trades } : trades);
   const wasEmpty = !Object.keys(saved).length;
-  let start = 0, total = Infinity, added = 0;
+  let start = 0, total = Infinity, added = 0, steamTotal = 0;
   let dateOf = null;
   try {
     const anchors = await loadAnchors();
@@ -605,6 +617,7 @@ async function syncMarket(full) {
       const d = await steam.myHistoryHtmlPage(start, PAGE);
       if (!d.success) throw new Error(L('history.steamReturnedNoHistory'));
       total = d.total_count || 0;
+      steamTotal = Math.max(steamTotal, total);
       const parse = (h) => new DOMParser().parseFromString(h, 'text/html');
       if (!dateOf) {
         // upper anchor for interpolating the dates of newer trades: the newest trade's purchase id and its day
@@ -639,6 +652,10 @@ async function syncMarket(full) {
     if (task.cancelled) {
       keep();
       ui.log(L('history.historyStoppedISavedWhat'), 'warn');
+    } else if (!wasEmpty && (full ? !wholeHistory(steamTotal, start) : !steamTotal)) {
+      // an empty or cut-off answer says nothing about the trades already saved
+      keep();
+      ui.log(L('history.steamGaveNoFullHistory'), 'warn');
     } else {
       saveTrades(trades);
       store.set('tradesSyncedAt', Date.now());
@@ -693,17 +710,18 @@ export function heldCosts() {
 function computeAll() {
   const { list: conv, pending } = converted(timedTrades().all);
   // FIFO over full history so lots bought before the period are matched correctly; filter realized by period
-  const res = fifoPnL(conv);
+  const res = fifoPnL(conv, inventoryMoves(allEvents()));
   // items bought on the market but no longer owned (traded away, sold off-market) aren't "held"
   const owned = ownedNow();
   // a copy that came in a trade or as a drop doesn't keep a purchase "in the inventory" (4 bought terminals opened,
   // the one you have was traded in)
   const notBought = owned ? ownedNotBought() : new Map();
   for (const it of res.items) {
+    it.goneQty = it.gone || 0; // bought copies opened, traded away or used up
     if (!it.holdQty || !owned) continue;
     const have = Math.min(it.holdQty, Math.max(0, (owned.get(it.hash) || 0) - (notBought.get(it.hash) || 0)));
     if (have < it.holdQty) {
-      it.goneQty = it.holdQty - have;
+      it.goneQty += it.holdQty - have;
       it.holdCost = Math.round((it.holdCost * have) / it.holdQty);
       it.holdQty = have;
     }
@@ -766,6 +784,12 @@ function render(fast = false) {
   let acc = 0;
   const pts = res.realized.filter((r) => r.t >= periodSince).sort((a, b) => a.t - b.t).map((r) => [r.t, (acc += r.pnl)]);
   chartPts = pts;
+  // the running balance (received minus spent), the same trades as the card; trades of one moment are one step
+  const moves = new Map();
+  for (const t of all) if (t.t >= periodSince) moves.set(t.t, (moves.get(t.t) || 0) + (t.type === 'sell' ? 1 : -1) * t.price * t.amount);
+  let bal = 0;
+  balancePts = [...moves].sort((a, b) => a[0] - b[0]).map(([t, v]) => [t, (bal += v)]);
+  if (balancePts.length) balancePts.unshift([balancePts[0][0] - 60000, 0]);
   drawChart();
   drawMonths(res, all, inR);
 
@@ -927,23 +951,18 @@ function unknownOrigin(x) {
 
 function renderTx({ res, since, until = Infinity, all, dropTx }) {
   const items = new Map(res.items.map((it) => [it.hash, it]));
-  // FIFO: which purchases are still unsold (oldest buys are consumed first)
+  // FIFO: which purchases are still unsold
   const unsoldOf = new Map();
-  { const cum = new Map(), sold = new Map(res.items.map((it) => [it.hash, it.sold - it.unmatchedSells]));
-    for (const t of [...all].sort((a, b) => a.t - b.t)) {
-      if (t.type !== 'buy') continue;
-      const q = t.amount || 1, st = cum.get(t.hash) || 0, en = st + q;
-      cum.set(t.hash, en);
-      unsoldOf.set(bk(t), Math.max(0, Math.min(q, en - Math.max(sold.get(t.hash) || 0, st))));
-    } }
-  // of a purchase's unsold copies, how many are gone from the inventory: the item's gone count goes to the oldest first
+  for (const t of all) if (t.type === 'buy') unsoldOf.set(bk(t), Math.max(0, (t.amount || 1) - (res.copies.get(bk(t))?.sold || 0)));
+  // of a purchase's unsold copies, how many are gone: those FIFO saw leave, then the rest of the item's count, oldest first
   const goneOf = new Map();
-  { const left = new Map(res.items.map((it) => [it.hash, it.goneQty || 0]));
+  { const left = new Map(res.items.map((it) => [it.hash, (it.goneQty || 0) - (it.gone || 0)]));
     for (const t of [...all].sort((a, b) => a.t - b.t)) {
       if (t.type !== 'buy') continue;
       const k = bk(t), u = unsoldOf.get(k) || 0, l = left.get(t.hash) || 0;
-      const g = Math.min(u, l);
-      if (g) { goneOf.set(k, g); left.set(t.hash, l - g); }
+      const seen = Math.min(u, res.copies.get(k)?.gone || 0), extra = Math.min(u - seen, l);
+      if (seen + extra) goneOf.set(k, seen + extra);
+      if (extra) left.set(t.hash, l - extra);
     } }
   // which inventory events took those copies (opened, traded, trade-up, sticker applied): per item in time order, each
   // purchase takes the next ones after it
@@ -1264,6 +1283,25 @@ function keyPriceAt(ts) {
   return { price: keyPrice(), src: L('history.249UsdAtTodays') };
 }
 
+/**
+ * A key's price today for "Czy warto otwierać?": your own purchase from the last 400 days, else 2.49 USD at the real
+ * USD rate. { price, at (of that purchase) }, or null while the rate isn't known: never a guess in the wrong currency.
+ */
+export function keyPriceNow() {
+  const now = Date.now(), cur = CUR_NAME[steam.wallet().currency];
+  const recent = (k) => (k && now - k.t < 400 * 86400000 ? { price: k.price, at: k.t } : null);
+  const named = recent(sh.nearestKeyPrice(now, cur)); // a row that names a key needs no rate (and no request for one)
+  if (named) return named;
+  const usd = rateFor(1);
+  if (!usd) return null;
+  return recent(sh.nearestKeyPrice(now, cur, keyExpect)) || { price: Math.round(249 * usd) };
+}
+/** the same, after waiting for the exchange rate if it's still being fetched */
+export async function keyPriceReady() {
+  if (!keyPriceNow()) await fxLoading.get(1);
+  return keyPriceNow();
+}
+
 const syncStore = once(() => sBusy, (v) => (sBusy = v), syncStoreNow);
 async function syncStoreNow() {
   el.querySelector('#cs-info').textContent = L('history.downloadingThePurchaseHistory');
@@ -1560,6 +1598,7 @@ function nowCmp(hash, ref, { net = true } = {}) {
  * One row per month of the period (and the chart's range): profit from flips (FIFO, as the cards), from opened cases
  * (only openings with a known result, as in "Otwarte skrzynie"), spent and received on the market, and their sum.
  */
+let monthsOpen = null; // years expanded in the table
 function drawMonths(res, all, inR) {
   const box = el?.querySelector('#h-months');
   if (!box) return;
@@ -1574,87 +1613,63 @@ function drawMonths(res, all, inR) {
   for (const r of memo?.co?.rows || []) if (inR(r.e.t)) { const x = row(r.e.t); x.open++; if (r.profit != null) { x.cases += r.profit; x.nc++; } }
   const rows = [...m.values()].sort((a, b) => b.k.localeCompare(a.k));
   if (!rows.length) { box.innerHTML = `<div class="sub" style="padding:6px 0">${L('history.noTradesInThisPeriod')}</div>`; return; }
-  const money = (v) => `<span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${v > 0 ? '+' : ''}${steam.fmt(Math.round(v))}</span>`;
-  const sum = rows.reduce((s, x) => { for (const k of ['flip', 'nf', 'wins', 'cases', 'nc', 'open', 'spent', 'recv']) s[k] += x[k]; return s; }, { flip: 0, nf: 0, wins: 0, cases: 0, nc: 0, open: 0, spent: 0, recv: 0 });
-  const name = (x) => { const [y, mo] = x.k.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString(locale(), { month: 'long', year: 'numeric' }); };
-  const line = (x, label, strong = false) => `<tr${strong ? ' style="font-weight:600;border-top:2px solid var(--ln)"' : ''}><td>${label}</td>
-    <td>${x.nf ? `${money(x.flip)} <span class="sub">${x.nf} · ${Math.round((x.wins / x.nf) * 100)}% ${L('history.inProfit2')}</span>` : '<span class="sub">-</span>'}</td>
-    <td>${x.open ? `${x.nc ? money(x.cases) : '<span class="sub">…</span>'} <span class="sub">${x.open} ${L('history.open')}${x.nc < x.open ? L('history.withoutAResult', { open: x.open - x.nc }) : ''}</span>` : '<span class="sub">-</span>'}</td>
-    <td>${steam.fmt(x.spent)}</td><td>${steam.fmt(x.recv)}</td><td><b>${money(x.flip + x.cases)}</b></td></tr>`;
-  box.innerHTML = `<div class="sub" style="display:flex;gap:10px;align-items:baseline;margin:6px 0 2px"><b style="color:#c6d4df;font-size:13px">${L('history.resultByMonth')}</b><span>${L('history.flipsAndCasesWithA')}</span></div>
-    <table style="margin-bottom:8px"><thead><tr><th>${L('history.month')}</th><th>${L('history.flipProfit')}</th><th>${L('history.cases2')}</th><th>${L('history.spent')}</th><th>${L('history.received2')}</th><th>${L('history.total2')}</th></tr></thead>
-    <tbody>${rows.map((x) => line(x, name(x))).join('')}${rows.length > 1 ? line(sum, L('history.total2'), true) : ''}</tbody></table>`;
+  monthsOpen ||= new Set([rows[0].k.slice(0, 4)]); // the newest year starts open
+  box.innerHTML = `<div class="sub" style="display:flex;gap:10px;align-items:baseline;margin:6px 0 2px"><b style="color:#c6d4df;font-size:13px">${L('history.resultByMonth')}</b><span>${L('history.flipsAndCasesWithA')}</span></div>${monthsHtml(rows, monthsOpen, (v) => steam.fmt(Math.round(v)))}`;
+  box.onclick = (e) => {
+    const y = e.target.closest('[data-year]')?.dataset.year;
+    if (!y) return;
+    if (monthsOpen.has(y)) monthsOpen.delete(y); else monthsOpen.add(y);
+    drawMonths(res, all, inR);
+  };
 }
 
 // ---------------------------------------------------------------- P&L chart (optional, zoomable by dragging)
-let chartPts = [];
-let chartZoom = null; // [from, to] timestamps
-const CH = { l: 70, r: 12, W: 1000 }; // must match ui.lineChart padding
+let chartPts = [], balancePts = [];
+let chartZoom = null; // [from, to] timestamps, shared by both charts, the cards and the table
+/** the points inside the zoomed range, with the value carried in from before it */
+function zoomedPoints(pts) {
+  if (!chartZoom) return pts;
+  const [a, b] = chartZoom;
+  const before = [...pts].reverse().find((x) => x[0] < a);
+  const inside = pts.filter((x) => x[0] >= a && x[0] <= b);
+  const lastV = (inside.length ? inside[inside.length - 1] : before)?.[1] ?? 0;
+  return [[a, before ? before[1] : 0], ...inside, [b, lastV]];
+}
 function drawChart() {
   const box = el?.querySelector('#h-chart');
   if (!box) return;
-  const on = store.get('histChart', false);
-  el.querySelector('[data-a="chart"]')?.classList.toggle('on', on);
-  if (!on || chartPts.length < 2) { box.innerHTML = on ? `<div class="sub" style="padding:6px 0">${L('history.tooFewSalesToDraw')}</div>` : ''; return; }
-  let p = chartPts;
-  if (chartZoom) {
-    const [a, b] = chartZoom;
-    const before = [...chartPts].reverse().find((x) => x[0] < a);
-    const inside = chartPts.filter((x) => x[0] >= a && x[0] <= b);
-    const lastV = (inside.length ? inside[inside.length - 1] : before)?.[1] ?? 0;
-    p = [[a, before ? before[1] : 0], ...inside, [b, lastV]];
-  }
-  const x0 = p[0][0], x1 = p[p.length - 1][0];
-  const short = x1 - x0 < 3 * 86400000;
-  const endV = chartPts[chartPts.length - 1][1];
-  const delta = chartZoom ? p[p.length - 1][1] - p[0][1] : endV;
-  box.innerHTML = `
-    <div class="sub" style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0 2px">
-      <b style="color:#c6d4df;font-size:13px">${L('history.cumulativeFlipProfit')}</b>
+  const charts = [
+    { a: 'chart', on: store.get('histChart', false), pts: chartPts, title: L('history.cumulativeFlipProfit'), empty: L('history.tooFewSalesToDraw'), changeKey: 'flip.chartSale' },
+    { a: 'chartbal', on: store.get('histChartBal', false), pts: balancePts, title: L('history.cumulativeBalance'), empty: L('history.tooFewTradesToDraw'), changeKey: 'flip.chartChange' },
+  ];
+  for (const c of charts) el.querySelector(`[data-a="${c.a}"]`)?.classList.toggle('on', c.on);
+  const shown = charts.filter((c) => c.on);
+  let hint = false; // the zoom hint / "show all" once, on the first chart drawn
+  box.innerHTML = shown.map((c, i) => {
+    if (c.pts.length < 2) return `<div class="sub" style="padding:6px 0">${c.empty}</div>`;
+    const p = (c.p = zoomedPoints(c.pts));
+    const x0 = p[0][0], x1 = p[p.length - 1][0];
+    const delta = chartZoom ? p[p.length - 1][1] - p[0][1] : c.pts[c.pts.length - 1][1];
+    const side = hint ? '' : chartZoom ? `<button class="b" data-a="chartreset">${L('history.showAll')}</button>` : `<span>${L('history.dragTheMouseOverThe')}</span>`;
+    hint = true;
+    return `<div class="sub" style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin:6px 0 2px">
+      <b style="color:#c6d4df;font-size:13px">${c.title}</b>
       <span>${chartZoom ? L('history.theTableAndCardsShow', { x0: new Date(x0).toLocaleDateString(), x1: new Date(x1).toLocaleDateString() }) : L('history.total3')}<b class="${delta >= 0 ? 'pos' : 'neg'}">${delta >= 0 ? '+' : ''}${steam.fmt(Math.round(delta))}</b></span>
-      <span class="sp" style="flex:1"></span>
-      <span id="h-ch-tip" style="color:#c6d4df"></span>
-      ${chartZoom ? `<button class="b" data-a="chartreset">${L('history.showAll')}</button>` : `<span>${L('history.dragTheMouseOverThe')}</span>`}
+      <span class="sp" style="flex:1"></span>${side}
     </div>
-    <div id="h-ch-wrap" style="position:relative;cursor:crosshair;user-select:none">
-      ${ui.lineChart([{ points: p, color: endV >= 0 ? '#a4d007' : '#ff6b6b' }], { fmtY: (v) => steam.fmt(Math.round(v)), fmtX: (v) => (short ? new Date(v).toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : new Date(v).toLocaleDateString()), height: 180, zero: true })}
-      <div id="h-ch-sel" hidden style="position:absolute;top:0;bottom:22px;background:rgba(102,192,244,.18);border:1px solid rgba(102,192,244,.6);pointer-events:none"></div>
-    </div>`;
-  const wrap = box.querySelector('#h-ch-wrap');
-  const sel = box.querySelector('#h-ch-sel');
-  const tip = box.querySelector('#h-ch-tip');
-  const tAt = (clientX) => {
-    const r = wrap.getBoundingClientRect();
-    const fx = ((clientX - r.left) / r.width) * CH.W;
-    const f = Math.min(1, Math.max(0, (fx - CH.l) / (CH.W - CH.l - CH.r)));
-    return x0 + f * (x1 - x0);
-  };
-  let start = null;
-  wrap.onmousedown = (e) => { if (e.button !== 0) return; start = e.clientX; sel.hidden = true; e.preventDefault(); };
-  wrap.onmousemove = (e) => {
-    const t = tAt(e.clientX);
-    const near = p.reduce((best, x) => (Math.abs(x[0] - t) < Math.abs(best[0] - t) ? x : best), p[0]);
-    tip.innerHTML = `${new Date(near[0]).toLocaleString()} · <b class="${near[1] >= 0 ? 'pos' : 'neg'}">${steam.fmt(Math.round(near[1]))}</b>`;
-    if (start == null) return;
-    const r = wrap.getBoundingClientRect();
-    const a = Math.min(start, e.clientX) - r.left, b = Math.max(start, e.clientX) - r.left;
-    Object.assign(sel.style, { left: a + 'px', width: b - a + 'px' });
-    sel.hidden = b - a < 3;
-  };
-  wrap.onmouseleave = () => { tip.textContent = ''; };
-  const finish = (e) => {
-    if (start == null) return;
-    const s = start; start = null; sel.hidden = true;
-    window.removeEventListener('mouseup', finish);
-    if (Math.abs(e.clientX - s) < 6) return;
-    const a = tAt(Math.min(s, e.clientX)), b = tAt(Math.max(s, e.clientX));
-    if (b - a < 60000) return;
-    chartZoom = [a, b];
-    pages.tx = 0;
-    render(true);
-  };
-  wrap.addEventListener('mousedown', () => window.addEventListener('mouseup', finish));
-  wrap.ondblclick = () => { if (chartZoom) { chartZoom = null; pages.tx = 0; render(true); } };
+    <div class="pc-plot" data-chart="${i}" style="cursor:crosshair;user-select:none"></div>`;
+  }).join('');
+  shown.forEach((c, i) => {
+    if (!c.p) return;
+    profitChart(box.querySelector(`[data-chart="${i}"]`), {
+      points: c.p,
+      label: c.title,
+      changeKey: c.changeKey,
+      fmt: (v) => steam.fmt(Math.round(v)),
+      onZoom: (from, to) => { chartZoom = [from, to]; pages.tx = 0; render(true); },
+      onReset: () => { if (chartZoom) { chartZoom = null; pages.tx = 0; render(true); } },
+    });
+  });
 }
 
 // ---------------------------------------------------------------- where did each item I own come from, what did it cost

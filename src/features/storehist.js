@@ -73,7 +73,9 @@ export async function sync({ onProgress = () => {} } = {}) {
     pages++;
     onProgress(rows.length);
   }
-  const uniq = [...new Map(rows.map((x) => [x.id, x])).values()];
+  const fetched = [...new Map(rows.map((x) => [x.id, x])).values()];
+  // stopped before the last page, or an empty table: the purchases saved earlier stay
+  const uniq = cursor || !fetched.length ? [...new Map([...(store.get(KEY, { rows: [] }).rows || []), ...fetched].map((x) => [x.id, x])).values()] : fetched;
   store.set(KEY, { at: Date.now(), rows: uniq });
   mem = null;
   return uniq;

@@ -176,56 +176,142 @@ export function historyStats(points, now = Date.now()) {
 }
 
 /**
- * FIFO profit & loss from market history.
- * trades: [{t, type:'buy'|'sell', hash, amount, price}] price per unit (buy: paid, sell: received)
+ * Copies that came in or left outside the market, from inventory-history events: drops, trades, opened cases, stickers
+ * applied, trade-ups. An item that goes out and comes back in one event was only changed (a sticker on a weapon). Steam
+ * lists a trade twice ("You traded with X" and "Traded"), so the same copies within two minutes count once.
  */
-export function fifoPnL(trades) {
-  const lots = new Map(); // hash -> [{qty, cost, t}]
+export function inventoryMoves(events) {
+  const out = [], seen = new Map();
+  const count = (list) => { const m = new Map(); for (const i of list || []) if (i.hash) m.set(i.hash, (m.get(i.hash) || 0) + (i.amount || 1)); return m; };
+  for (const e of events) {
+    if (e.kind === 'rynek') continue;
+    const plus = count(e.plus), minus = count(e.minus);
+    for (const [h, n] of minus) { const both = Math.min(n, plus.get(h) || 0); if (both) { minus.set(h, n - both); plus.set(h, plus.get(h) - both); } }
+    for (const [op, side] of [['in', plus], ['out', minus]]) {
+      for (const [hash, n] of side) {
+        let qty = n;
+        if (e.kind === 'wymiana') {
+          const k = `${op}|${Math.round(e.t / 120000)}|${hash}`;
+          qty = Math.max(0, n - (seen.get(k) || 0));
+          seen.set(k, Math.max(n, seen.get(k) || 0));
+        }
+        if (qty) out.push({ t: e.t, op, hash, qty });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Steam's market history shows a day without the year, and estimating it from the row's id can miss by years. A
+ * date-only purchase with no such purchase in the inventory history on its day, but one on the same day and month of
+ * another year, belongs there. rows: date-only purchases, oldest id first; purchases: [{ hash, t }]. → row key -> time
+ */
+export function tradeYearFixes(rows, purchases) {
+  const parts = (t) => { const d = new Date(t); return { md: `${d.getMonth()}-${d.getDate()}`, y: d.getFullYear() }; };
+  const byDate = new Map();
+  for (const p of [...purchases].sort((a, b) => a.t - b.t)) {
+    const k = `${p.hash}|${parts(p.t).md}`;
+    if (!byDate.has(k)) byDate.set(k, []);
+    byDate.get(k).push({ t: p.t, y: parts(p.t).y, used: false });
+  }
+  const list = (r) => byDate.get(`${r.hash}|${parts(r.t).md}`) || [];
+  const wrong = [];
+  for (const r of rows) {
+    const here = list(r).filter((e) => e.y === parts(r.t).y);
+    if (!here.length) { wrong.push(r); continue; }
+    const free = here.find((e) => !e.used); // rows already on their day keep that day's events
+    if (free) free.used = true;
+  }
+  const fixes = new Map();
+  for (const r of wrong) {
+    const all = list(r);
+    if (!all.length) continue;
+    const e = all.find((x) => !x.used) || all[all.length - 1]; // one event can hold several units
+    e.used = true;
+    fixes.set(r.key, e.t);
+  }
+  return fixes;
+}
+
+/** a full market sync may replace the saved trades only after walking every row Steam said it has (under load it answers with an empty page) */
+export const wholeHistory = (steamTotal, walked) => steamTotal > 0 && walked >= steamTotal;
+
+/**
+ * FIFO profit & loss from market history.
+ * trades: [{t, type:'buy'|'sell', hash, amount, price}] price per unit (buy: paid, sell: received); `at` orders a sale
+ * known only by its day. moves: inventoryMoves(). Every copy counts in order of arrival, so a sale is a flip only when
+ * the oldest copy you still had was bought on the market: one already opened or traded away can't be sold again.
+ */
+export function fifoPnL(trades, moves = []) {
+  const lots = new Map(); // hash -> copies, oldest first: [{qty, cost, t, ref}]; cost null = not bought on the market
   const items = new Map(); // hash -> stats
+  const copies = new Map(); // purchase -> { sold, gone }: what became of its units
   const realized = [];
-  const sorted = [...trades].sort((a, b) => a.t - b.t);
-  const st = (h) => items.get(h) || items.set(h, { hash: h, bought: 0, sold: 0, spent: 0, received: 0, realized: 0, matched: 0, holdQty: 0, holdCost: 0, unmatchedSells: 0 }).get(h);
+  const when = (x) => x.at ?? x.t;
+  const rank = (x) => (x.type === 'buy' || x.op === 'in' ? 0 : 1); // at the same moment: what arrived, then what left
+  const sorted = [...trades, ...moves].sort((a, b) => when(a) - when(b) || rank(a) - rank(b));
+  const st = (h) => items.get(h) || items.set(h, { hash: h, bought: 0, sold: 0, spent: 0, received: 0, realized: 0, matched: 0, holdQty: 0, holdCost: 0, unmatchedSells: 0, gone: 0 }).get(h);
+  const pile = (h) => lots.get(h) || lots.set(h, []).get(h);
+  const fate = (ref) => copies.get(ref) || copies.set(ref, { sold: 0, gone: 0 }).get(ref);
   for (const tr of sorted) {
+    if (tr.op === 'in') { pile(tr.hash).push({ qty: tr.qty, cost: null, t: tr.t }); continue; }
+    if (tr.op === 'out') {
+      const ls = pile(tr.hash);
+      for (let left = tr.qty; left > 0 && ls.length;) {
+        const lot = ls[0], take = Math.min(lot.qty, left);
+        if (lot.cost != null) { st(tr.hash).gone += take; fate(lot.ref).gone += take; }
+        lot.qty -= take;
+        left -= take;
+        if (!lot.qty) ls.shift();
+      }
+      continue;
+    }
     const s = st(tr.hash);
     const q = tr.amount || 1;
     if (tr.type === 'buy') {
       s.bought += q;
       s.spent += tr.price * q;
-      (lots.get(tr.hash) || lots.set(tr.hash, []).get(tr.hash)).push({ qty: q, cost: tr.price, t: tr.t });
+      pile(tr.hash).push({ qty: q, cost: tr.price, t: tr.t, ref: tr.key || `${tr.hash}|${tr.t}` });
     } else {
       s.sold += q;
       s.received += tr.price * q;
       let left = q;
-      const ls = lots.get(tr.hash) || [];
+      const ls = pile(tr.hash);
       while (left > 0 && ls.length) {
         const lot = ls[0];
         const take = Math.min(lot.qty, left);
-        const pnl = (tr.price - lot.cost) * take;
-        s.realized += pnl;
-        s.matched += take;
-        realized.push({ hash: tr.hash, qty: take, buy: lot.cost, sell: tr.price, pnl, held: tr.t - lot.t, t: tr.t });
+        if (lot.cost != null) {
+          const pnl = (tr.price - lot.cost) * take;
+          s.realized += pnl;
+          s.matched += take;
+          fate(lot.ref).sold += take;
+          realized.push({ hash: tr.hash, qty: take, buy: lot.cost, sell: tr.price, pnl, held: tr.t - lot.t, t: tr.t });
+        } else s.unmatchedSells += take; // a copy from a drop, a case or a trade
         lot.qty -= take;
         left -= take;
         if (!lot.qty) ls.shift();
       }
-      s.unmatchedSells += left; // sold items not bought on market (drops, cases, trades)
+      s.unmatchedSells += left; // no copy on record
     }
   }
   for (const [h, ls] of lots) {
-    const s = st(h);
-    s.holdQty = ls.reduce((a, l) => a + l.qty, 0);
-    s.holdCost = ls.reduce((a, l) => a + l.qty * l.cost, 0);
+    if (!items.has(h)) continue;
+    const s = st(h), bought = ls.filter((l) => l.cost != null);
+    s.holdQty = bought.reduce((a, l) => a + l.qty, 0);
+    s.holdCost = bought.reduce((a, l) => a + l.qty * l.cost, 0);
   }
   const list = [...items.values()];
   return {
     items: list,
     realized,
+    copies,
     totals: {
       spent: list.reduce((a, s) => a + s.spent, 0),
       received: list.reduce((a, s) => a + s.received, 0),
       realized: list.reduce((a, s) => a + s.realized, 0),
       holdCost: list.reduce((a, s) => a + s.holdCost, 0),
-      trades: sorted.length,
+      trades: trades.length,
       wins: realized.filter((r) => r.pnl > 0).length,
       losses: realized.filter((r) => r.pnl < 0).length,
     },
