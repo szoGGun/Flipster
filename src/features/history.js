@@ -1069,7 +1069,8 @@ function renderTx({ res, since, until = Infinity, all, dropTx }) {
     const low = nowPrice(t.hash, t.appid);
     // same basis as the price column: sells = on hand (after fee), buys = what the buyer pays
     const now = low == null ? null : t.type === 'sell' ? steam.receivedFromBuyer(low) : low;
-    const today = now == null || !t.price ? null : (now - t.price) / t.price;
+    // plus = good for you: a buy that's worth more today, a sale that got more than today's price would
+    const today = now == null || !t.price ? null : ((now - t.price) / t.price) * (t.type === 'sell' ? -1 : 1);
     return { ...t, q, m, drop, pnl, low, now, today, unsold: t.type === 'buy' ? unsoldOf.get(bk(t)) ?? 0 : 0, gone: t.type === 'buy' ? goneOf.get(bk(t)) ?? 0 : 0, fates: t.type === 'buy' ? fatesOf.get(bk(t)) || null : null, src: t.type === 'sell' && !m && !drop ? srcOfSale.get(k) || null : null };
   });
   const rows = txSort.apply(tx, {
