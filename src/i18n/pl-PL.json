@@ -1324,7 +1324,24 @@
       "few": "{count} tańsze oferty",
       "many": "{count} tańszych ofert",
       "other": "{count} oferty"
-    }
+    },
+    "groupSame": "Grupuj takie same",
+    "groupSameTip": "Oferty tego samego przedmiotu w jednym wierszu, rozwiniesz je przyciskiem Rozwiń",
+    "selectAllTip": "Zaznacz wszystkie. Shift zaznacza zakres, Ctrl dodaje albo odejmuje wiersz",
+    "nListings": {
+      "one": "{count} oferta",
+      "few": "{count} oferty",
+      "many": "{count} ofert",
+      "other": "{count} oferty"
+    },
+    "groupBeaten": "przebite {beaten} z {count}",
+    "setGroupTip": "Zdejmie {count} ofert(y) tego przedmiotu i wystawi je za {price} (z potwierdzeniem)",
+    "expand": "Rozwiń",
+    "collapse": "Zwiń",
+    "bulkYouGet": "dostaniesz {recv} za sztukę",
+    "bulkSnapped": ", Steam pozwala na {price}",
+    "enterAPriceForSelected": "Wpisz cenę dla zaznaczonych ofert.",
+    "alreadyAtThisPrice": "Zaznaczone oferty mają już tę cenę."
   },
   "markettrend": {
     "skinMarket": "rynek skinów",

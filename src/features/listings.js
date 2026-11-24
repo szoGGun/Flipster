@@ -131,6 +131,7 @@ export function mount(root) {
       <span class="sub" id="l-tick" title="${L('listings.whileThePanelIsOpen')}"></span>
       <span class="sub" id="l-comp"></span> <span class="sub" id="l-note"></span>
       <span class="sp"></span>
+      <label class="tgl" title="${L('listings.groupSameTip')}"><input type="checkbox" id="l-group" ${settings.listGroup ? 'checked' : ''}><span class="tr"></span>${L('listings.groupSame')}</label>
       <button class="b" data-a="pricepanel" title="${L('listings.howToCalculateSuggestedPrices')}">⚙ <b id="l-pricesum"></b></button>
       <button class="b dbg" data-a="research" title="${L('listings.downloadsTheOrderBookAnd')}">⬇ ${L('listings.dataForAnalysis')}</button>
       <span class="btng">
@@ -155,11 +156,14 @@ export function mount(root) {
     <div id="l-bulk" class="bar" hidden style="position:static;background:rgba(102,192,244,.06)">
       <span id="l-bulkn"></span>
       <button class="b" data-a="bulkset">${L('listings.setSuggestedPrices')}</button>
+      <span class="inp"><input class="p" id="l-bulkprice" placeholder="${L('listings.eG150')}" style="width:80px"><span>zł</span></span>
+      <button class="b go" data-a="bulkown">${L('listings.listAtThisPrice')}</button>
+      <span class="sub" id="l-bulkrecv"></span>
       <button class="b red" data-a="remove">${L('listings.remove')}</button>
       <button class="b" data-a="selnone">${L('listings.deselect')}</button>
     </div>
     <table><thead><tr>
-      <th style="width:1%"><input type="checkbox" id="l-all" title="${L('listings.selectAll')}"></th>
+      <th style="width:1%"><input type="checkbox" id="l-all" title="${L('listings.selectAllTip')}"></th>
       <th data-sort="name">${L('listings.item')}</th><th data-sort="buyer">${L('listings.yourPrice2')}</th><th data-sort="comp">${L('listings.market')}</th><th></th>
     </tr></thead><tbody></tbody></table>`;
 
@@ -168,6 +172,7 @@ export function mount(root) {
     if (th) { sort.click(th.dataset.sort); render(); return; }
     const fl = e.target.closest('[data-fl]');
     if (fl) { const r = rows.find((x) => x.listingid === fl.dataset.fl); if (r?.item?.float != null) floatCheck({ ...r.item, hash: r.hash, name: r.name, appid: r.appid }); return; }
+    if (pickRow(e)) return;
     const btn = e.target.closest('button');
     const a = btn?.dataset.a;
     if (!a) return;
@@ -181,10 +186,16 @@ export function mount(root) {
       pricepanel: () => { const p = el.querySelector('#l-pricepanel'); p.hidden = !p.hidden; },
       set: () => r && relistOne(r, suggest(r).price), setown: () => r && relistOne(r, r.newBuyer), rm: () => r && removeOne(r),
       cfg: () => { if (r) { openCfg = openCfg === r.listingid ? null : r.listingid; render(); } },
-      bulkset: bulkSet, remove: doRemove, selnone: () => { rows.forEach((x) => (x.checked = false)); render(); },
+      bulkset: () => bulkSet(rows.filter((x) => x.checked)), bulkown: bulkOwn, remove: doRemove, selnone: () => { rows.forEach((x) => (x.checked = false)); render(); },
+      gset: () => bulkSet(rows.filter((x) => groupKey(x) === btn.dataset.g)),
+      gtoggle: () => { const g = btn.dataset.g; if (!openGroups.delete(g)) openGroups.add(g); render(); },
     })[a]?.();
   });
+  // shift-click shouldn't also select the text of the rows in between
+  root.querySelector('tbody').addEventListener('mousedown', (e) => { if ((e.shiftKey || e.ctrlKey || e.metaKey) && e.target.closest('tr[data-id],tr[data-g]') && !e.target.closest('input,a,button')) e.preventDefault(); });
   root.querySelector('#l-all').onchange = (e) => { rows.forEach((r) => (r.checked = e.target.checked)); render(); };
+  root.querySelector('#l-group').onchange = (e) => { settings.listGroup = e.target.checked; anchor = null; render(); };
+  root.querySelector('#l-bulkprice').oninput = bulkRecv;
   priceSum = () => {
     const n = settings.ignoreBelow ?? 2, d = waitDays();
     el.querySelector('#l-pricesum').textContent = `${L('listings.sellWithin', { d: daysTxt(d) })}${n > 1 ? L('listings.skippingUnderpriced') : ''} · ${L('listings.refreshEveryMin', { refreshMin: refreshMin() })}`;
@@ -246,12 +257,83 @@ function autoDialog() {
 }
 let openCfg = null; // listing id whose settings row is open
 
+// ---------------------------------------------------------------- selection and groups
+let anchor = null; // the unit a Shift-click selects from
+let units = []; // what the table shows, top to bottom: [{key, ids}], a group row stands for all its listings
+const openGroups = new Set(); // groups shown with their listings below
+const groupKey = (r) => `${r.appid}|${r.hash}`;
+const NO_PICK = 'a,button,select,label,[data-fl],.stt-i,.inp,input:not([type=checkbox])';
+
+/** a click on a row or its checkbox: plain = only this one, Ctrl = add or take it away, Shift = all from the last clicked */
+function pickRow(e) {
+  const tr = e.target.closest('tr[data-id]:not(.cfg),tr[data-g]');
+  if (!tr || e.target.closest(NO_PICK)) return false;
+  const key = tr.dataset.g ? 'g|' + tr.dataset.g : tr.dataset.id;
+  const u = units.find((x) => x.key === key);
+  if (!u) return false;
+  const box = e.target.matches('input[type=checkbox]'), ctrl = e.ctrlKey || e.metaKey;
+  const byId = new Map(rows.map((r) => [r.listingid, r]));
+  const mark = (ids, on) => ids.forEach((id) => { const r = byId.get(id); if (r) r.checked = on; });
+  const allOn = u.ids.every((id) => byId.get(id)?.checked);
+  const from = anchor ? units.findIndex((x) => x.key === anchor) : -1;
+  if (e.shiftKey && from >= 0) {
+    const to = units.indexOf(u);
+    const span = units.slice(Math.min(from, to), Math.max(from, to) + 1).flatMap((x) => x.ids);
+    if (box) mark(span, !allOn);
+    else { if (!ctrl) mark([...byId.keys()], false); mark(span, true); }
+  } else if (box || ctrl) {
+    mark(u.ids, !allOn);
+    anchor = key;
+  } else {
+    // a plain click on the only selected row takes the selection away
+    const only = allOn && rows.every((r) => !r.checked || u.ids.includes(r.listingid));
+    mark([...byId.keys()], false);
+    if (!only) mark(u.ids, true);
+    anchor = key;
+  }
+  render();
+  return true;
+}
+
+/** one row for several listings of the same item: price range, how many are undercut, the suggestion for all of them */
+function groupRow(g, list) {
+  const f = steam.fmt, r0 = list[0];
+  const range = (k) => { const v = list.map((x) => x[k]), lo = Math.min(...v), hi = Math.max(...v); return lo === hi ? f(lo) : `${f(lo)} - ${f(hi)}`; };
+  const on = list.filter((x) => x.checked).length, all = on === list.length;
+  const pcs = list.reduce((s, x) => s + (x.amount || 1), 0);
+  const cheapest = list.reduce((a, x) => (x.buyer < a.buyer ? x : a));
+  const s = suggest(cheapest);
+  const todo = list.filter((x) => { const p = suggest(x).price; return p != null && p !== x.buyer; }).length;
+  const beaten = list.filter((x) => x.comp != null && x.comp < x.buyer).length;
+  const open = openGroups.has(g);
+  const sub = [wearShort(r0.hash), L('listings.nListings', { count: list.length }), pcs > list.length ? `${pcs} ${L('listings.pcs')}` : ''].filter(Boolean).join(' · ');
+  return `<tr data-g="${esc(g)}" class="${all ? 'sel' : ''}">
+      <td><input type="checkbox" ${all ? 'checked' : ''} ${on && !all ? 'data-ind="1"' : ''}></td>
+      <td>${ui.itemCell({ ...r0, sub })}</td>
+      <td><b>${range('buyer')}</b><div class="sub">${L('listings.youGet')} ${range('recv')}</div></td>
+      <td>${chip(cheapest)}${beaten && r0.h ? `<div class="sub err" style="margin-top:3px">${L('listings.groupBeaten', { beaten, count: list.length })}</div>` : ''}${r0.h && cheapest.comp != null ? `<div class="sub" style="margin-top:3px">${L('listings.cheapestOther')} ${f(cheapest.comp)}</div>` : ''}</td>
+      <td style="white-space:nowrap"><div class="acts" style="flex-wrap:nowrap;align-items:center">
+        ${s.price == null ? L('listings.waitingForMarketData') : todo ? `<button class="b ${s.price < cheapest.buyer ? '' : 'go'}" data-a="gset" data-g="${esc(g)}" title="${L('listings.setGroupTip', { price: f(s.price), count: todo })}">${L('listings.set')} ${f(s.price)}</button>` : `<span class="sub ok" style="white-space:nowrap">${L('listings.priceOk')}</span>`}
+        <button class="b ${open ? 'on' : ''}" data-a="gtoggle" data-g="${esc(g)}">${open ? `▾ ${L('listings.collapse')}` : `▸ ${L('listings.expand')}`}</button>
+      </div></td></tr>`;
+}
+
+/** under the price box: what one unit brings after the fee, and the price Steam really allows when it differs */
+function bulkRecv() {
+  const box = el?.querySelector('#l-bulkrecv');
+  if (!box) return;
+  const v = parsePrice(el.querySelector('#l-bulkprice').value);
+  if (!(v > 0)) { box.textContent = ''; return; }
+  const pub = rows.find((r) => r.checked)?.pub, p = steam.achievable(v, pub);
+  box.textContent = L('listings.bulkYouGet', { recv: steam.fmt(steam.receivedFromBuyer(p, pub)) }) + (p !== v ? L('listings.bulkSnapped', { price: steam.fmt(p) }) : '');
+}
+
 function onInput(e) {
   const tr = e.target.closest('tr[data-id]');
   if (!tr) return;
   const r = rows.find((x) => x.listingid === tr.dataset.id);
   const f = e.target.dataset.f;
-  if (f === 'chk') { r.checked = e.target.checked; render(); return; }
+  if (f === 'chk') return; // handled on click (pickRow), it needs the Shift key
   if (f === 'auto') { rules.patch(r.hash, { auto: e.target.checked }); r.rule = rules.get(r.hash); render(); return; }
   const v = e.target.value.trim() === '' ? null : parsePrice(e.target.value);
   if (v != null && isNaN(v)) { e.target.value = ''; return; }
@@ -438,9 +520,13 @@ function drawTable() {
   const sel = rows.filter((r) => r.checked);
   el.querySelector('#l-bulk').hidden = !sel.length;
   el.querySelector('#l-bulkn').textContent = L('listings.selected', { sel: sel.length });
-  if (!rows.length && !pend.length && !plans.length) { ui.clearRows(tb); tb.innerHTML = L('listings.youHaveNothingListedYou'); return; }
+  const all = el.querySelector('#l-all');
+  all.checked = !!rows.length && sel.length === rows.length;
+  all.indeterminate = !!sel.length && sel.length < rows.length;
+  if (sel.length) bulkRecv();
+  if (!rows.length && !pend.length && !plans.length) { units = []; ui.clearRows(tb); tb.innerHTML = L('listings.youHaveNothingListedYou'); return; }
   const sorted = sort.apply([...rows, ...pend], { name: (r) => r.name, buyer: (r) => r.buyer, comp: (r) => (r.comp == null ? null : r.comp - r.buyer) });
-  const rowHtml = (r) => {
+  const rowHtml = (r, kid = false) => {
     if (r.pending) return pendingRow(r);
     const rule = r.rule || {};
     const s = suggest(r);
@@ -450,7 +536,7 @@ function drawTable() {
     const autoOff = !settings.autoRelist;
     const autoTag = rule.auto ? `<span class="chipst ${autoOff ? 'mut' : rule.min != null ? 'ok' : 'mid'}" title="${rule.min == null ? L('listings.theAutomationShouldWatchThis') : autoOff ? L('listings.theAutomationShouldWatchThis2', { min: steam.fmt(rule.min) }) : L('listings.theAutomationWatchesThePrice', { min: steam.fmt(rule.min) })}">auto${autoOff ? L('listings.off2') : ''}</span>` : '';
     const e = evalListing(r, s);
-    const main = `<tr data-id="${r.listingid}">
+    const main = `<tr data-id="${r.listingid}" class="${[r.checked ? 'sel' : '', kid ? 'kid' : ''].join(' ').trim()}">
       <td><input type="checkbox" data-f="chk" ${r.checked ? 'checked' : ''}></td>
       <td>${ui.itemCell({ ...r, sub })}</td>
       <td><b>${steam.fmt(r.buyer)}</b><div class="sub">${L('listings.youGet')} ${steam.fmt(r.recv)}</div>${e && e.k !== 'ok' ? `<div class="sub ${e.cls}" title="${L('listings.theChanceThatSomeonePays', { days: e.days })}">${e.label}</div>` : ''}</td>
@@ -488,12 +574,33 @@ function drawTable() {
   };
   const seen = new Map();
   const once = (k) => { const n = seen.get(k) || 0; seen.set(k, n + 1); return n ? `${k}#${n}` : k; };
-  const blocks = sorted.map((r) => ({ key: once(r.pending ? `p|${r.hash}|${r.recv}` : r.listingid), html: rowHtml(r) }));
+  const blocks = [];
+  units = [];
+  const push = (r, kid) => {
+    blocks.push({ key: once(r.pending ? `p|${r.hash}|${r.recv}` : r.listingid), html: rowHtml(r, kid) });
+    if (!r.pending) units.push({ key: r.listingid, ids: [r.listingid] });
+  };
+  // grouped: one row per item where it's listed more than once, at the place of its first listing in the sort order
+  const groups = new Map();
+  if (settings.listGroup) for (const r of rows) (groups.get(groupKey(r)) || groups.set(groupKey(r), []).get(groupKey(r))).push(r);
+  const done = new Set();
+  for (const r of sorted) {
+    const g = !r.pending && groups.get(groupKey(r));
+    if (!g || g.length < 2) { push(r); continue; }
+    const k = groupKey(r);
+    if (done.has(k)) continue;
+    done.add(k);
+    const list = sorted.filter((x) => !x.pending && groupKey(x) === k);
+    blocks.push({ key: 'g|' + k, html: groupRow(k, list) });
+    units.push({ key: 'g|' + k, ids: list.map((x) => x.listingid) });
+    if (openGroups.has(k)) list.forEach((x) => push(x, true));
+  }
   if (plans.length) {
     blocks.push({ key: 'plans', html: `<tr><td colspan="5" class="sub" style="padding:10px 8px 4px;font-weight:600">${L('listings.plannedListedWhenTheTrade')}</td></tr>` });
     for (const p of plans) blocks.push({ key: once(`plan|${p.hash}`), html: planRow(p) });
   }
   ui.patchRows(tb, blocks);
+  tb.querySelectorAll('input[data-ind]').forEach((i) => (i.indeterminate = true));
   el.querySelector('th[data-sort="name"]').textContent = L('listings.item') + sort.arrow('name');
 }
 
@@ -530,11 +637,23 @@ async function removeOne(r) {
   setTimeout(refresh, 1000);
 }
 
-async function bulkSet() {
-  const sel = rows.filter((r) => r.checked);
-  const jobs = sel.map((r) => ({ listing: r, price: suggest(r).price })).filter((j) => j.price != null && j.price !== j.listing.buyer);
+/** the suggested price for each of these listings (the selected ones, or one group) */
+async function bulkSet(list) {
+  const jobs = inPass(() => list.map((r) => ({ listing: r, price: suggest(r).price }))).filter((j) => j.price != null && j.price !== j.listing.buyer);
   if (!jobs.length) return ui.log(L('listings.theSelectedListingsAlreadyHave'), 'warn');
-  if (!(await ui.ask(L('listings.changeThePrices'), `${jobs.map((j) => `${esc(j.listing.name)}: ${steam.fmt(j.listing.buyer)} → <b>${steam.fmt(j.price)}</b>`).slice(0, 12).join('<br>')}${jobs.length > 12 ? `<br>… ${L('listings.andMore', { jobs: jobs.length - 12 })}` : ''}`, { ok: L('listings.change', { jobs: jobs.length }) }))) return;
+  await runJobs(jobs);
+}
+/** one price of your own for all the selected listings */
+async function bulkOwn() {
+  const v = parsePrice(el.querySelector('#l-bulkprice').value);
+  if (!(v > 0)) return ui.log(L('listings.enterAPriceForSelected'), 'warn');
+  const jobs = rows.filter((r) => r.checked).map((r) => ({ listing: r, price: steam.achievable(v, r.pub) })).filter((j) => j.price !== j.listing.buyer);
+  if (!jobs.length) return ui.log(L('listings.alreadyAtThisPrice'), 'warn');
+  await runJobs(jobs);
+}
+async function runJobs(jobs) {
+  const line = (j) => `${esc(j.listing.name)}: ${steam.fmt(j.listing.buyer)} → <b>${steam.fmt(j.price)}</b>${j.price < j.listing.buyer * 0.7 ? ` <span class="err">(−${Math.round((1 - j.price / j.listing.buyer) * 100)}%)</span>` : ''}`;
+  if (!(await ui.ask(L('listings.changeThePrices'), `${jobs.slice(0, 12).map(line).join('<br>')}${jobs.length > 12 ? `<br>… ${L('listings.andMore', { jobs: jobs.length - 12 })}` : ''}`, { ok: L('listings.change', { jobs: jobs.length }) }))) return;
   task = token();
   setBusy(true);
   await withLock('relist', async () => {

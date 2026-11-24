@@ -375,6 +375,48 @@ await run('Rynek → Moje oferty', async () => {
   console.log('    wiersz Tec-9 po zmianie: ' + after.replace(/\s+/g, ' '));
 });
 
+await run('Rynek → grupowanie, Shift/Ctrl, wspólna cena', async () => {
+  const S = `${T} [data-sec="sell"]`;
+  const n = () => page.$$eval(`${S} tbody tr[data-id]:not(.cfg)`, (r) => r.length);
+  const selected = () => page.evaluate((S) => [...document.querySelectorAll(`${S} tbody tr[data-id] [data-f="chk"]`)].filter((c) => c.checked).length, S);
+  // a click on the row itself (the picture), with the keys held
+  const rowClick = (sel, keys = {}, last = false) => page.evaluate((sel, keys, last) => { const td = [...document.querySelectorAll(sel)].at(last ? -1 : 0)?.querySelectorAll('td')[1]; if (!td) throw new Error('brak wiersza ' + sel); td.dispatchEvent(new MouseEvent('click', { bubbles: true, ...keys })); }, sel, keys, last);
+  state.listings.push({ id: '333', assetid: '10000000107', hash: 'Revolution Case', price: 60, fee: 9 });
+  await clickEl(`${S} [data-a="reload"]`);
+  await page.waitForFunction((S) => document.querySelectorAll(`${S} tbody tr[data-id]:not(.cfg)`).length === 3, { timeout: 15000 }, S);
+  await clickEl('#l-group');
+  await page.waitForSelector(`${S} tbody tr[data-g]`, { timeout: 5000 });
+  const g = await text(`${S} tbody tr[data-g]`);
+  check(/2 oferty/.test(g) && /0,57 zł - 0,69 zł/.test(g), 'grupa Revolution Case: 2 oferty, ceny 0,57 zł - 0,69 zł');
+  check((await n()) === 1, 'zwinięta grupa chowa swoje oferty (zostaje Tec-9)');
+  await clickEl(`${S} tbody tr[data-g] input[type=checkbox]`);
+  check((await text('#l-bulkn')) === 'Zaznaczono 2:', 'pole wyboru grupy zaznacza obie oferty');
+  await clickEl(`${S} tbody tr[data-g] [data-a="gtoggle"]`);
+  check((await page.$$eval(`${S} tbody tr.kid`, (r) => r.length)) === 2, 'Rozwiń pokazuje 2 oferty pod grupą');
+  await rowClick(`${S} tbody tr.kid`);
+  check((await selected()) === 1, 'zwykłe kliknięcie w wiersz zostawia zaznaczony tylko ten wiersz');
+  await clickEl('#l-group');
+  await rowClick(`${S} tbody tr[data-id]:not(.cfg)`);
+  await rowClick(`${S} tbody tr[data-id]:not(.cfg)`, { shiftKey: true }, true); // Tec-9, a new id since its price change
+  check((await selected()) === 3, 'Shift zaznacza zakres od pierwszego do ostatniego wiersza');
+  await rowClick(`${S} tbody tr[data-id="333"]`, { ctrlKey: true });
+  check((await selected()) === 2, 'Ctrl odznacza jeden wiersz z zaznaczenia');
+  await setInput('#l-bulkprice', '1,00', 'input');
+  check(/dostaniesz 0,88 zł za sztukę/.test(await text('#l-bulkrecv')), `pod ceną: ${await text('#l-bulkrecv')}`);
+  const before = posts.length;
+  await clickEl(`${S} [data-a="bulkown"]`);
+  await page.waitForSelector('#stt .modal [data-r="0"]', { timeout: 5000 });
+  const dlg = (await text('#stt .modal')).replace(/\n+/g, ' | ');
+  console.log('    okno: ' + dlg);
+  check((dlg.match(/→ 1,00 zł/g) || []).length === 2 && /Zmień 2/.test(dlg), 'okno: obie zaznaczone oferty za 1,00 zł');
+  await clickEl('#stt .modal [data-r="0"]');
+  check(posts.length === before, 'Anuluj niczego nie wysyła');
+  state.listings = state.listings.filter((l) => l.id !== '333');
+  await clickEl(`${S} [data-a="selnone"]`);
+  await clickEl(`${S} [data-a="reload"]`);
+  await page.waitForFunction((S) => document.querySelectorAll(`${S} tbody tr[data-id]:not(.cfg)`).length === 2, { timeout: 15000 }, S);
+});
+
 await run('Rynek → Zlecenia kupna', async () => {
   await clickEl(`${T} [data-mt="buy"]`);
   const S = `${T} [data-sec="buy"]`;

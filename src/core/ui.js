@@ -82,6 +82,8 @@ const CSS = `
 #stt .chipst.mut{color:#8f98a0;border-color:#3a4654}
 #stt .acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 #stt tr.cfg>td{background:rgba(0,0,0,.18)}
+#stt tr.sel>td{background:rgba(102,192,244,.1)}
+#stt tr.kid>td:first-child{box-shadow:inset 2px 0 0 #2a6f9c}
 #stt .btng{display:inline-flex}
 #stt .btng .b:first-child{border-radius:3px 0 0 3px}
 #stt .btng .b+.b{border-radius:0 3px 3px 0;border-left:1px solid rgba(0,0,0,.3)}

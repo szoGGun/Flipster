@@ -1322,7 +1322,22 @@
     "cheaperListings": {
       "one": "1 cheaper listing",
       "other": "{count} cheaper listings"
-    }
+    },
+    "groupSame": "Group identical",
+    "groupSameTip": "Listings of the same item in one row, the Expand button shows them",
+    "selectAllTip": "Select all. Shift selects a range, Ctrl adds or removes a row",
+    "nListings": {
+      "one": "{count} listing",
+      "other": "{count} listings"
+    },
+    "groupBeaten": "{beaten} of {count} undercut",
+    "setGroupTip": "Removes {count} listing(s) of this item and lists them again at {price} (asks first)",
+    "expand": "Expand",
+    "collapse": "Collapse",
+    "bulkYouGet": "you get {recv} each",
+    "bulkSnapped": ", Steam allows {price}",
+    "enterAPriceForSelected": "Enter a price for the selected listings.",
+    "alreadyAtThisPrice": "The selected listings already have this price."
   },
   "markettrend": {
     "skinMarket": "skin market",
